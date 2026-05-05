@@ -1226,13 +1226,7 @@ describe('loadData', () => {
       .mockRejectedValueOnce(new Error('Error 3'))
       .mockRejectedValueOnce(new Error('Error 4'));
 
-    const result = await loadData();
-
-    expect(result.theGraph).toBeNull();
-    expect(result.chainlist).toBeNull();
-    expect(result.chains).toBeNull();
-    expect(result.slip44).toEqual({});
-    expect(result.indexed.all).toHaveLength(0);
+    await expect(loadData()).rejects.toThrow('All data sources failed during data refresh');
   });
 
   it('should reset rpcHealth and lastRpcCheck on load', async () => {
