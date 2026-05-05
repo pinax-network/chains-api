@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 
 # MCP configuration file
 .mcp.json
+
+# Graphify generated knowledge graph
+graphify-out/
