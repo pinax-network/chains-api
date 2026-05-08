@@ -3,7 +3,8 @@ import {
   DATA_SOURCE_THE_GRAPH,
   DATA_SOURCE_CHAINLIST,
   DATA_SOURCE_CHAINS,
-  DATA_SOURCE_SLIP44
+  DATA_SOURCE_SLIP44,
+  DATA_SOURCE_L2BEAT_API
 } from '../../../config.js';
 
 const ENDPOINTS = {
@@ -25,7 +26,9 @@ const ENDPOINTS = {
   '/rpc-monitor': 'Get RPC endpoint monitoring results',
   '/rpc-monitor/:id': 'Get RPC monitoring results for a specific chain by ID',
   '/stats': 'Get aggregate stats (chain counts, RPC health percentage)',
-  '/relations/:id/graph?depth=N': 'BFS graph traversal of chain relations (default depth: 2)'
+  '/relations/:id/graph?depth=N': 'BFS graph traversal of chain relations (default depth: 2)',
+  '/scaling': 'Get all chains with L2BEAT scaling data (stage, category, DA layer, TVS)',
+  '/scaling/:id': 'Get L2BEAT scaling data for a specific chain by ID'
 };
 
 export async function rootRoute(fastify) {
@@ -38,7 +41,8 @@ export async function rootRoute(fastify) {
       DATA_SOURCE_THE_GRAPH,
       DATA_SOURCE_CHAINLIST,
       DATA_SOURCE_CHAINS,
-      DATA_SOURCE_SLIP44
+      DATA_SOURCE_SLIP44,
+      DATA_SOURCE_L2BEAT_API
     ]
   }));
 }

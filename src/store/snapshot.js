@@ -40,6 +40,7 @@ function createSnapshotPayload(data) {
       chainlist: data.chainlist ?? null,
       chains: data.chains ?? null,
       slip44: data.slip44 ?? {},
+      l2beat: data.l2beat ?? null,
       indexed: data.indexed ?? { byChainId: {}, byName: {}, all: [] },
       lastUpdated: data.lastUpdated ?? new Date().toISOString(),
       rpcHealth: data.rpcHealth ?? {},

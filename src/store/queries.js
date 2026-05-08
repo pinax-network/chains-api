@@ -30,6 +30,7 @@ function transformChain(chain) {
   if (chain.tags) transformedChain.tags = chain.tags;
   if (chain.status) transformedChain.status = chain.status;
   if (chain.bridges) transformedChain.bridges = chain.bridges;
+  if (chain.l2Beat) transformedChain.l2Beat = chain.l2Beat;
 
   return transformedChain;
 }

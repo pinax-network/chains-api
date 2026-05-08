@@ -69,6 +69,11 @@ export const DATA_SOURCE_SLIP44 = parseStringEnv(
   'DATA_SOURCE_SLIP44',
   'https://raw.githubusercontent.com/satoshilabs/slips/master/slip-0044.md'
 );
+export const DATA_SOURCE_L2BEAT_API = parseStringEnv(
+  'DATA_SOURCE_L2BEAT_API',
+  'https://l2beat.com/api/scaling-summary'
+);
+export const L2BEAT_FETCH_TIMEOUT_MS = parseIntEnv('L2BEAT_FETCH_TIMEOUT_MS', 10000);
 
 // Disk cache
 export const DATA_CACHE_ENABLED = parseBooleanEnv('DATA_CACHE_ENABLED', true);

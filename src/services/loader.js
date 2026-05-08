@@ -6,6 +6,7 @@ import {
 } from '../../config.js';
 import { fetchData } from '../transport/fetch.js';
 import { parseSLIP44 } from '../sources/slip44.js';
+import { fetchL2Beat } from '../sources/l2beat.js';
 import { indexData } from '../store/indexer.js';
 import { cachedData, applyDataToCache } from '../store/cache.js';
 import {
@@ -41,15 +42,17 @@ async function fetchAndBuildData() {
     fetchData(DATA_SOURCES.theGraph),
     fetchData(DATA_SOURCES.chainlist),
     fetchData(DATA_SOURCES.chains),
-    fetchData(DATA_SOURCES.slip44, 'text')
+    fetchData(DATA_SOURCES.slip44, 'text'),
+    fetchL2Beat()
   ]);
 
   const theGraph = results[0].status === 'fulfilled' ? results[0].value : null;
   const chainlist = results[1].status === 'fulfilled' ? results[1].value : null;
   const chains = results[2].status === 'fulfilled' ? results[2].value : null;
   const slip44Text = results[3].status === 'fulfilled' ? results[3].value : null;
+  const l2beat = results[4].status === 'fulfilled' ? results[4].value : null;
 
-  const sourceNames = ['theGraph', 'chainlist', 'chains', 'slip44'];
+  const sourceNames = ['theGraph', 'chainlist', 'chains', 'slip44', 'l2beat'];
   results.forEach((result, i) => {
     if (result.status === 'rejected') {
       console.error(`Failed to load ${sourceNames[i]}: ${result.reason?.message || result.reason}`);
@@ -57,7 +60,7 @@ async function fetchAndBuildData() {
   });
 
   const slip44 = parseSLIP44(slip44Text);
-  const indexed = indexData(theGraph, chainlist, chains, slip44);
+  const indexed = indexData(theGraph, chainlist, chains, slip44, l2beat);
 
   return {
     data: {
@@ -65,6 +68,7 @@ async function fetchAndBuildData() {
       chainlist,
       chains,
       slip44,
+      l2beat,
       indexed,
       lastUpdated: new Date().toISOString(),
       rpcHealth: {},

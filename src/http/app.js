@@ -18,6 +18,7 @@ import { relationsRoutes } from './routes/relations.js';
 import { endpointsRoutes } from './routes/endpoints.js';
 import { slip44Routes } from './routes/slip44.js';
 import { rpcMonitorRoutes } from './routes/rpcMonitor.js';
+import { scalingRoutes } from './routes/scaling.js';
 import { adminRoutes } from './routes/admin.js';
 import { rootRoute } from './routes/root.js';
 
@@ -83,6 +84,7 @@ export async function buildApp(options = {}) {
   await fastify.register(endpointsRoutes);
   await fastify.register(slip44Routes);
   await fastify.register(rpcMonitorRoutes);
+  await fastify.register(scalingRoutes);
   await fastify.register(rootRoute);
 
   return fastify;

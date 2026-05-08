@@ -419,10 +419,53 @@ function addReverseRelations(indexed) {
   });
 }
 
+function indexL2BeatSource(l2beat, indexed) {
+  if (!l2beat?.projects?.length) return;
+
+  for (const project of l2beat.projects) {
+    const chain = indexed.byChainId[project.chainId];
+    if (!chain) continue;
+
+    chain.l2Beat = {
+      slug: project.slug,
+      displayName: project.displayName,
+      stage: project.stage,
+      category: project.category,
+      stack: project.stack,
+      daLayer: project.daLayer,
+      hostChainId: project.hostChainId,
+      purposes: project.purposes ?? [],
+      tvs: project.tvs,
+      tvsBreakdown: project.tvsBreakdown,
+      activity: project.activity,
+      links: project.links,
+      riskView: project.riskView,
+      milestones: project.milestones,
+      dataFreshness: l2beat.source,
+      fetchedAt: l2beat.fetchedAt
+    };
+
+    if (!Array.isArray(chain.tags)) chain.tags = [];
+    if (!chain.tags.includes('L2')) chain.tags.push('L2');
+    if (project.category === 'ZK Rollup' && !chain.tags.includes('ZK')) {
+      chain.tags.push('ZK');
+    }
+    if (project.category === 'Validium' && !chain.tags.includes('Validium')) {
+      chain.tags.push('Validium');
+    }
+    if (project.category === 'Optimium' && !chain.tags.includes('Optimium')) {
+      chain.tags.push('Optimium');
+    }
+
+    if (!Array.isArray(chain.sources)) chain.sources = [];
+    if (!chain.sources.includes('l2beat')) chain.sources.push('l2beat');
+  }
+}
+
 /**
  * Index all data into a searchable structure.
  */
-export function indexData(theGraph, chainlist, chains, slip44) {
+export function indexData(theGraph, chainlist, chains, slip44, l2beat) {
   const indexed = {
     byChainId: {},
     byName: {},
@@ -437,6 +480,7 @@ export function indexData(theGraph, chainlist, chains, slip44) {
   attachSlip44Info(slip44, indexed);
   applyDefaultStatus(indexed);
   addReverseRelations(indexed);
+  indexL2BeatSource(l2beat, indexed);
 
   indexed.all = Object.values(indexed.byChainId);
 

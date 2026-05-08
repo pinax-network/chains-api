@@ -3,6 +3,7 @@ export const cachedData = {
   chainlist: null,
   chains: null,
   slip44: null,
+  l2beat: null,
   indexed: null,
   lastUpdated: null,
   rpcHealth: {},
@@ -14,6 +15,7 @@ export function applyDataToCache(data) {
   cachedData.chainlist = data.chainlist ?? null;
   cachedData.chains = data.chains ?? null;
   cachedData.slip44 = data.slip44 ?? {};
+  cachedData.l2beat = data.l2beat ?? null;
   cachedData.indexed = data.indexed ?? null;
   cachedData.lastUpdated = data.lastUpdated ?? null;
   cachedData.rpcHealth = data.rpcHealth ?? {};
