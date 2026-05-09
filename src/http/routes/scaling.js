@@ -1,4 +1,5 @@
 import { getAllChains, getChainById } from '../../../dataService.js';
+import { getL2BeatRefreshStatus } from '../../services/l2beatRefresher.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
 
@@ -15,9 +16,12 @@ export async function scalingRoutes(fastify) {
     const chains = getAllChains().filter(c => c.l2Beat);
     return {
       count: chains.length,
+      refresher: getL2BeatRefreshStatus(),
       chains
     };
   });
+
+  fastify.get('/scaling/status', async () => getL2BeatRefreshStatus());
 
   fastify.get('/scaling/:id', async (request, reply) => {
     const chainId = parseIntParam(request.params.id);

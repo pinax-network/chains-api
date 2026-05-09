@@ -419,7 +419,7 @@ function addReverseRelations(indexed) {
   });
 }
 
-function indexL2BeatSource(l2beat, indexed) {
+export function indexL2BeatSource(l2beat, indexed) {
   if (!l2beat?.projects?.length) return;
 
   for (const project of l2beat.projects) {

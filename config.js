@@ -74,6 +74,7 @@ export const DATA_SOURCE_L2BEAT_API = parseStringEnv(
   'https://l2beat.com/api/scaling-summary'
 );
 export const L2BEAT_FETCH_TIMEOUT_MS = parseIntEnv('L2BEAT_FETCH_TIMEOUT_MS', 10000);
+export const L2BEAT_REFRESH_INTERVAL_MS = parseIntEnv('L2BEAT_REFRESH_INTERVAL_MS', 300000); // 5 min
 
 // Disk cache
 export const DATA_CACHE_ENABLED = parseBooleanEnv('DATA_CACHE_ENABLED', true);

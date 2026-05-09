@@ -28,7 +28,8 @@ const ENDPOINTS = {
   '/stats': 'Get aggregate stats (chain counts, RPC health percentage)',
   '/relations/:id/graph?depth=N': 'BFS graph traversal of chain relations (default depth: 2)',
   '/scaling': 'Get all chains with L2BEAT scaling data (stage, category, DA layer, TVS)',
-  '/scaling/:id': 'Get L2BEAT scaling data for a specific chain by ID'
+  '/scaling/:id': 'Get L2BEAT scaling data for a specific chain by ID',
+  '/scaling/status': 'Get L2BEAT refresher status (last refresh, source, errors)'
 };
 
 export async function rootRoute(fastify) {

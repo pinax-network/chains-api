@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import fastifyStatic from '@fastify/static';
 import { initializeDataOnStartup, startRpcHealthCheck } from '../../dataService.js';
+import { startL2BeatRefresh } from '../services/l2beatRefresher.js';
 import {
   BODY_LIMIT,
   MAX_PARAM_LENGTH,
@@ -73,9 +74,11 @@ export async function buildApp(options = {}) {
     await initializeDataOnStartup({
       onBackgroundRefreshSuccess: () => {
         startRpcHealthCheck();
+        startL2BeatRefresh();
       }
     });
     startRpcHealthCheck();
+    startL2BeatRefresh();
   }
 
   await fastify.register(adminRoutes);

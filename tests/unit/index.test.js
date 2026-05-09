@@ -16,10 +16,28 @@ vi.mock('../../config.js', () => ({
   DATA_SOURCE_CHAINLIST: 'https://example.com/chainlist.json',
   DATA_SOURCE_CHAINS: 'https://example.com/chains.json',
   DATA_SOURCE_SLIP44: 'https://example.com/slip44.md',
+  DATA_SOURCE_L2BEAT_API: 'https://example.com/l2beat-summary',
+  L2BEAT_FETCH_TIMEOUT_MS: 1000,
+  L2BEAT_REFRESH_INTERVAL_MS: 60000,
   DATA_CACHE_ENABLED: false,
   DATA_CACHE_FILE: '.cache/test-data-cache.json',
   PROXY_URL: '',
   PROXY_ENABLED: false
+}));
+
+// Stub the L2BEAT refresher so buildApp doesn't kick off a real network fetch.
+vi.mock('../../src/services/l2beatRefresher.js', () => ({
+  startL2BeatRefresh: vi.fn(),
+  stopL2BeatRefresh: vi.fn(),
+  runL2BeatRefresh: vi.fn(),
+  getL2BeatRefreshStatus: vi.fn(() => ({
+    isRefreshing: false,
+    lastRefreshAt: null,
+    lastRefreshSource: null,
+    lastRefreshError: null,
+    lastRefreshProjectCount: 0,
+    intervalMs: 60000
+  }))
 }));
 
 // Capture the onBackgroundRefreshSuccess callback
