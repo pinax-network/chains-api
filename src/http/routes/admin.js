@@ -42,7 +42,14 @@ export async function adminRoutes(fastify) {
     };
   });
 
-  fastify.get('/export', async (_request, reply) => {
+  fastify.get('/export', {
+    config: {
+      rateLimit: {
+        max: RELOAD_RATE_LIMIT_MAX,
+        timeWindow: RATE_LIMIT_WINDOW_MS
+      }
+    }
+  }, async (_request, reply) => {
     if (!DATA_CACHE_ENABLED) {
       return sendError(reply, 503, 'Data cache export is disabled');
     }

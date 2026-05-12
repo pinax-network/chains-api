@@ -39,7 +39,9 @@ function createSnapshotPayload(data) {
       theGraph: data.theGraph ?? null,
       chainlist: data.chainlist ?? null,
       chains: data.chains ?? null,
-      slip44: data.slip44 ?? {},
+      // Preserve null (fetch failed) vs {} (fetched, empty) so the freshness
+      // signal survives a snapshot round-trip.
+      slip44: data.slip44 === undefined ? {} : data.slip44,
       l2beat: data.l2beat ?? null,
       indexed: data.indexed ?? { byChainId: {}, byName: {}, all: [] },
       lastUpdated: data.lastUpdated ?? new Date().toISOString(),

@@ -14,7 +14,10 @@ export function applyDataToCache(data) {
   cachedData.theGraph = data.theGraph ?? null;
   cachedData.chainlist = data.chainlist ?? null;
   cachedData.chains = data.chains ?? null;
-  cachedData.slip44 = data.slip44 ?? {};
+  // Preserve null vs {} distinction so /sources can report whether SLIP-0044
+  // actually loaded vs returned no rows. Defaults to {} only when caller
+  // didn't pass slip44 at all (e.g. test seeds).
+  cachedData.slip44 = data.slip44 === undefined ? {} : data.slip44;
   cachedData.l2beat = data.l2beat ?? null;
   cachedData.indexed = data.indexed ?? null;
   cachedData.lastUpdated = data.lastUpdated ?? null;

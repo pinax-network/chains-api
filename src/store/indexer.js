@@ -149,6 +149,10 @@ function mergeChainlistEntry(chainData, indexed) {
     if (chainData.status && !indexed.byChainId[chainId].status) {
       indexed.byChainId[chainId].status = chainData.status;
     }
+
+    if (chainData.slip44 !== undefined && indexed.byChainId[chainId].slip44 === undefined) {
+      indexed.byChainId[chainId].slip44 = chainData.slip44;
+    }
   } else {
     indexed.byChainId[chainId] = {
       chainId: Number(chainId),
@@ -157,7 +161,8 @@ function mergeChainlistEntry(chainData, indexed) {
       sources: ['chainlist'],
       tags: [],
       relations: [],
-      status: chainData.status || 'active'
+      status: chainData.status || 'active',
+      ...(chainData.slip44 !== undefined && { slip44: chainData.slip44 })
     };
   }
 
@@ -310,8 +315,11 @@ function indexChainsSource(chains, indexed) {
         sources: ['chains'],
         tags: [],
         relations: [],
-        status: chain.status || 'active'
+        status: chain.status || 'active',
+        ...(chain.slip44 !== undefined && { slip44: chain.slip44 })
       };
+    } else if (chain.slip44 !== undefined && indexed.byChainId[chainId].slip44 === undefined) {
+      indexed.byChainId[chainId].slip44 = chain.slip44;
     }
 
     if (chain.slip44 === 1) {
@@ -421,6 +429,19 @@ function addReverseRelations(indexed) {
 
 export function indexL2BeatSource(l2beat, indexed) {
   if (!l2beat?.projects?.length) return;
+
+  // Clear stale data first: any chain that previously had l2Beat data but
+  // isn't in the fresh project list (e.g. project was removed from L2BEAT)
+  // should lose its l2Beat field so /scaling stops reporting it.
+  const freshChainIds = new Set(l2beat.projects.map(p => p.chainId));
+  for (const chain of Object.values(indexed.byChainId)) {
+    if (chain.l2Beat && !freshChainIds.has(chain.chainId)) {
+      delete chain.l2Beat;
+      if (Array.isArray(chain.sources)) {
+        chain.sources = chain.sources.filter(s => s !== 'l2beat');
+      }
+    }
+  }
 
   for (const project of l2beat.projects) {
     const chain = indexed.byChainId[project.chainId];

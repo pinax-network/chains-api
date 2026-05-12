@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "fetchedAt": "2026-05-05T00:00:00.000Z",
-  "note": "Hand-curated last-known-good fallback for src/sources/l2beat.js. Used only when the live l2beat.com API is unreachable. Refresh manually when stage classifications change. Source of truth: https://l2beat.com",
+  "note": "Hand-curated last-known-good fallback for src/sources/l2beat.js. Used only when the live l2beat.com API is unreachable. Refresh manually when stage classifications change. Source of truth: https://l2beat.com. Excludes chains whose chainId exceeds Number.MAX_SAFE_INTEGER (e.g. Starknet's CAIP-2 numeric ID 0x534e5f4d41494e); the live API can still surface them once the indexer learns to handle BigInt chain IDs.",
   "projects": [
     { "slug": "arbitrum",       "chainId": 42161,    "displayName": "Arbitrum One",      "stage": "Stage 1", "category": "Optimistic Rollup", "stack": "Arbitrum Orbit", "daLayer": "Ethereum",       "hostChainId": 1 },
     { "slug": "optimism",       "chainId": 10,       "displayName": "OP Mainnet",        "stage": "Stage 1", "category": "Optimistic Rollup", "stack": "OP Stack",       "daLayer": "Ethereum",       "hostChainId": 1 },
@@ -26,7 +26,6 @@
     { "slug": "soneium",        "chainId": 1868,     "displayName": "Soneium",           "stage": "Stage 1", "category": "Optimistic Rollup", "stack": "OP Stack",       "daLayer": "Ethereum",       "hostChainId": 1 },
     { "slug": "unichain",       "chainId": 130,      "displayName": "Unichain",          "stage": "Stage 1", "category": "Optimistic Rollup", "stack": "OP Stack",       "daLayer": "Ethereum",       "hostChainId": 1 },
     { "slug": "zircuit",        "chainId": 48900,    "displayName": "Zircuit",           "stage": "Stage 0", "category": "ZK Rollup",         "stack": "ZK Stack",       "daLayer": "Ethereum",       "hostChainId": 1 },
-    { "slug": "starknet",       "chainId": 23448594291968334, "displayName": "Starknet",  "stage": "Stage 1", "category": "ZK Rollup",         "stack": "Starknet",       "daLayer": "Ethereum",       "hostChainId": 1 },
     { "slug": "metis",          "chainId": 1088,     "displayName": "Metis Andromeda",   "stage": "Stage 0", "category": "Optimium",          "stack": "OP Stack",       "daLayer": "Metis DA",       "hostChainId": 1 },
     { "slug": "boba",           "chainId": 288,      "displayName": "Boba Network",      "stage": "Stage 0", "category": "Optimistic Rollup", "stack": "OP Stack",       "daLayer": "Ethereum",       "hostChainId": 1 },
     { "slug": "kroma",          "chainId": 255,      "displayName": "Kroma",             "stage": "Stage 1", "category": "Optimistic Rollup", "stack": "OP Stack",       "daLayer": "Ethereum",       "hostChainId": 1 },

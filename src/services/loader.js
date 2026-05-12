@@ -59,7 +59,9 @@ async function fetchAndBuildData() {
     }
   });
 
-  const slip44 = parseSLIP44(slip44Text);
+  // Only parse SLIP-44 when fetch actually returned something; otherwise keep
+  // null so /sources can distinguish "fetch failed" from "fetched, empty".
+  const slip44 = slip44Text === null ? null : parseSLIP44(slip44Text);
   const indexed = indexData(theGraph, chainlist, chains, slip44, l2beat);
 
   return {
@@ -87,7 +89,9 @@ async function refreshDataWithGuard(options = {}) {
     const { data, loadedSourceCount } = await fetchAndBuildData();
 
     if (requireAtLeastOneSource && loadedSourceCount === 0) {
-      throw new Error('All data sources failed during data refresh');
+      // L2BEAT is intentionally excluded from the count: it has its own static
+      // fallback and isn't useful on its own without the core sources.
+      throw new Error('All core data sources failed during data refresh');
     }
 
     applyDataToCache(data);

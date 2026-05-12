@@ -8,8 +8,10 @@ import { sendError } from '../util/sendError.js';
  * /scaling/:id — single chain's L2BEAT view.
  *
  * Returns empty / 404 when L2BEAT data hasn't loaded yet (live API gated and
- * static fallback unavailable). Per-chain `l2Beat.dataFreshness` field
- * indicates whether the data is `live`, `fallback`, or `unavailable`.
+ * static fallback unavailable). When the live API succeeds the per-chain
+ * `l2Beat.dataFreshness` is `'live'`; when only the static snapshot is
+ * available it's `'fallback'`. Chains the merge couldn't reach have no
+ * `l2Beat` field at all (rather than a synthetic `'unavailable'` marker).
  */
 export async function scalingRoutes(fastify) {
   fastify.get('/scaling', async () => {

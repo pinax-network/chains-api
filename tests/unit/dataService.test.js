@@ -1226,7 +1226,7 @@ describe('loadData', () => {
       .mockRejectedValueOnce(new Error('Error 3'))
       .mockRejectedValueOnce(new Error('Error 4'));
 
-    await expect(loadData()).rejects.toThrow('All data sources failed during data refresh');
+    await expect(loadData()).rejects.toThrow('All core data sources failed during data refresh');
   });
 
   it('should reset rpcHealth and lastRpcCheck on load', async () => {
@@ -2252,7 +2252,7 @@ describe('initializeDataOnStartup with disk cache', () => {
 
     global.fetch.mockRejectedValue(new Error('network down'));
 
-    await expect(mod.loadData()).rejects.toThrow('All data sources failed during data refresh');
+    await expect(mod.loadData()).rejects.toThrow('All core data sources failed during data refresh');
     expect(mod.getCachedData().indexed.byChainId[25].name).toBe('Fresh Chain');
   });
 

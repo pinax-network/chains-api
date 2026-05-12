@@ -90,6 +90,31 @@ describe('indexer — L2BEAT integration', () => {
     expect(indexed2.byChainId[42161].l2Beat).toBeUndefined();
   });
 
+  it('clears stale chain.l2Beat when a project disappears from the fresh fetch', () => {
+    // First sweep: both projects present.
+    const indexed = indexData(null, null, [
+      { chainId: 42161, name: 'Arbitrum One' },
+      { chainId: 10, name: 'OP Mainnet' }
+    ], null, buildL2Beat([
+      { slug: 'arbitrum', chainId: 42161, displayName: 'Arbitrum One' },
+      { slug: 'optimism', chainId: 10, displayName: 'OP Mainnet' }
+    ]));
+    expect(indexed.byChainId[42161].l2Beat).toBeDefined();
+    expect(indexed.byChainId[10].l2Beat).toBeDefined();
+
+    // Second sweep on the SAME indexed object: optimism dropped from L2BEAT.
+    // Simulate the refresher's re-merge by calling indexL2BeatSource directly.
+    // (Imported lazily via dynamic import to keep test file self-contained.)
+    return import('../../../src/store/indexer.js').then(({ indexL2BeatSource }) => {
+      indexL2BeatSource(buildL2Beat([
+        { slug: 'arbitrum', chainId: 42161, displayName: 'Arbitrum One' }
+      ]), indexed);
+      expect(indexed.byChainId[42161].l2Beat).toBeDefined();
+      expect(indexed.byChainId[10].l2Beat).toBeUndefined();
+      expect(indexed.byChainId[10].sources).not.toContain('l2beat');
+    });
+  });
+
   it('preserves dataFreshness="fallback" when sourced from static JSON', () => {
     const indexed = indexData(null, null, buildBaseChainsList(), null, {
       source: 'fallback',

@@ -14,6 +14,9 @@ export async function fetchData(url, format = 'json') {
 
     if (format === 'json') return await response.json();
     if (format === 'text') return await response.text();
+    // Unknown format — surface as a failed fetch rather than returning undefined.
+    console.error(`Error fetching data from ${url}: unsupported format "${format}"`);
+    return null;
   } catch (error) {
     console.error(`Error fetching data from ${url}:`, error.message);
     return null;
