@@ -5,7 +5,8 @@ import helmet from '@fastify/helmet';
 import { readFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { loadData, initializeDataOnStartup, getCachedData, searchChains, getChainById, getAllChains, getAllRelations, getRelationsById, getEndpointsById, getAllEndpoints, getAllKeywords, validateChainData, traverseRelations } from './dataService.js';
-import { getMonitoringResults, getMonitoringStatus, startRpcHealthCheck } from './rpcMonitor.js';
+import { getMonitoringResults, getMonitoringStatus, startRpcHealthCheck, getClientsByChain, summarizeChainClients } from './rpcMonitor.js';
+import { getPricesForChains, getPriceForChain, prefetchAllPrices } from './priceService.js';
 import {
   PORT, HOST, BODY_LIMIT, MAX_PARAM_LENGTH,
   RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS,
@@ -70,6 +71,11 @@ export async function buildApp(options = {}) {
       }
     });
     startRpcHealthCheck();
+    // Warm the price cache in the background so the first /chains request
+    // doesn't pay a CoinGecko round-trip. Failures are silent.
+    prefetchAllPrices().catch(err => {
+      console.warn(`Initial price prefetch failed: ${err.message}`);
+    });
   }
 
   /**
@@ -101,9 +107,16 @@ export async function buildApp(options = {}) {
       chains = chains.filter(chain => chain.tags?.includes(tag));
     }
 
+    const chainIds = chains.map(c => c.chainId);
+    const priceMap = await getPricesForChains(chainIds);
+    const enrichedChains = chains.map(chain => ({
+      ...chain,
+      price: priceMap.get(chain.chainId) ?? null
+    }));
+
     return {
-      count: chains.length,
-      chains
+      count: enrichedChains.length,
+      chains: enrichedChains
     };
   });
 
@@ -121,7 +134,8 @@ export async function buildApp(options = {}) {
       return sendError(reply, 404, 'Chain not found');
     }
 
-    return chain;
+    const price = await getPriceForChain(chainId);
+    return { ...chain, price };
   });
 
   /**
@@ -392,8 +406,12 @@ export async function buildApp(options = {}) {
       return sendError(reply, 404, 'No monitoring results found for this chain');
     }
 
-    const workingCount = chainResults.filter(r => r.status === 'working').length;
-    const failedCount = chainResults.filter(r => r.status === 'failed').length;
+    let workingCount = 0;
+    let failedCount = 0;
+    for (const r of chainResults) {
+      if (r.status === 'working') workingCount++;
+      else if (r.status === 'failed') failedCount++;
+    }
 
     return {
       chainId,
@@ -402,8 +420,39 @@ export async function buildApp(options = {}) {
       workingEndpoints: workingCount,
       failedEndpoints: failedCount,
       lastUpdated: results.lastUpdated,
-      endpoints: chainResults
+      endpoints: chainResults,
+      clients: summarizeChainClients(chainResults)?.clients ?? []
     };
+  });
+
+  /**
+   * Get aggregated client software across all chains
+   */
+  fastify.get('/clients', async () => {
+    const results = getMonitoringResults();
+    const chains = getClientsByChain();
+    return {
+      lastUpdated: results.lastUpdated,
+      count: chains.length,
+      chains
+    };
+  });
+
+  /**
+   * Get client software for a specific chain
+   */
+  fastify.get('/clients/:id', async (request, reply) => {
+    const chainId = parseIntParam(request.params.id);
+    if (chainId === null) {
+      return sendError(reply, 400, 'Invalid chain ID');
+    }
+
+    const summary = getClientsByChain(chainId);
+    if (!summary) {
+      return sendError(reply, 404, 'No client data found for this chain');
+    }
+
+    return summary;
   });
 
   /**
@@ -467,6 +516,8 @@ export async function buildApp(options = {}) {
         '/keywords': 'Get extracted keywords (blockchain names, network names, client names, etc.)',
         '/rpc-monitor': 'Get RPC endpoint monitoring results',
         '/rpc-monitor/:id': 'Get RPC monitoring results for a specific chain by ID',
+        '/clients': 'Get aggregated client software (name, version, GitHub repo) across all chains',
+        '/clients/:id': 'Get client software running on a specific chain by ID',
         '/stats': 'Get aggregate stats (chain counts, RPC health percentage)',
         '/relations/:id/graph?depth=N': 'BFS graph traversal of chain relations (default depth: 2)'
       },

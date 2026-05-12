@@ -583,6 +583,46 @@ function getStatusClass(status) {
     return '';
 }
 
+function showStatusBadge(data) {
+    const statusBadge = document.getElementById('chainStatusBadge');
+    if (data.status) {
+        statusBadge.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+        statusBadge.className = `badge tag-badge ${getStatusClass(data.status)}`;
+        statusBadge.style.display = 'inline-block';
+    } else {
+        statusBadge.style.display = 'none';
+    }
+}
+
+function showTagsBadge(data) {
+    const tagsElem = document.getElementById('chainTags');
+    if (data.tags?.length > 0) {
+        tagsElem.textContent = data.tags.join(', ');
+        tagsElem.style.display = 'inline-block';
+    } else {
+        tagsElem.style.display = 'none';
+    }
+}
+
+function showWebsite(data) {
+    const webElem = document.getElementById('chainWebsite');
+    if (data.infoURL) {
+        try {
+            const a = document.createElement('a');
+            a.href = data.infoURL;
+            a.target = "_blank";
+            a.rel = "noopener";
+            a.textContent = new URL(data.infoURL).hostname;
+            webElem.textContent = '';
+            webElem.appendChild(a);
+        } catch {
+            webElem.textContent = data.infoURL;
+        }
+    } else {
+        webElem.textContent = 'None available';
+    }
+}
+
 function showNodeDetails(node) {
     const panel = document.getElementById('detailsPanel');
     const data = node.data;
@@ -594,23 +634,8 @@ function showNodeDetails(node) {
     document.getElementById('chainName').textContent = node.name || 'Unknown Chain';
     document.getElementById('chainIdBadge').textContent = `ID: ${data.chainId}`;
 
-    // Status badge
-    const statusBadge = document.getElementById('chainStatusBadge');
-    if (data.status) {
-        statusBadge.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-        statusBadge.className = `badge tag-badge ${getStatusClass(data.status)}`;
-        statusBadge.style.display = 'inline-block';
-    } else {
-        statusBadge.style.display = 'none';
-    }
-
-    const tagsElem = document.getElementById('chainTags');
-    if (data.tags?.length > 0) {
-        tagsElem.textContent = data.tags.join(', ');
-        tagsElem.style.display = 'inline-block';
-    } else {
-        tagsElem.style.display = 'none';
-    }
+    showStatusBadge(data);
+    showTagsBadge(data);
 
     const curElem = document.getElementById('chainCurrency');
     curElem.textContent = data.nativeCurrency
@@ -637,23 +662,7 @@ function showNodeDetails(node) {
 
     showRpcEndpoints(data);
     showExplorers(data);
-
-    const webElem = document.getElementById('chainWebsite');
-    if (data.infoURL) {
-        try {
-            const a = document.createElement('a');
-            a.href = data.infoURL;
-            a.target = "_blank";
-            a.rel = "noopener";
-            a.textContent = new URL(data.infoURL).hostname;
-            webElem.textContent = '';
-            webElem.appendChild(a);
-        } catch {
-            webElem.textContent = data.infoURL;
-        }
-    } else {
-        webElem.textContent = 'None available';
-    }
+    showWebsite(data);
 
     panel.classList.remove('hidden');
 }

@@ -8,6 +8,24 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn()
 }));
 
+// Mock priceService
+vi.mock('../../priceService.js', () => ({
+  getPricesForChains: vi.fn(async (chainIds) => {
+    const map = new Map();
+    for (const id of chainIds) {
+      map.set(id, id === 1 ? { usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' } : null);
+    }
+    return map;
+  }),
+  getPriceForChain: vi.fn(async (chainId) => {
+    if (chainId === 1) return { usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' };
+    return null;
+  }),
+  getCoinGeckoId: vi.fn(() => null),
+  clearPriceCache: vi.fn(),
+  prefetchAllPrices: vi.fn(async () => {}),
+}));
+
 // Mock the modules before importing
 vi.mock('../../dataService.js', async () => {
   const actual = await vi.importActual('../../dataService.js');
@@ -247,7 +265,71 @@ vi.mock('../../rpcMonitor.js', () => ({
     isMonitoring: false,
     lastUpdated: new Date().toISOString()
   })),
-  startRpcHealthCheck: vi.fn()
+  startRpcHealthCheck: vi.fn(),
+  getClientsByChain: vi.fn((chainId) => {
+    const samples = {
+      1: {
+        chainId: 1,
+        chainName: 'Ethereum Mainnet',
+        totalNodes: 2,
+        unknownNodes: 0,
+        clients: [
+          {
+            name: 'geth',
+            repo: 'ethereum/go-ethereum',
+            language: 'Go',
+            website: 'https://geth.ethereum.org',
+            layer: 'execution',
+            known: true,
+            nodeCount: 2,
+            versions: [{ version: 'v1.14.5', nodeCount: 2 }]
+          }
+        ]
+      },
+      137: {
+        chainId: 137,
+        chainName: 'Polygon',
+        totalNodes: 1,
+        unknownNodes: 0,
+        clients: [
+          {
+            name: 'bor',
+            repo: 'maticnetwork/bor',
+            language: 'Go',
+            website: 'https://polygon.technology',
+            layer: 'execution',
+            known: true,
+            nodeCount: 1,
+            versions: [{ version: 'v1.3.0', nodeCount: 1 }]
+          }
+        ]
+      }
+    };
+    if (chainId === undefined) return Object.values(samples);
+    return samples[chainId] ?? null;
+  }),
+  summarizeChainClients: vi.fn((chainResults) => {
+    if (!chainResults || chainResults.length === 0) return null;
+    const chainId = chainResults[0].chainId;
+    return {
+      chainId,
+      chainName: chainResults[0].chainName,
+      totalNodes: chainResults.length,
+      unknownNodes: 0,
+      clients: [
+        {
+          name: 'geth',
+          repo: 'ethereum/go-ethereum',
+          language: 'Go',
+          website: 'https://geth.ethereum.org',
+          layer: 'execution',
+          known: true,
+          nodeCount: chainResults.length,
+          versions: [{ version: 'v1.14.5', nodeCount: chainResults.length }]
+        }
+      ]
+    };
+  })
 }));
 
 describe('API Endpoints', () => {
@@ -375,6 +457,25 @@ describe('API Endpoints', () => {
       expect(data).toHaveProperty('error');
       expect(data.error).toContain('Invalid tag');
     });
+
+    it('should include price field on each chain', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/chains'
+      });
+
+      expect(response.statusCode).toBe(200);
+      const data = JSON.parse(response.payload);
+      expect(data.chains.length > 0).toBe(true);
+      data.chains.forEach(chain => {
+        expect(chain).toHaveProperty('price');
+      });
+      // Ethereum should have a real price, others should be null
+      const eth = data.chains.find(c => c.chainId === 1);
+      expect(eth.price).toEqual({ usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' });
+      const polygon = data.chains.find(c => c.chainId === 137);
+      expect(polygon.price).toBeNull();
+    });
   });
 
   describe('GET /chains/:id', () => {
@@ -424,6 +525,19 @@ describe('API Endpoints', () => {
       const data = JSON.parse(response.payload);
       expect(data).toHaveProperty('chainId', 1);
     });
+
+    it('should include price field when known chain', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/chains/1'
+      });
+
+      expect(response.statusCode).toBe(200);
+      const data = JSON.parse(response.payload);
+      expect(data).toHaveProperty('price');
+      expect(data.price).toEqual({ usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' });
+    });
+
   });
 
   describe('GET /search', () => {
@@ -847,6 +961,65 @@ describe('API Endpoints', () => {
       expect(response.statusCode).toBe(404);
       const data = JSON.parse(response.payload);
       expect(data).toHaveProperty('error', 'No monitoring results found for this chain');
+    });
+
+    it('should include clients summary in the response', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/rpc-monitor/1'
+      });
+
+      expect(response.statusCode).toBe(200);
+      const data = JSON.parse(response.payload);
+      expect(data).toHaveProperty('clients');
+      expect(Array.isArray(data.clients)).toBe(true);
+      expect(data.clients[0]).toMatchObject({ name: 'geth', repo: 'ethereum/go-ethereum' });
+    });
+  });
+
+  describe('GET /clients', () => {
+    it('returns aggregated clients across all chains', async () => {
+      const response = await app.inject({ method: 'GET', url: '/clients' });
+
+      expect(response.statusCode).toBe(200);
+      const data = JSON.parse(response.payload);
+      expect(data).toHaveProperty('count', 2);
+      expect(data).toHaveProperty('chains');
+      expect(Array.isArray(data.chains)).toBe(true);
+      expect(data.chains[0]).toHaveProperty('clients');
+    });
+  });
+
+  describe('GET /clients/:id', () => {
+    it('returns client summary for a known chain', async () => {
+      const response = await app.inject({ method: 'GET', url: '/clients/1' });
+
+      expect(response.statusCode).toBe(200);
+      const data = JSON.parse(response.payload);
+      expect(data).toMatchObject({
+        chainId: 1,
+        chainName: 'Ethereum Mainnet',
+        totalNodes: 2
+      });
+      expect(data.clients[0]).toMatchObject({
+        name: 'geth',
+        repo: 'ethereum/go-ethereum',
+        nodeCount: 2
+      });
+    });
+
+    it('returns 400 for invalid chain ID', async () => {
+      const response = await app.inject({ method: 'GET', url: '/clients/not-a-number' });
+
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.payload)).toHaveProperty('error', 'Invalid chain ID');
+    });
+
+    it('returns 404 when no client data exists for chain', async () => {
+      const response = await app.inject({ method: 'GET', url: '/clients/999999' });
+
+      expect(response.statusCode).toBe(404);
+      expect(JSON.parse(response.payload)).toHaveProperty('error', 'No client data found for this chain');
     });
   });
 
