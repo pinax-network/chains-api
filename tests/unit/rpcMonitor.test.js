@@ -636,8 +636,14 @@ describe('RPC Monitor', () => {
       // URL-keyed mock: chains test concurrently so sequential mocks would interleave
       vi.mocked(jsonRpcCall).mockImplementation(async (url, method) => {
         if (method === 'web3_clientVersion') {
-          if (url.includes('eth.rpc.com')) return 'Geth/v1.14.5';
-          if (url.includes('polygon.rpc.com')) return 'bor/v1.3.0';
+          let hostname = '';
+          try {
+            hostname = new URL(url).hostname;
+          } catch {
+            hostname = '';
+          }
+          if (hostname === 'eth.rpc.com') return 'Geth/v1.14.5';
+          if (hostname === 'polygon.rpc.com') return 'bor/v1.3.0';
         }
         return '0x1';
       });
