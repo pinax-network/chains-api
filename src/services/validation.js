@@ -304,6 +304,166 @@ function validateRule10L2BeatUnknownChains(errors) {
   }
 }
 
+const RPC_BLOCK_HEIGHT_DRIFT_THRESHOLD = 100;
+
+function validateRule12RpcBlockHeightDrift(chain, errors) {
+  const results = cachedData.rpcHealth?.[chain.chainId];
+  if (!Array.isArray(results) || results.length < 2) return;
+
+  const heights = results
+    .filter(r => r.ok && typeof r.blockHeight === 'number')
+    .map(r => ({ url: r.url, blockHeight: r.blockHeight }));
+
+  if (heights.length < 2) return;
+
+  let min = heights[0];
+  let max = heights[0];
+  for (const h of heights) {
+    if (h.blockHeight < min.blockHeight) min = h;
+    if (h.blockHeight > max.blockHeight) max = h;
+  }
+
+  const drift = max.blockHeight - min.blockHeight;
+  if (drift > RPC_BLOCK_HEIGHT_DRIFT_THRESHOLD) {
+    errors.push({
+      rule: 12,
+      chainId: chain.chainId,
+      chainName: chain.name,
+      type: 'rpc_block_height_drift',
+      message: `Chain ${chain.chainId} (${chain.name}) has working RPC endpoints reporting block heights ${drift} blocks apart — likely a stuck or forked endpoint`,
+      drift,
+      threshold: RPC_BLOCK_HEIGHT_DRIFT_THRESHOLD,
+      laggingEndpoint: min,
+      leadingEndpoint: max
+    });
+  }
+}
+
+function normalizeChainName(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\bmainnet\b/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+function validateRule13NameDisagreement(chain, errors) {
+  if (!chain.theGraph?.fullName) return;
+  if (!Array.isArray(chain.sources) || !chain.sources.includes('chains')) return;
+
+  const chainsName = chain.name;
+  const theGraphName = chain.theGraph.fullName;
+
+  const a = normalizeChainName(chainsName);
+  const b = normalizeChainName(theGraphName);
+
+  if (!a || !b || a === b) return;
+  if (a.includes(b) || b.includes(a)) return;
+
+  errors.push({
+    rule: 13,
+    chainId: chain.chainId,
+    chainName: chain.name,
+    type: 'name_disagreement',
+    message: `Chain ${chain.chainId}: chains.json name "${chainsName}" disagrees with theGraph fullName "${theGraphName}"`,
+    chainsName,
+    theGraphName
+  });
+}
+
+function validateRule14NativeCurrencyMismatch(chain, errors) {
+  const chainsSymbol = chain.nativeCurrency?.symbol;
+  const theGraphSymbol = chain.theGraph?.nativeToken;
+
+  if (!chainsSymbol || !theGraphSymbol) return;
+  if (chainsSymbol.toUpperCase() === theGraphSymbol.toUpperCase()) return;
+
+  errors.push({
+    rule: 14,
+    chainId: chain.chainId,
+    chainName: chain.name,
+    type: 'native_currency_mismatch',
+    message: `Chain ${chain.chainId} (${chain.name}): native currency symbol mismatch — chains.json="${chainsSymbol}", theGraph="${theGraphSymbol}"`,
+    chainsSymbol,
+    theGraphSymbol
+  });
+}
+
+function validateRule15Slip44NativeSymbolMismatch(chain, errors) {
+  const slip44Symbol = chain.slip44Info?.symbol;
+  const nativeSymbol = chain.nativeCurrency?.symbol;
+
+  if (!slip44Symbol || !nativeSymbol) return;
+  if (slip44Symbol.toUpperCase() === nativeSymbol.toUpperCase()) return;
+
+  errors.push({
+    rule: 15,
+    chainId: chain.chainId,
+    chainName: chain.name,
+    type: 'slip44_native_symbol_mismatch',
+    message: `Chain ${chain.chainId} (${chain.name}): SLIP-44 symbol "${slip44Symbol}" disagrees with native currency symbol "${nativeSymbol}"`,
+    slip44Symbol,
+    nativeSymbol,
+    slip44CoinType: chain.slip44Info?.coinType
+  });
+}
+
+function extractRpcUrls(rpcArray) {
+  if (!Array.isArray(rpcArray)) return new Set();
+  return new Set(
+    rpcArray
+      .map(r => (typeof r === 'string' ? r : r?.url))
+      .filter(url => typeof url === 'string' && url.length > 0)
+  );
+}
+
+function rawSourceRpcUrls(chainId, source) {
+  const raw = source === 'chains' ? cachedData.chains : cachedData.chainlist;
+  if (!Array.isArray(raw)) return new Set();
+  const entry = raw.find(c => c?.chainId === chainId);
+  return extractRpcUrls(entry?.rpc);
+}
+
+function isUrlHealthy(chainId, url) {
+  const results = cachedData.rpcHealth?.[chainId];
+  if (!Array.isArray(results)) return false;
+  return results.some(r => r.url === url && r.ok);
+}
+
+function validateRule16RpcUrlInOneSourceOnly(chain, errors) {
+  if (!Array.isArray(chain.sources)) return;
+  if (!chain.sources.includes('chainlist') || !chain.sources.includes('chains')) return;
+
+  const chainlistUrls = rawSourceRpcUrls(chain.chainId, 'chainlist');
+  const chainsUrls = rawSourceRpcUrls(chain.chainId, 'chains');
+  if (chainlistUrls.size === 0 || chainsUrls.size === 0) return;
+
+  const onlyInChainlistHealthy = [];
+  for (const url of chainlistUrls) {
+    if (!chainsUrls.has(url) && isUrlHealthy(chain.chainId, url)) {
+      onlyInChainlistHealthy.push(url);
+    }
+  }
+  const onlyInChainsHealthy = [];
+  for (const url of chainsUrls) {
+    if (!chainlistUrls.has(url) && isUrlHealthy(chain.chainId, url)) {
+      onlyInChainsHealthy.push(url);
+    }
+  }
+
+  if (onlyInChainlistHealthy.length === 0 && onlyInChainsHealthy.length === 0) return;
+
+  errors.push({
+    rule: 16,
+    chainId: chain.chainId,
+    chainName: chain.name,
+    type: 'rpc_url_in_one_source_only',
+    message: `Chain ${chain.chainId} (${chain.name}) has healthy RPC URLs present in one source only — the other source may need updating`,
+    onlyInChainlistHealthy,
+    onlyInChainsHealthy
+  });
+}
+
 function validateChain(chain, errors) {
   validateRule1RelationConflicts(chain, errors);
   validateRule2Slip44Mismatch(chain, errors);
@@ -315,6 +475,11 @@ function validateChain(chain, errors) {
   validateRule8L2BeatHostChainNoRelation(chain, errors);
   validateRule9L2BeatCategoryNameMismatch(chain, errors);
   validateRule11L2BeatStageZeroHighTvs(chain, errors);
+  validateRule12RpcBlockHeightDrift(chain, errors);
+  validateRule13NameDisagreement(chain, errors);
+  validateRule14NativeCurrencyMismatch(chain, errors);
+  validateRule15Slip44NativeSymbolMismatch(chain, errors);
+  validateRule16RpcUrlInOneSourceOnly(chain, errors);
 }
 
 export function validateChainData() {
@@ -345,7 +510,12 @@ export function validateChainData() {
     rule8_l2beat_hostchain_no_relation: errors.filter(e => e.rule === 8),
     rule9_l2beat_category_name_mismatch: errors.filter(e => e.rule === 9),
     rule10_l2beat_unknown_chains: errors.filter(e => e.rule === 10),
-    rule11_l2beat_stage_zero_high_tvs: errors.filter(e => e.rule === 11)
+    rule11_l2beat_stage_zero_high_tvs: errors.filter(e => e.rule === 11),
+    rule12_rpc_block_height_drift: errors.filter(e => e.rule === 12),
+    rule13_name_disagreement: errors.filter(e => e.rule === 13),
+    rule14_native_currency_mismatch: errors.filter(e => e.rule === 14),
+    rule15_slip44_native_symbol_mismatch: errors.filter(e => e.rule === 15),
+    rule16_rpc_url_in_one_source_only: errors.filter(e => e.rule === 16)
   };
 
   return {
@@ -362,7 +532,12 @@ export function validateChainData() {
       rule8: errorsByRule.rule8_l2beat_hostchain_no_relation.length,
       rule9: errorsByRule.rule9_l2beat_category_name_mismatch.length,
       rule10: errorsByRule.rule10_l2beat_unknown_chains.length,
-      rule11: errorsByRule.rule11_l2beat_stage_zero_high_tvs.length
+      rule11: errorsByRule.rule11_l2beat_stage_zero_high_tvs.length,
+      rule12: errorsByRule.rule12_rpc_block_height_drift.length,
+      rule13: errorsByRule.rule13_name_disagreement.length,
+      rule14: errorsByRule.rule14_native_currency_mismatch.length,
+      rule15: errorsByRule.rule15_slip44_native_symbol_mismatch.length,
+      rule16: errorsByRule.rule16_rpc_url_in_one_source_only.length
     },
     allErrors: errors
   };
