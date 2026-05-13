@@ -1,7 +1,6 @@
 import { getAllEndpoints } from './dataService.js';
 import { MAX_ENDPOINTS_PER_CHAIN, RPC_CHECK_CONCURRENCY } from './config.js';
 import { jsonRpcCall } from './rpcUtil.js';
-import { parseClientVersion } from './clientParser.js';
 
 // Store monitoring results in memory
 let monitoringResults = {
@@ -63,7 +62,6 @@ async function testRpcEndpoint(url) {
     url: url,
     status: 'unknown',
     clientVersion: null,
-    client: null,
     blockNumber: null,
     latencyMs: null,
     error: null,
@@ -77,7 +75,6 @@ async function testRpcEndpoint(url) {
     try {
       const clientVersion = await jsonRpcCall(url, 'web3_clientVersion');
       result.clientVersion = clientVersion;
-      result.client = parseClientVersion(clientVersion);
     } catch (clientVersionError) {
       console.debug(`web3_clientVersion not supported for ${url}: ${clientVersionError.message}`);
       result.clientVersion = 'unavailable';
@@ -233,111 +230,6 @@ export async function startMonitoring() {
  */
 export function getMonitoringResults() {
   return monitoringResults;
-}
-
-/**
- * Aggregate parsed client software across working RPC endpoints.
- *
- * When `chainId` is provided, returns a single summary object for that chain
- * (or null if no monitoring data exists for it). When omitted, returns an
- * array of summaries — one per chain with at least one working endpoint that
- * reported a parseable `client`.
- *
- * Each summary:
- *   {
- *     chainId, chainName,
- *     totalNodes,              // working endpoints considered
- *     unknownNodes,            // working endpoints whose client didn't parse
- *     clients: [
- *       { name, repo, language, website, layer, known,
- *         nodeCount, versions: [{ version, nodeCount }, ...] }
- *     ]
- *   }
- *
- * @param {number} [chainId]
- * @returns {object | object[] | null}
- */
-export function getClientsByChain(chainId) {
-  const working = monitoringResults.results.filter(r => r.status === 'working');
-
-  if (chainId !== undefined) {
-    const chainResults = working.filter(r => r.chainId === chainId);
-    if (chainResults.length === 0) return null;
-    return summarizeChainClients(chainResults);
-  }
-
-  const byChain = new Map();
-  for (const r of working) {
-    if (!byChain.has(r.chainId)) byChain.set(r.chainId, []);
-    byChain.get(r.chainId).push(r);
-  }
-
-  return Array.from(byChain.values())
-    .map(summarizeChainClients)
-    .filter(Boolean);
-}
-
-/**
- * Build a per-chain client summary from a list of endpoint results.
- * Non-working endpoints are ignored. Assumes all entries share the same chainId.
- * Returns null if no working endpoints were supplied.
- */
-export function summarizeChainClients(chainResults) {
-  chainResults = chainResults.filter(r => r.status === 'working');
-  if (chainResults.length === 0) return null;
-  const { chainId, chainName } = chainResults[0];
-  const byClient = new Map();
-  let unknownNodes = 0;
-
-  for (const r of chainResults) {
-    if (!r.client) {
-      unknownNodes++;
-      continue;
-    }
-
-    const key = r.client.name;
-    let bucket = byClient.get(key);
-    if (!bucket) {
-      bucket = {
-        name: r.client.name,
-        repo: r.client.repo,
-        language: r.client.language,
-        website: r.client.website,
-        layer: r.client.layer,
-        known: r.client.known,
-        nodeCount: 0,
-        _versions: new Map()
-      };
-      byClient.set(key, bucket);
-    }
-    bucket.nodeCount++;
-
-    const v = r.client.version ?? 'unknown';
-    bucket._versions.set(v, (bucket._versions.get(v) ?? 0) + 1);
-  }
-
-  const clients = Array.from(byClient.values())
-    .map(c => ({
-      name: c.name,
-      repo: c.repo,
-      language: c.language,
-      website: c.website,
-      layer: c.layer,
-      known: c.known,
-      nodeCount: c.nodeCount,
-      versions: Array.from(c._versions.entries())
-        .map(([version, nodeCount]) => ({ version, nodeCount }))
-        .sort((a, b) => b.nodeCount - a.nodeCount)
-    }))
-    .sort((a, b) => b.nodeCount - a.nodeCount);
-
-  return {
-    chainId,
-    chainName,
-    totalNodes: chainResults.length,
-    unknownNodes,
-    clients
-  };
 }
 
 /**

@@ -10,8 +10,11 @@ import {
   getAllKeywords,
   validateChainData,
   traverseRelations,
+  countChainsByTag,
+  getRpcMonitoringResults,
+  getRpcMonitoringStatus,
 } from './dataService.js';
-import { getMonitoringResults, getMonitoringStatus, getClientsByChain } from './rpcMonitor.js';
+import { getClientsByChain } from './clientsView.js';
 import { getPricesForChains, getPriceForChain } from './priceService.js';
 
 /**
@@ -337,13 +340,9 @@ function handleValidateChains() {
 
 function handleGetStats() {
   const chains = getAllChains();
-  const monitorResults = getMonitoringResults();
+  const monitorResults = getRpcMonitoringResults();
 
-  const totalChains = chains.length;
-  const totalMainnets = chains.filter(c => !c.tags?.includes('Testnet')).length;
-  const totalTestnets = chains.filter(c => c.tags?.includes('Testnet')).length;
-  const totalL2s = chains.filter(c => c.tags?.includes('L2')).length;
-  const totalBeacons = chains.filter(c => c.tags?.includes('Beacon')).length;
+  const { totalChains, totalMainnets, totalTestnets, totalL2s, totalBeacons } = countChainsByTag(chains);
 
   const rpcTested = monitorResults.testedEndpoints;
   const rpcWorking = monitorResults.workingEndpoints;
@@ -373,7 +372,7 @@ function handleTraverseRelations(args) {
     return errorResponse('Invalid chain ID');
   }
 
-  const maxDepth = depth !== undefined ? depth : 2;
+  const maxDepth = depth ?? 2;
   if (typeof maxDepth !== 'number' || maxDepth < 1 || maxDepth > 5) {
     return errorResponse('Invalid depth. Must be between 1 and 5');
   }
@@ -420,8 +419,8 @@ function formatRpcMonitorStatus(status, results) {
 }
 
 function handleGetRpcMonitor() {
-  const results = getMonitoringResults();
-  const status = getMonitoringStatus();
+  const results = getRpcMonitoringResults();
+  const status = getRpcMonitoringStatus();
   return { content: [{ type: 'text', text: formatRpcMonitorStatus(status, results) }] };
 }
 
@@ -431,8 +430,8 @@ function handleGetRpcMonitorById(args) {
     return errorResponse('Invalid chain ID');
   }
 
-  const results = getMonitoringResults();
-  const status = getMonitoringStatus();
+  const results = getRpcMonitoringResults();
+  const status = getRpcMonitoringStatus();
   const chainResults = results.results.filter((r) => r.chainId === chainId);
 
   if (chainResults.length === 0) {
@@ -454,7 +453,7 @@ function handleGetRpcMonitorById(args) {
   ];
   for (const ep of chainResults) {
     const block = ep.blockNumber == null ? '' : ` — block #${ep.blockNumber}`;
-    const latency = ep.latencyMs != null ? ` [${ep.latencyMs}ms]` : '';
+    const latency = ep.latencyMs == null ? '' : ` [${ep.latencyMs}ms]`;
     const client = ep.clientVersion && ep.clientVersion !== 'unavailable' ? ` (${ep.clientVersion})` : '';
     lines.push(
       `- **${ep.status}** ${ep.url}${block}${latency}${client}`,
@@ -466,7 +465,7 @@ function handleGetRpcMonitorById(args) {
 
 function handleGetClients(args) {
   if (args.chainId === undefined) {
-    const results = getMonitoringResults();
+    const results = getRpcMonitoringResults();
     const chains = getClientsByChain();
     return textResponse({
       lastUpdated: results.lastUpdated,
@@ -522,3 +521,4 @@ export async function handleToolCall(name, args) {
     return errorResponse('Internal error', error.message);
   }
 }
+

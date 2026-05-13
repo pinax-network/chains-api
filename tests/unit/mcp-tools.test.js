@@ -36,22 +36,23 @@ vi.mock('../../dataService.js', () => ({
   })),
   validateChainData: vi.fn(() => ({ totalErrors: 0, errorsByRule: {}, summary: {}, allErrors: [] })),
   traverseRelations: vi.fn(() => null),
-}));
-
-// Mock rpcMonitor before importing
-vi.mock('../../rpcMonitor.js', () => ({
-  getMonitoringResults: vi.fn(() => ({
+  getRpcMonitoringResults: vi.fn(() => ({
     lastUpdated: '2024-01-01T00:00:00.000Z',
     totalEndpoints: 0,
     testedEndpoints: 0,
     workingEndpoints: 0,
+    failedEndpoints: 0,
     results: [],
   })),
-  getMonitoringStatus: vi.fn(() => ({
+  getRpcMonitoringStatus: vi.fn(() => ({
     isMonitoring: false,
     lastUpdated: null,
   })),
+}));
+
+vi.mock('../../clientsView.js', () => ({
   getClientsByChain: vi.fn(() => null),
+  summarizeChainClients: vi.fn(() => null),
 }));
 
 // Mock priceService before importing
@@ -67,7 +68,7 @@ vi.mock('../../priceService.js', () => ({
 }));
 
 import * as dataService from '../../dataService.js';
-import * as rpcMonitor from '../../rpcMonitor.js';
+import * as clientsView from '../../clientsView.js';
 import * as priceService from '../../priceService.js';
 import { getToolDefinitions, handleToolCall } from '../../mcp-tools.js';
 
@@ -109,14 +110,14 @@ describe('MCP Tools - Shared Module', () => {
     vi.mocked(dataService.validateChainData).mockReturnValue({
       totalErrors: 0, errorsByRule: {}, summary: {}, allErrors: [],
     });
-    vi.mocked(rpcMonitor.getMonitoringResults).mockReturnValue({
+    vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
       lastUpdated: '2024-01-01T00:00:00.000Z',
       totalEndpoints: 0,
       testedEndpoints: 0,
       workingEndpoints: 0,
       results: [],
     });
-    vi.mocked(rpcMonitor.getMonitoringStatus).mockReturnValue({
+    vi.mocked(dataService.getRpcMonitoringStatus).mockReturnValue({
       isMonitoring: false,
       lastUpdated: null,
     });
@@ -561,7 +562,7 @@ describe('MCP Tools - Shared Module', () => {
 
   describe('handleToolCall - get_rpc_monitor', () => {
     it('should return combined monitoring results and status', async () => {
-      vi.mocked(rpcMonitor.getMonitoringResults).mockReturnValue({
+      vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
         lastUpdated: '2024-01-01T00:00:00.000Z',
         totalEndpoints: 100,
         testedEndpoints: 50,
@@ -571,7 +572,7 @@ describe('MCP Tools - Shared Module', () => {
           { chainId: 137, chainName: 'Polygon', url: 'https://polygon.rpc', status: 'working' },
         ],
       });
-      vi.mocked(rpcMonitor.getMonitoringStatus).mockReturnValue({
+      vi.mocked(dataService.getRpcMonitoringStatus).mockReturnValue({
         isMonitoring: true,
         lastUpdated: '2024-01-01T00:00:00.000Z',
       });
@@ -590,7 +591,7 @@ describe('MCP Tools - Shared Module', () => {
 
   describe('handleToolCall - get_rpc_monitor_by_id', () => {
     it('should return monitoring results for specific chain', async () => {
-      vi.mocked(rpcMonitor.getMonitoringResults).mockReturnValue({
+      vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
         lastUpdated: '2024-01-01T00:00:00.000Z',
         totalEndpoints: 10,
         testedEndpoints: 5,
@@ -625,7 +626,7 @@ describe('MCP Tools - Shared Module', () => {
     });
 
     it('should return error when no results for chain', async () => {
-      vi.mocked(rpcMonitor.getMonitoringResults).mockReturnValue({
+      vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
         lastUpdated: null, totalEndpoints: 0, testedEndpoints: 0,
         workingEndpoints: 0, results: [],
       });
@@ -644,7 +645,7 @@ describe('MCP Tools - Shared Module', () => {
         { chainId: 137, name: 'Polygon', tags: ['L2'] },
         { chainId: 100, name: 'Gnosis Beacon', tags: ['Beacon'] },
       ]);
-      vi.mocked(rpcMonitor.getMonitoringResults).mockReturnValue({
+      vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
         lastUpdated: '2024-01-01T00:00:00.000Z',
         totalEndpoints: 100,
         testedEndpoints: 50,
@@ -660,7 +661,7 @@ describe('MCP Tools - Shared Module', () => {
       expect(data.totalTestnets).toBe(1);
       expect(data.totalL2s).toBe(1);
       expect(data.totalBeacons).toBe(1);
-      expect(data.totalMainnets).toBe(3);
+      expect(data.totalMainnets).toBe(1);
       expect(data.rpc.working).toBe(40);
       expect(data.rpc.failed).toBe(10);
       expect(data.rpc.healthPercent).toBe(80);
@@ -668,7 +669,7 @@ describe('MCP Tools - Shared Module', () => {
 
     it('should return null healthPercent when no endpoints tested', async () => {
       vi.mocked(dataService.getAllChains).mockReturnValue([]);
-      vi.mocked(rpcMonitor.getMonitoringResults).mockReturnValue({
+      vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
         lastUpdated: null,
         totalEndpoints: 0,
         testedEndpoints: 0,
@@ -768,7 +769,7 @@ describe('MCP Tools - Shared Module', () => {
 
   describe('get_clients', () => {
     it('returns aggregated clients across all chains when chainId omitted', async () => {
-      vi.mocked(rpcMonitor.getClientsByChain).mockImplementation((chainId) => {
+      vi.mocked(clientsView.getClientsByChain).mockImplementation((chainId) => {
         if (chainId === undefined) {
           return [
             {
@@ -791,7 +792,7 @@ describe('MCP Tools - Shared Module', () => {
     });
 
     it('returns summary for a specific chain', async () => {
-      vi.mocked(rpcMonitor.getClientsByChain).mockReturnValue({
+      vi.mocked(clientsView.getClientsByChain).mockReturnValue({
         chainId: 1,
         chainName: 'Ethereum',
         totalNodes: 1,
@@ -813,7 +814,7 @@ describe('MCP Tools - Shared Module', () => {
     });
 
     it('returns error when no client data exists for chain', async () => {
-      vi.mocked(rpcMonitor.getClientsByChain).mockReturnValue(null);
+      vi.mocked(clientsView.getClientsByChain).mockReturnValue(null);
 
       const result = await handleToolCall('get_clients', { chainId: 99999 });
       expect(result.isError).toBe(true);
@@ -843,3 +844,4 @@ describe('MCP Tools - Shared Module', () => {
     });
   });
 });
+

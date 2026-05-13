@@ -223,7 +223,7 @@ async function refreshDataWithGuard(options = {}) {
     const { data, loadedSourceCount } = await fetchAndBuildData();
 
     if (requireAtLeastOneSource && loadedSourceCount === 0) {
-      throw new Error('All data sources failed during background refresh');
+      throw new Error('All data sources failed during data refresh');
     }
 
     applyDataToCache(data);
@@ -851,7 +851,7 @@ export function indexData(theGraph, chainlist, chains, slip44) {
  * Load and cache all data sources
  */
 export async function loadData() {
-  return refreshDataWithGuard();
+  return refreshDataWithGuard({ requireAtLeastOneSource: true });
 }
 
 /**
@@ -911,6 +911,46 @@ export async function initializeDataOnStartup(options = {}) {
  */
 export function getCachedData() {
   return cachedData;
+}
+
+function flattenRpcHealthResults() {
+  return Object.entries(cachedData.rpcHealth || {}).flatMap(([chainId, results]) => {
+    const numericChainId = Number.parseInt(chainId, 10);
+    const chainName = cachedData.indexed?.byChainId?.[numericChainId]?.name ?? `Chain ${chainId}`;
+
+    return (Array.isArray(results) ? results : []).map((result) => ({
+      chainId: numericChainId,
+      chainName,
+      url: result.url,
+      status: result.ok ? 'working' : 'failed',
+      clientVersion: result.clientVersion ?? null,
+      blockNumber: result.blockHeight ?? null,
+      latencyMs: result.latencyMs ?? null,
+      error: result.error ?? null
+    }));
+  });
+}
+
+export function getRpcMonitoringResults() {
+  const results = flattenRpcHealthResults();
+  const workingEndpoints = results.filter(result => result.status === 'working').length;
+  const failedEndpoints = results.length - workingEndpoints;
+
+  return {
+    lastUpdated: cachedData.lastRpcCheck,
+    totalEndpoints: results.length,
+    testedEndpoints: results.length,
+    workingEndpoints,
+    failedEndpoints,
+    results
+  };
+}
+
+export function getRpcMonitoringStatus() {
+  return {
+    isMonitoring: rpcCheckInProgress,
+    lastUpdated: cachedData.lastRpcCheck
+  };
 }
 
 /**
@@ -1030,6 +1070,33 @@ export function getAllChains() {
   
   // Transform all chains using the helper function
   return cachedData.indexed.all.map(transformChain);
+}
+
+/**
+ * Count chains by tag categories
+ * @param {Array} chains - Array of chain objects
+ * @returns {{ totalChains: number, totalMainnets: number, totalTestnets: number, totalL2s: number, totalBeacons: number }}
+ */
+export function countChainsByTag(chains) {
+  const totalChains = chains.length;
+  let totalTestnets = 0;
+  let totalL2s = 0;
+  let totalBeacons = 0;
+  let totalMainnets = 0;
+
+  for (const chain of chains) {
+    const tags = chain.tags || [];
+    const isTestnet = tags.includes('Testnet');
+    const isL2 = tags.includes('L2');
+    const isBeacon = tags.includes('Beacon');
+
+    if (isTestnet) totalTestnets += 1;
+    if (isL2) totalL2s += 1;
+    if (isBeacon) totalBeacons += 1;
+    if (!isTestnet && !isL2 && !isBeacon) totalMainnets += 1;
+  }
+
+  return { totalChains, totalMainnets, totalTestnets, totalL2s, totalBeacons };
 }
 
 /**
@@ -1289,6 +1356,31 @@ export function getRelationsById(chainId) {
  * @param {number} maxDepth - Maximum traversal depth (default: 2)
  * @returns {Object|null} Traversal result with nodes and edges, or null if chain not found
  */
+function collectRelationEdges(chain, chainId, depth, visited, edges, queue, seenEdges) {
+  const relations = chain.relations || [];
+  for (const rel of relations) {
+    if (rel.chainId === undefined) continue;
+
+    // Deduplicate bidirectional edges (A→B and B→A with same kind) using O(1) Set lookup
+    const a = Math.min(chainId, rel.chainId);
+    const b = Math.max(chainId, rel.chainId);
+    const edgeKey = `${a}-${b}-${rel.kind}`;
+    if (!seenEdges.has(edgeKey)) {
+      seenEdges.add(edgeKey);
+      edges.push({
+        from: chainId,
+        to: rel.chainId,
+        kind: rel.kind,
+        source: rel.source
+      });
+    }
+
+    if (!visited.has(rel.chainId)) {
+      queue.push({ chainId: rel.chainId, depth: depth + 1 });
+    }
+  }
+}
+
 export function traverseRelations(startChainId, maxDepth = 2) {
   if (!cachedData.indexed) return null;
 
@@ -1296,6 +1388,7 @@ export function traverseRelations(startChainId, maxDepth = 2) {
   if (!startChain) return null;
 
   const visited = new Set();
+  const seenEdges = new Set();
   const queue = [{ chainId: startChainId, depth: 0 }];
   const nodes = [];
   const edges = [];
@@ -1315,22 +1408,8 @@ export function traverseRelations(startChainId, maxDepth = 2) {
       depth
     });
 
-    if (depth >= maxDepth) continue;
-
-    const relations = chain.relations || [];
-    for (const rel of relations) {
-      if (rel.chainId === undefined) continue;
-
-      edges.push({
-        from: chainId,
-        to: rel.chainId,
-        kind: rel.kind,
-        source: rel.source
-      });
-
-      if (!visited.has(rel.chainId)) {
-        queue.push({ chainId: rel.chainId, depth: depth + 1 });
-      }
+    if (depth < maxDepth) {
+      collectRelationEdges(chain, chainId, depth, visited, edges, queue, seenEdges);
     }
   }
 
@@ -1800,3 +1879,6 @@ export function validateChainData() {
     allErrors: errors
   };
 }
+
+
+
