@@ -347,6 +347,15 @@ function normalizeChainName(name) {
     .trim();
 }
 
+/**
+ * Heuristic check — known false positives and false negatives:
+ *  - "BNB" / "BNB Smart Chain"  → suppressed (substring relationship)
+ *  - "Polygon" / "Matic Network" → flagged correctly
+ *  - "Optimism" / "OP Mainnet"   → suppressed (substring after normalization)
+ *  - Single-letter typos in long names may slip through (substring still matches)
+ * Treat results as advisory: investigate, don't fail builds on rule-13 hits.
+ * Levenshtein-based variant deferred until we see real production false-rates.
+ */
 function validateRule13NameDisagreement(chain, errors) {
   if (!chain.theGraph?.fullName) return;
   if (!Array.isArray(chain.sources) || !chain.sources.includes('chains')) return;
@@ -365,6 +374,7 @@ function validateRule13NameDisagreement(chain, errors) {
     chainId: chain.chainId,
     chainName: chain.name,
     type: 'name_disagreement',
+    severity: 'info', // advisory; the rule is a substring-based heuristic
     message: `Chain ${chain.chainId}: chains.json name "${chainsName}" disagrees with theGraph fullName "${theGraphName}"`,
     chainsName,
     theGraphName

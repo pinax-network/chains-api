@@ -46,6 +46,12 @@ export const SEARCH_RATE_LIMIT_MAX = parseIntEnv('SEARCH_RATE_LIMIT_MAX', 30);
 
 // RPC health check
 export const RPC_CHECK_TIMEOUT_MS = parseIntEnv('RPC_CHECK_TIMEOUT_MS', 8000);
+/**
+ * @deprecated Unused since the unified rolling refresher (services/chainRefresher.js).
+ * The new loop processes one chain per tick; each chain's RPC endpoints are
+ * checked in parallel inside that chain's job. There is no global concurrency
+ * cap. Kept for backwards-compatible env parsing; safe to remove in v2.
+ */
 export const RPC_CHECK_CONCURRENCY = parseIntEnv('RPC_CHECK_CONCURRENCY', 8);
 export const MAX_ENDPOINTS_PER_CHAIN = parseIntEnv('MAX_ENDPOINTS_PER_CHAIN', 5);
 
@@ -74,7 +80,13 @@ export const DATA_SOURCE_L2BEAT_API = parseStringEnv(
   'https://l2beat.com/api/scaling-summary'
 );
 export const L2BEAT_FETCH_TIMEOUT_MS = parseIntEnv('L2BEAT_FETCH_TIMEOUT_MS', 10000);
-export const L2BEAT_REFRESH_INTERVAL_MS = parseIntEnv('L2BEAT_REFRESH_INTERVAL_MS', 300000); // 5 min
+/**
+ * @deprecated Cadence is now driven by the unified rolling refresher
+ * (CHAIN_REFRESHER_TICK_MS × queue length). Kept so /scaling/status can keep
+ * exposing the value as a hint to consumers, but no longer used for
+ * scheduling. Safe to remove in v2 once consumers migrate to /refresher.
+ */
+export const L2BEAT_REFRESH_INTERVAL_MS = parseIntEnv('L2BEAT_REFRESH_INTERVAL_MS', 300000);
 
 // Disk cache
 export const DATA_CACHE_ENABLED = parseBooleanEnv('DATA_CACHE_ENABLED', true);

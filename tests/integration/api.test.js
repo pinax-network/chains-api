@@ -320,6 +320,55 @@ describe('API Endpoints', () => {
       expect(data).toHaveProperty('lastUpdated');
       expect(data).toHaveProperty('totalChains');
     });
+
+    it('exposes per-source freshness and per-refresher status', async () => {
+      const response = await app.inject({ method: 'GET', url: '/health' });
+      const data = JSON.parse(response.payload);
+
+      expect(data.sources).toBeDefined();
+      for (const source of ['theGraph', 'chainlist', 'chains', 'slip44', 'l2beat']) {
+        expect(data.sources[source]).toHaveProperty('loaded');
+        expect(data.sources[source]).toHaveProperty('ageSeconds');
+      }
+
+      expect(data.refreshers).toBeDefined();
+      expect(data.refreshers.rpc).toHaveProperty('isRunning');
+      expect(data.refreshers.l2beat).toHaveProperty('lastRefreshAt');
+      expect(data.refreshers.l2beat).toHaveProperty('intervalMs');
+    });
+  });
+
+  describe('GET /refresher', () => {
+    it('returns the unified refresher status block', async () => {
+      const response = await app.inject({ method: 'GET', url: '/refresher' });
+      expect(response.statusCode).toBe(200);
+      const data = JSON.parse(response.payload);
+
+      expect(data).toHaveProperty('tickIntervalMs');
+      expect(data).toHaveProperty('isTickInFlight');
+      expect(data).toHaveProperty('queueDepth');
+      expect(data).toHaveProperty('sweep');
+      expect(data.sweep).toHaveProperty('sweepNumber');
+      expect(data).toHaveProperty('l2beat');
+      expect(data).toHaveProperty('rpc');
+    });
+  });
+
+  describe('GET /metrics', () => {
+    it('returns Prometheus exposition format with text/plain content type', async () => {
+      const response = await app.inject({ method: 'GET', url: '/metrics' });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toMatch(/text\/plain/);
+      expect(response.body).toContain('# HELP chains_api_chains_total');
+      expect(response.body).toContain('# TYPE chains_api_chains_total gauge');
+    });
+
+    it('includes a source-loaded gauge for each of the 5 sources', async () => {
+      const response = await app.inject({ method: 'GET', url: '/metrics' });
+      for (const source of ['theGraph', 'chainlist', 'chains', 'slip44', 'l2beat']) {
+        expect(response.body).toContain(`chains_api_source_loaded{source="${source}"}`);
+      }
+    });
   });
 
   describe('GET /chains', () => {

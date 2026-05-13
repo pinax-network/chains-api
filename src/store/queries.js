@@ -39,9 +39,38 @@ export function getChainById(chainId) {
   return transformChain(getChainByIdRaw(chainId));
 }
 
+// Memoize getAllChains() so /chains, /scaling, /stats, etc. can hit the same
+// transformed array within one data version without re-running transformChain
+// over every entry. Keyed by cachedData.lastUpdated — invalidated automatically
+// on loadData(); also invalidated when the cache is hot-merged (e.g.
+// indexL2BeatSource adds fields without bumping lastUpdated).
+let allChainsCache = { lastUpdated: null, lastL2BeatFetchedAt: null, value: null };
+
+function invalidateAllChainsCacheIfStale() {
+  const current = {
+    lastUpdated: cachedData.lastUpdated,
+    lastL2BeatFetchedAt: cachedData.l2beat?.fetchedAt ?? null
+  };
+  if (
+    allChainsCache.lastUpdated !== current.lastUpdated ||
+    allChainsCache.lastL2BeatFetchedAt !== current.lastL2BeatFetchedAt
+  ) {
+    allChainsCache = { ...current, value: null };
+  }
+}
+
 export function getAllChains() {
   if (!cachedData.indexed) return [];
-  return cachedData.indexed.all.map(transformChain);
+  invalidateAllChainsCacheIfStale();
+  if (allChainsCache.value === null) {
+    allChainsCache.value = cachedData.indexed.all.map(transformChain);
+  }
+  return allChainsCache.value;
+}
+
+// Test-only helper.
+export function _resetGetAllChainsCacheForTests() {
+  allChainsCache = { lastUpdated: null, lastL2BeatFetchedAt: null, value: null };
 }
 
 export function searchChains(query) {

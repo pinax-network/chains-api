@@ -12,6 +12,7 @@ import express from 'express';
 import { createRequire } from 'node:module';
 import { initializeDataOnStartup, getCachedData, startRpcHealthCheck } from './dataService.js';
 import { getToolDefinitions, handleToolCall } from './mcp-tools.js';
+import { logger } from './src/util/logger.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('./package.json');
@@ -73,7 +74,7 @@ const mcpPostHandler = async (req, res) => {
   const sessionId = req.headers['mcp-session-id'];
 
   if (sessionId) {
-    console.log(`Received MCP request for session: ${sessionId}`);
+    logger.info({ sessionId }, 'Received MCP request');
   }
 
   try {
@@ -87,7 +88,7 @@ const mcpPostHandler = async (req, res) => {
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sessionId) => {
-          console.log(`Session initialized with ID: ${sessionId}`);
+          logger.info({ sessionId }, 'MCP session initialized');
           transports[sessionId] = transport;
         },
       });
@@ -96,7 +97,7 @@ const mcpPostHandler = async (req, res) => {
       transport.onclose = () => {
         const sid = transport.sessionId;
         if (sid && transports[sid]) {
-          console.log(`Transport closed for session ${sid}`);
+          logger.info({ sessionId: sid }, 'MCP transport closed');
           delete transports[sid];
         }
       };
@@ -122,7 +123,7 @@ const mcpPostHandler = async (req, res) => {
     // Handle request with existing transport
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
-    console.error('Error handling MCP request:', error);
+    logger.error({ err: error.message || error }, 'Error handling MCP request');
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: '2.0',
@@ -145,13 +146,13 @@ const mcpDeleteHandler = async (req, res) => {
     return;
   }
 
-  console.log(`Received session termination request for session ${sessionId}`);
+  logger.info({ sessionId }, 'Received MCP session termination request');
 
   try {
     const transport = transports[sessionId];
     await transport.handleRequest(req, res);
   } catch (error) {
-    console.error('Error handling session termination:', error);
+    logger.error({ err: error.message || error }, 'Error handling MCP session termination');
     if (!res.headersSent) {
       res.status(500).send('Error processing session termination');
     }
@@ -192,33 +193,36 @@ app.get('/', (req, res) => {
 
 // Start server
 const server = app.listen(MCP_PORT, MCP_HOST, () => {
-  console.log(`Chains API MCP HTTP Server listening on http://${MCP_HOST}:${MCP_PORT}`);
-  console.log(`MCP endpoint: http://${MCP_HOST}:${MCP_PORT}/mcp`);
-  console.log(`Health check: http://${MCP_HOST}:${MCP_PORT}/health`);
+  logger.info(
+    {
+      url: `http://${MCP_HOST}:${MCP_PORT}`,
+      mcpEndpoint: `http://${MCP_HOST}:${MCP_PORT}/mcp`,
+      healthEndpoint: `http://${MCP_HOST}:${MCP_PORT}/health`
+    },
+    'Chains API MCP HTTP Server listening'
+  );
 });
 
-// Handle server startup errors
 server.on('error', (error) => {
-  console.error('Failed to start MCP HTTP server:', error);
+  logger.error({ err: error.message || error }, 'Failed to start MCP HTTP server');
   process.exit(1);
 });
 
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
-  console.log('Shutting down MCP HTTP server...');
+  logger.info('Shutting down MCP HTTP server');
 
-  // Close all active transports
   for (const sessionId in transports) {
     try {
-      console.log(`Closing transport for session ${sessionId}`);
+      logger.info({ sessionId }, 'Closing MCP transport');
       await transports[sessionId].close();
       delete transports[sessionId];
     } catch (error) {
-      console.error(`Error closing transport for session ${sessionId}:`, error);
+      logger.error({ sessionId, err: error.message || error }, 'Error closing MCP transport');
     }
   }
 
-  console.log('Server shutdown complete');
+  logger.info('MCP server shutdown complete');
   process.exit(0);
 });
 

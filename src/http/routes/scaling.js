@@ -12,6 +12,13 @@ import { sendError } from '../util/sendError.js';
  * `l2Beat.dataFreshness` is `'live'`; when only the static snapshot is
  * available it's `'fallback'`. Chains the merge couldn't reach have no
  * `l2Beat` field at all (rather than a synthetic `'unavailable'` marker).
+ *
+ * Known gap: Starknet (CAIP-2 numeric ID 0x534e5f4d41494e = 23448594291968334)
+ * exceeds Number.MAX_SAFE_INTEGER and is omitted from data/l2beat-fallback.json.
+ * The live API can still surface Starknet — and the indexer will accept it as
+ * a key — but precision-sensitive lookups via `parseIntParam(:id)` will not
+ * round-trip its chainId. Switching the codebase to BigInt chainIds is the
+ * proper fix; until then, /scaling/:id is best-effort for that chain.
  */
 export async function scalingRoutes(fastify) {
   fastify.get('/scaling', async () => {

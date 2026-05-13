@@ -116,11 +116,18 @@ export async function buildApp(options = {}) {
   });
 
   fastify.setErrorHandler((error, _request, reply) => {
+    // 4xx: validation errors are safe to surface to clients.
     if (error.validation || error.statusCode === 400) {
       return reply.code(400).send({ error: error.message });
     }
+    // 5xx: log full detail server-side, return generic message to client.
+    // Prevents leaking internal stack/file paths and database queries.
+    const statusCode = error.statusCode || 500;
     fastify.log.error(error);
-    return reply.code(error.statusCode || 500).send({ error: error.message || 'Internal Server Error' });
+    if (statusCode >= 500) {
+      return reply.code(statusCode).send({ error: 'Internal Server Error' });
+    }
+    return reply.code(statusCode).send({ error: error.message || 'Error' });
   });
 
   await fastify.register(cors, {

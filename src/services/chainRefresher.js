@@ -35,7 +35,17 @@ import { fetchL2Beat } from '../sources/l2beat.js';
 const SWEEP_TICK_MS = Number(process.env.CHAIN_REFRESHER_TICK_MS) || 1000;
 
 let queue = [];
-let cursor = { jobIndex: 0, totalJobs: 0, sweepNumber: 0, sweepStartedAt: null };
+let cursor = {
+  jobIndex: 0,
+  totalJobs: 0,
+  sweepNumber: 0,
+  sweepStartedAt: null,
+  // Snapshot of cachedData.lastUpdated at sweep start. Used to detect
+  // inter-job races (loadData() ran between job N and job N+1). The
+  // remaining jobs in the sweep are dropped on detection so a refresh
+  // doesn't write a frankensweep of mixed data versions.
+  sweepDataVersion: null
+};
 let tickTimer = null;
 let tickInFlight = false;
 let lastTickAt = null;
@@ -193,7 +203,8 @@ function onSweepStart() {
     jobIndex: 0,
     totalJobs: queue.length,
     sweepNumber: cursor.sweepNumber + 1,
-    sweepStartedAt: new Date().toISOString()
+    sweepStartedAt: new Date().toISOString(),
+    sweepDataVersion: cachedData.lastUpdated
   };
   rpcState.endpointsCheckedThisSweep = 0;
 }
@@ -220,6 +231,22 @@ export async function tickOnce() {
       queue = buildSweepQueue();
       onSweepStart();
     }
+
+    // Inter-job race guard: if a concurrent loadData() bumped lastUpdated
+    // mid-sweep, the queue references chainIds from the old data version.
+    // Drop the rest of the sweep — the next tick will rebuild from scratch.
+    if (
+      cursor.sweepDataVersion !== null &&
+      cachedData.lastUpdated !== cursor.sweepDataVersion
+    ) {
+      logger.warn(
+        { sweepNumber: cursor.sweepNumber, droppedJobs: queue.length },
+        'Chain refresher sweep aborted: data version changed mid-sweep'
+      );
+      queue = [];
+      return;
+    }
+
     const job = queue.shift();
     cursor.jobIndex++;
     lastTickJobType = job?.type ?? null;
@@ -282,7 +309,7 @@ export function getChainRefresherStatus() {
 export function _resetChainRefresherForTests() {
   stopChainRefresher();
   queue = [];
-  cursor = { jobIndex: 0, totalJobs: 0, sweepNumber: 0, sweepStartedAt: null };
+  cursor = { jobIndex: 0, totalJobs: 0, sweepNumber: 0, sweepStartedAt: null, sweepDataVersion: null };
   tickInFlight = false;
   lastTickAt = null;
   lastTickJobType = null;
