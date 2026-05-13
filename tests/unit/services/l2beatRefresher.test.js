@@ -7,7 +7,13 @@ vi.mock('../../../src/sources/l2beat.js', () => ({
 vi.mock('../../../config.js', () => ({
   L2BEAT_REFRESH_INTERVAL_MS: 60000,
   DATA_SOURCE_L2BEAT_API: 'https://l2beat.test/api/scaling-summary',
-  L2BEAT_FETCH_TIMEOUT_MS: 1000
+  L2BEAT_FETCH_TIMEOUT_MS: 1000,
+  // chainRefresher (which l2beatRefresher now delegates to) transitively
+  // imports rpcUtil.js + fetchUtil.js, which need these env constants.
+  RPC_CHECK_TIMEOUT_MS: 5000,
+  RPC_CHECK_CONCURRENCY: 8,
+  PROXY_URL: '',
+  PROXY_ENABLED: false
 }));
 
 import { fetchL2Beat } from '../../../src/sources/l2beat.js';

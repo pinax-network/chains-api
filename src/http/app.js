@@ -22,6 +22,7 @@ import { rpcMonitorRoutes } from './routes/rpcMonitor.js';
 import { scalingRoutes } from './routes/scaling.js';
 import { adminRoutes } from './routes/admin.js';
 import { metricsRoute } from './routes/metrics.js';
+import { refresherRoute } from './routes/refresher.js';
 import { rootRoute } from './routes/root.js';
 
 function resolveCorsOrigin(value) {
@@ -173,6 +174,7 @@ export async function buildApp(options = {}) {
   await fastify.register(rpcMonitorRoutes);
   await fastify.register(scalingRoutes);
   await fastify.register(metricsRoute);
+  await fastify.register(refresherRoute);
   await fastify.register(rootRoute);
 
   return fastify;
