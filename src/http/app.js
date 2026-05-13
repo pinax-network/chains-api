@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import fastifyStatic from '@fastify/static';
+import ajvErrors from 'ajv-errors';
 import { initializeDataOnStartup, startRpcHealthCheck } from '../../dataService.js';
 import { startL2BeatRefresh } from '../services/l2beatRefresher.js';
 import {
@@ -30,67 +31,35 @@ function resolveCorsOrigin(value) {
   return value.split(',').map(s => s.trim());
 }
 
-// Field-name → user-friendly noun for error messages. Defaults to the field
-// name itself when not listed.
-const FIELD_NOUNS = {
-  id: 'chain ID',
-  coinType: 'coin type',
-  tag: 'tag',
-  q: 'q',
-  depth: 'depth'
-};
-
-function nounFor(field) {
-  return FIELD_NOUNS[field] ?? field;
-}
-
 /**
- * Translate a JSON Schema validation failure into the project's `{ error: ... }`
- * envelope, preserving the wording style of the manual sendError() messages
- * the handlers used to produce before schemas were added.
+ * Map a JSON Schema validation failure into the project's `{ error: ... }`
+ * envelope.
+ *
+ * Preferred path: schemas declare per-keyword messages via `errorMessage`
+ * (ajv-errors). When that's present, ajv emits a synthetic error with
+ * `keyword: 'errorMessage'` and the schema-author's message in `.message`.
+ * For schemas that haven't been migrated yet, fall through to a generic
+ * "Invalid {dataVar}" string. Routes can override on a per-route basis.
  */
 function formatSchemaValidationError(errors, dataVar) {
-  const first = errors[0];
-  const field = (first.instancePath || '').replace(/^\//, '')
-    || first.params?.missingProperty
-    || '';
-  const noun = nounFor(field);
-
-  let detail;
-  switch (first.keyword) {
-    case 'enum':
-      detail = `Invalid ${noun}. Allowed: ${first.params.allowedValues.join(', ')}`;
-      break;
-    case 'required':
-      detail = `Query parameter "${first.params.missingProperty}" is required`;
-      break;
-    case 'maxLength':
-      detail = noun === 'q'
-        ? `Query too long. Max length: ${first.params.limit}`
-        : `${noun} too long. Max length: ${first.params.limit}`;
-      break;
-    case 'minLength':
-      detail = `Query parameter "${field}" is required`;
-      break;
-    case 'pattern':
-    case 'type':
-      // Depth values that look numeric but aren't integers fall here.
-      detail = field === 'depth'
-        ? 'Invalid depth. Must be between 1 and 5'
-        : `Invalid ${noun}`;
-      break;
-    case 'minimum':
-    case 'maximum':
-      detail = `Invalid ${noun}. Must be between ${first.parentSchema?.minimum ?? '?'} and ${first.parentSchema?.maximum ?? '?'}`;
-      break;
-    case 'additionalProperties':
-      detail = `Unknown ${dataVar === 'querystring' ? 'query parameter' : 'field'}: "${first.params.additionalProperty}"`;
-      break;
-    default:
-      detail = first.message || `Invalid ${dataVar}`;
+  // Prefer the route-author's `errorMessage` when present.
+  const authored = errors.find(e => e.keyword === 'errorMessage' && typeof e.message === 'string');
+  if (authored) {
+    const err = new Error(authored.message);
+    err.statusCode = 400;
+    return err;
   }
-
-  const err = new Error(detail);
+  // additionalProperties needs the offending name interpolated; route
+  // authors can't put `${...}` in their schema string, so handle here.
+  const extra = errors.find(e => e.keyword === 'additionalProperties');
+  if (extra) {
+    const where = dataVar === 'querystring' ? 'query parameter' : 'field';
+    const err = new Error(`Unknown ${where}: "${extra.params.additionalProperty}"`);
+    err.statusCode = 400;
+    return err;
+  }
+  const first = errors[0];
+  const err = new Error(first.message || `Invalid ${dataVar}`);
   err.statusCode = 400;
   return err;
 }
@@ -109,9 +78,13 @@ export async function buildApp(options = {}) {
     maxParamLength,
     schemaErrorFormatter: formatSchemaValidationError,
     ajv: {
-      // Default fastify behavior silently strips unknown query params;
-      // disable so additionalProperties:false on schemas actually rejects them.
-      customOptions: { removeAdditional: false, useDefaults: true, coerceTypes: 'array' }
+      customOptions: {
+        removeAdditional: false,
+        useDefaults: true,
+        coerceTypes: 'array',
+        allErrors: true   // required for ajv-errors to inspect all violations
+      },
+      plugins: [ajvErrors]
     }
   });
 

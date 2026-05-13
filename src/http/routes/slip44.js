@@ -18,7 +18,13 @@ export async function slip44Routes(fastify) {
     schema: {
       params: {
         type: 'object',
-        properties: { coinType: { type: 'string', pattern: '^-?\\d+$' } },
+        properties: {
+          coinType: {
+            type: 'string',
+            pattern: '^-?\\d+$',
+            errorMessage: 'Invalid coin type'
+          }
+        },
         required: ['coinType']
       }
     }

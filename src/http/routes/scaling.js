@@ -36,7 +36,13 @@ export async function scalingRoutes(fastify) {
     schema: {
       params: {
         type: 'object',
-        properties: { id: { type: 'string', pattern: '^-?\\d+$' } },
+        properties: {
+          id: {
+            type: 'string',
+            pattern: '^-?\\d+$',
+            errorMessage: 'Invalid chain ID'
+          }
+        },
         required: ['id']
       }
     }

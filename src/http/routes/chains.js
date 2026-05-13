@@ -11,7 +11,11 @@ export async function chainsRoutes(fastify) {
       querystring: {
         type: 'object',
         properties: {
-          tag: { type: 'string', enum: VALID_TAGS }
+          tag: {
+            type: 'string',
+            enum: VALID_TAGS,
+            errorMessage: { enum: `Invalid tag. Allowed: ${VALID_TAGS.join(', ')}` }
+          }
         },
         additionalProperties: false
       }
@@ -29,7 +33,13 @@ export async function chainsRoutes(fastify) {
     schema: {
       params: {
         type: 'object',
-        properties: { id: { type: 'string', pattern: '^-?\\d+$' } },
+        properties: {
+          id: {
+            type: 'string',
+            pattern: '^-?\\d+$',
+            errorMessage: 'Invalid chain ID'
+          }
+        },
         required: ['id']
       }
     }
@@ -48,10 +58,21 @@ export async function chainsRoutes(fastify) {
       querystring: {
         type: 'object',
         properties: {
-          q: { type: 'string', minLength: 1, maxLength: MAX_SEARCH_QUERY_LENGTH }
+          q: {
+            type: 'string',
+            minLength: 1,
+            maxLength: MAX_SEARCH_QUERY_LENGTH,
+            errorMessage: {
+              minLength: 'Query parameter "q" is required',
+              maxLength: `Query too long. Max length: ${MAX_SEARCH_QUERY_LENGTH}`
+            }
+          }
         },
         required: ['q'],
-        additionalProperties: false
+        additionalProperties: false,
+        errorMessage: {
+          required: { q: 'Query parameter "q" is required' }
+        }
       }
     }
   }, async (request) => {

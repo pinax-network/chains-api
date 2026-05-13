@@ -4,7 +4,13 @@ import { sendError } from '../util/sendError.js';
 
 const intIdParam = {
   type: 'object',
-  properties: { id: { type: 'string', pattern: '^-?\\d+$' } },
+  properties: {
+    id: {
+      type: 'string',
+      pattern: '^-?\\d+$',
+      errorMessage: 'Invalid chain ID'
+    }
+  },
   required: ['id']
 };
 

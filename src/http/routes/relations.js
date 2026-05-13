@@ -8,7 +8,13 @@ const DEFAULT_DEPTH = 2;
 
 const intIdParam = {
   type: 'object',
-  properties: { id: { type: 'string', pattern: '^-?\\d+$' } },
+  properties: {
+    id: {
+      type: 'string',
+      pattern: '^-?\\d+$',
+      errorMessage: 'Invalid chain ID'
+    }
+  },
   required: ['id']
 };
 
@@ -30,7 +36,13 @@ export async function relationsRoutes(fastify) {
       querystring: {
         type: 'object',
         properties: {
-          depth: { type: 'integer', minimum: MIN_DEPTH, maximum: MAX_DEPTH, default: DEFAULT_DEPTH }
+          depth: {
+            type: 'integer',
+            minimum: MIN_DEPTH,
+            maximum: MAX_DEPTH,
+            default: DEFAULT_DEPTH,
+            errorMessage: `Invalid depth. Must be between ${MIN_DEPTH} and ${MAX_DEPTH}`
+          }
         },
         additionalProperties: false
       }
