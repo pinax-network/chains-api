@@ -6,10 +6,12 @@ import {
   getAllChains,
   getAllKeywords,
   getRpcMonitoringResults,
+  getRpcMonitoringStatus,
   startRpcHealthCheck,
   validateChainData,
   countChainsByTag
 } from '../../../dataService.js';
+import { getL2BeatRefreshStatus } from '../../services/l2beatRefresher.js';
 import {
   RELOAD_RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
@@ -18,14 +20,69 @@ import {
 } from '../../../config.js';
 import { sendError } from '../util/sendError.js';
 
+function ageSeconds(isoTimestamp) {
+  if (!isoTimestamp) return null;
+  const ms = Date.now() - new Date(isoTimestamp).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.round(ms / 1000);
+}
+
+function sourceFreshness(cache) {
+  const dataAge = ageSeconds(cache.lastUpdated);
+  const hasL2Beat = cache.l2beat != null
+    && Array.isArray(cache.l2beat.projects)
+    && cache.l2beat.projects.length > 0;
+  return {
+    theGraph: { loaded: cache.theGraph != null, ageSeconds: cache.theGraph != null ? dataAge : null },
+    chainlist: { loaded: cache.chainlist != null, ageSeconds: cache.chainlist != null ? dataAge : null },
+    chains: { loaded: cache.chains != null, ageSeconds: cache.chains != null ? dataAge : null },
+    // slip44 distinguishes failure (null) from empty parse ({}), see loader.js.
+    slip44: { loaded: cache.slip44 != null, ageSeconds: cache.slip44 != null ? dataAge : null },
+    l2beat: {
+      loaded: hasL2Beat,
+      ageSeconds: ageSeconds(cache.l2beat?.fetchedAt),
+      source: cache.l2beat?.source ?? null
+    }
+  };
+}
+
+function deriveOverallStatus(sources, refreshers) {
+  const coreSources = ['theGraph', 'chainlist', 'chains'];
+  const coreLoaded = coreSources.every(s => sources[s].loaded);
+  if (!coreLoaded) return 'down';
+
+  const supplementaryDegraded = !sources.slip44.loaded || !sources.l2beat.loaded;
+  const rpcStale = refreshers.rpc.lastRunAt &&
+    ageSeconds(refreshers.rpc.lastRunAt) > 30 * 60; // > 30 min
+  const l2beatStale = refreshers.l2beat.lastRefreshAt &&
+    refreshers.l2beat.intervalMs &&
+    ageSeconds(refreshers.l2beat.lastRefreshAt) > (refreshers.l2beat.intervalMs / 1000) * 2;
+
+  if (supplementaryDegraded || rpcStale || l2beatStale) return 'degraded';
+  return 'ok';
+}
+
 export async function adminRoutes(fastify) {
   fastify.get('/health', async () => {
     const cachedData = getCachedData();
+    const sources = sourceFreshness(cachedData);
+    const rpcStatus = getRpcMonitoringStatus();
+    const l2beatStatus = getL2BeatRefreshStatus();
+    const refreshers = {
+      rpc: {
+        isRunning: rpcStatus.isMonitoring,
+        lastRunAt: rpcStatus.lastUpdated
+      },
+      l2beat: l2beatStatus
+    };
+
     return {
-      status: 'ok',
+      status: deriveOverallStatus(sources, refreshers),
       dataLoaded: cachedData.indexed !== null,
       lastUpdated: cachedData.lastUpdated,
-      totalChains: cachedData.indexed ? cachedData.indexed.all.length : 0
+      totalChains: cachedData.indexed ? cachedData.indexed.all.length : 0,
+      sources,
+      refreshers
     };
   });
 
@@ -37,7 +94,8 @@ export async function adminRoutes(fastify) {
         theGraph: cachedData.theGraph ? 'loaded' : 'not loaded',
         chainlist: cachedData.chainlist ? 'loaded' : 'not loaded',
         chains: cachedData.chains ? 'loaded' : 'not loaded',
-        slip44: cachedData.slip44 ? 'loaded' : 'not loaded'
+        slip44: cachedData.slip44 != null ? 'loaded' : 'not loaded',
+        l2beat: cachedData.l2beat?.projects?.length > 0 ? 'loaded' : 'not loaded'
       }
     };
   });

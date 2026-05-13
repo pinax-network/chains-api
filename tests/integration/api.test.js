@@ -79,6 +79,11 @@ vi.mock('../../dataService.js', async () => {
         60: { symbol: 'ETH', name: 'Ether' },
         966: { symbol: 'MATIC', name: 'Polygon' }
       },
+      l2beat: {
+        source: 'live',
+        fetchedAt: new Date().toISOString(),
+        projects: [{ slug: 'arbitrum', chainId: 42161, displayName: 'Arbitrum One' }]
+      },
       lastUpdated: new Date().toISOString()
     })),
     searchChains: vi.fn((query) => {
