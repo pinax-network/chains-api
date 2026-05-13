@@ -18,30 +18,21 @@ export default [
     ]
   },
 
-  // Rule: the lower layers (store/domain/sources/services/transport/util) must
-  // not import the legacy facade. They should depend on peer modules under
-  // src/ directly so the layered architecture stays acyclic.
-  //
-  // src/http/ is intentionally exempt — it's the public entry point and the
-  // integration tests mock dataService.js as a single boundary. Migrating
-  // those mocks to per-module paths is a separate refactor.
+  // Rule: nothing under src/ may import the legacy dataService.js facade.
+  // Routes should depend on per-domain modules under src/ directly; lower
+  // layers (store/domain/sources/services) likewise. The integration tests
+  // mock each src/ path individually via vi.hoisted() so this constraint
+  // doesn't break test setup.
   {
-    files: [
-      'src/store/**/*.js',
-      'src/domain/**/*.js',
-      'src/sources/**/*.js',
-      'src/services/**/*.js',
-      'src/transport/**/*.js',
-      'src/util/**/*.js'
-    ],
+    files: ['src/**/*.js'],
     rules: {
       'no-restricted-imports': ['error', {
         paths: [{
           name: '../../dataService.js',
-          message: 'Import from the peer module under src/ instead. The dataService.js facade is for legacy callers and HTTP routes only; lower layers should not depend on it.'
+          message: 'Import from the peer module under src/ instead. dataService.js is a thin re-export facade for legacy callers only; new code should not depend on it.'
         }, {
           name: '../../../dataService.js',
-          message: 'Import from the peer module under src/ instead. The dataService.js facade is for legacy callers and HTTP routes only; lower layers should not depend on it.'
+          message: 'Import from the peer module under src/ instead. dataService.js is a thin re-export facade for legacy callers only; new code should not depend on it.'
         }]
       }]
     }

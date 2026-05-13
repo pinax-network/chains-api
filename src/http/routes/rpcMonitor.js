@@ -1,4 +1,5 @@
-import { getRpcMonitoringResults, getRpcMonitoringStatus } from '../../../dataService.js';
+import { getRpcMonitoringResults } from '../../store/queries.js';
+import { getRpcMonitoringStatus } from '../../services/rpcHealth.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
 

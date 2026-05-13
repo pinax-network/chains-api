@@ -1,8 +1,6 @@
-import {
-  getCachedData,
-  getRpcMonitoringStatus,
-  validateChainData
-} from '../../../dataService.js';
+import { getCachedData } from '../../store/cache.js';
+import { getRpcMonitoringStatus } from '../../services/rpcHealth.js';
+import { validateChainData } from '../../services/validation.js';
 import { getL2BeatRefreshStatus } from '../../services/l2beatRefresher.js';
 import { renderMetrics } from '../../util/metrics.js';
 

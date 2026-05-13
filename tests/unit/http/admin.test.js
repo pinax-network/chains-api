@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../dataService.js', () => ({
-  loadData: vi.fn(),
-  getCachedData: vi.fn(),
+vi.mock('../../../src/store/cache.js', () => ({
+  getCachedData: vi.fn()
+}));
+
+vi.mock('../../../src/store/queries.js', () => ({
   getAllChains: vi.fn(() => []),
-  getAllKeywords: vi.fn(() => ({ totalKeywords: 0, keywords: {} })),
   getRpcMonitoringResults: vi.fn(() => ({
     lastUpdated: null,
     totalEndpoints: 0,
@@ -13,10 +14,24 @@ vi.mock('../../../dataService.js', () => ({
     failedEndpoints: 0,
     results: []
   })),
-  getRpcMonitoringStatus: vi.fn(() => ({ isMonitoring: false, lastUpdated: null })),
-  startRpcHealthCheck: vi.fn(),
-  validateChainData: vi.fn(() => ({ totalErrors: 0, errorsByRule: {}, summary: {}, allErrors: [] })),
   countChainsByTag: vi.fn(() => ({ totalChains: 0, totalMainnets: 0, totalTestnets: 0, totalL2s: 0, totalBeacons: 0 }))
+}));
+
+vi.mock('../../../src/domain/keywords.js', () => ({
+  getAllKeywords: vi.fn(() => ({ totalKeywords: 0, keywords: {} }))
+}));
+
+vi.mock('../../../src/services/loader.js', () => ({
+  loadData: vi.fn()
+}));
+
+vi.mock('../../../src/services/rpcHealth.js', () => ({
+  startRpcHealthCheck: vi.fn(),
+  getRpcMonitoringStatus: vi.fn(() => ({ isMonitoring: false, lastUpdated: null }))
+}));
+
+vi.mock('../../../src/services/validation.js', () => ({
+  validateChainData: vi.fn(() => ({ totalErrors: 0, errorsByRule: {}, summary: {}, allErrors: [] }))
 }));
 
 vi.mock('../../../src/services/l2beatRefresher.js', () => ({
@@ -38,9 +53,13 @@ vi.mock('../../../config.js', () => ({
 }));
 
 import Fastify from 'fastify';
-import * as dataService from '../../../dataService.js';
+import { getCachedData } from '../../../src/store/cache.js';
+import { getRpcMonitoringStatus } from '../../../src/services/rpcHealth.js';
 import { getL2BeatRefreshStatus } from '../../../src/services/l2beatRefresher.js';
 import { adminRoutes } from '../../../src/http/routes/admin.js';
+
+// Local alias to keep the test bodies readable.
+const dataService = { getCachedData, getRpcMonitoringStatus };
 
 async function buildApp() {
   const app = Fastify({ logger: false });

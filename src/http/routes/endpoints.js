@@ -1,4 +1,4 @@
-import { getAllEndpoints, getEndpointsById } from '../../../dataService.js';
+import { getAllEndpoints, getEndpointsById } from '../../store/queries.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
 

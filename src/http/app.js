@@ -6,7 +6,8 @@ import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import fastifyStatic from '@fastify/static';
 import ajvErrors from 'ajv-errors';
-import { initializeDataOnStartup, startRpcHealthCheck } from '../../dataService.js';
+import { initializeDataOnStartup } from '../services/loader.js';
+import { startRpcHealthCheck } from '../services/rpcHealth.js';
 import { startL2BeatRefresh } from '../services/l2beatRefresher.js';
 import {
   BODY_LIMIT,

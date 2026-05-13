@@ -7,251 +7,194 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn()
 }));
 
-// Mock the modules before importing
-vi.mock('../../dataService.js', async () => {
-  const actual = await vi.importActual('../../dataService.js');
-  return {
-    ...actual,
-    loadData: vi.fn().mockResolvedValue({
-      indexed: {
-        all: [],
-        byChainId: {}
-      },
-      lastUpdated: new Date().toISOString()
-    }),
-    initializeDataOnStartup: vi.fn().mockResolvedValue({
-      indexed: {
-        all: [],
-        byChainId: {}
-      },
-      lastUpdated: new Date().toISOString()
-    }),
-    getCachedData: vi.fn(() => ({
-      indexed: {
-        all: [
-          {
-            chainId: 1,
-            name: 'Ethereum Mainnet',
-            tags: ['L1'],
-            sources: ['chains']
-          },
-          {
-            chainId: 137,
-            name: 'Polygon',
-            tags: ['L2'],
-            sources: ['chainlist']
-          },
-          {
-            chainId: 11155111,
-            name: 'Sepolia',
-            tags: ['Testnet'],
-            sources: ['chainlist']
-          }
-        ],
-        byChainId: {
-          1: {
-            chainId: 1,
-            name: 'Ethereum Mainnet',
-            tags: ['L1'],
-            sources: ['chains'],
-            relations: []
-          },
-          137: {
-            chainId: 137,
-            name: 'Polygon',
-            tags: ['L2'],
-            sources: ['chainlist'],
-            relations: [{ kind: 'l2Of', chainId: 1 }]
-          },
-          11155111: {
-            chainId: 11155111,
-            name: 'Sepolia',
-            tags: ['Testnet'],
-            sources: ['chainlist'],
-            relations: []
-          }
-        }
-      },
-      theGraph: { status: 'loaded' },
-      chainlist: { status: 'loaded' },
-      chains: { status: 'loaded' },
-      slip44: {
-        60: { symbol: 'ETH', name: 'Ether' },
-        966: { symbol: 'MATIC', name: 'Polygon' }
-      },
-      l2beat: {
-        source: 'live',
-        fetchedAt: new Date().toISOString(),
-        projects: [{ slug: 'arbitrum', chainId: 42161, displayName: 'Arbitrum One' }]
-      },
-      lastUpdated: new Date().toISOString()
-    })),
-    searchChains: vi.fn((query) => {
-      const lowerQuery = query.toLowerCase();
-      if (lowerQuery.includes('eth') || query === '1') {
-        return [{
-          chainId: 1,
-          name: 'Ethereum Mainnet',
-          tags: ['L1']
-        }];
+// Shared mock fn instances. Hoisted so multiple vi.mock factories below can
+// reference the same identities — the test body uses `dataService.X` while
+// route handlers under src/http/ import directly from src/store/, src/domain/,
+// src/services/. Hoisting gives us one set of fns wired into all paths.
+const mocks = vi.hoisted(() => ({
+  loadData: vi.fn(),
+  initializeDataOnStartup: vi.fn(),
+  getCachedData: vi.fn(),
+  searchChains: vi.fn(),
+  getChainById: vi.fn(),
+  getAllChains: vi.fn(),
+  getAllRelations: vi.fn(),
+  getRelationsById: vi.fn(),
+  traverseRelations: vi.fn(),
+  getEndpointsById: vi.fn(),
+  getAllEndpoints: vi.fn(),
+  validateChainData: vi.fn(),
+  getRpcMonitoringResults: vi.fn(),
+  getRpcMonitoringStatus: vi.fn(),
+  startRpcHealthCheck: vi.fn(),
+  runRpcHealthCheck: vi.fn(),
+  getAllKeywords: vi.fn(),
+  countChainsByTag: vi.fn()
+}));
+
+// Mock each src/ module that HTTP route handlers import from. These are the
+// real seams now; dataService.js is just a thin re-export facade.
+vi.mock('../../src/store/cache.js', () => ({
+  cachedData: { theGraph: null, chainlist: null, chains: null, slip44: null, l2beat: null, indexed: null, lastUpdated: null, rpcHealth: {}, lastRpcCheck: null },
+  applyDataToCache: vi.fn(),
+  getCachedData: mocks.getCachedData
+}));
+
+vi.mock('../../src/store/queries.js', () => ({
+  searchChains: mocks.searchChains,
+  getChainById: mocks.getChainById,
+  getAllChains: mocks.getAllChains,
+  getEndpointsById: mocks.getEndpointsById,
+  getAllEndpoints: mocks.getAllEndpoints,
+  countChainsByTag: mocks.countChainsByTag,
+  getRpcMonitoringResults: mocks.getRpcMonitoringResults
+}));
+
+vi.mock('../../src/domain/relations.js', () => ({
+  getAllRelations: mocks.getAllRelations,
+  getRelationsById: mocks.getRelationsById,
+  traverseRelations: mocks.traverseRelations
+}));
+
+vi.mock('../../src/domain/keywords.js', () => ({
+  getAllKeywords: mocks.getAllKeywords
+}));
+
+vi.mock('../../src/services/loader.js', () => ({
+  loadData: mocks.loadData,
+  initializeDataOnStartup: mocks.initializeDataOnStartup
+}));
+
+vi.mock('../../src/services/rpcHealth.js', () => ({
+  startRpcHealthCheck: mocks.startRpcHealthCheck,
+  runRpcHealthCheck: mocks.runRpcHealthCheck,
+  getRpcMonitoringStatus: mocks.getRpcMonitoringStatus
+}));
+
+vi.mock('../../src/services/validation.js', () => ({
+  validateChainData: mocks.validateChainData
+}));
+
+// Set default implementations for the hoisted mocks. Can't do this in
+// vi.hoisted() because closures over the data would be re-created each
+// suite; this gives us one stable set used everywhere.
+function installMockDefaults() {
+  mocks.loadData.mockResolvedValue({
+    indexed: { all: [], byChainId: {} },
+    lastUpdated: new Date().toISOString()
+  });
+  mocks.initializeDataOnStartup.mockResolvedValue({
+    indexed: { all: [], byChainId: {} },
+    lastUpdated: new Date().toISOString()
+  });
+  mocks.getCachedData.mockImplementation(() => ({
+    indexed: {
+      all: [
+        { chainId: 1, name: 'Ethereum Mainnet', tags: ['L1'], sources: ['chains'] },
+        { chainId: 137, name: 'Polygon', tags: ['L2'], sources: ['chainlist'] },
+        { chainId: 11155111, name: 'Sepolia', tags: ['Testnet'], sources: ['chainlist'] }
+      ],
+      byChainId: {
+        1: { chainId: 1, name: 'Ethereum Mainnet', tags: ['L1'], sources: ['chains'], relations: [] },
+        137: { chainId: 137, name: 'Polygon', tags: ['L2'], sources: ['chainlist'], relations: [{ kind: 'l2Of', chainId: 1 }] },
+        11155111: { chainId: 11155111, name: 'Sepolia', tags: ['Testnet'], sources: ['chainlist'], relations: [] }
       }
-      return [];
-    }),
-    getChainById: vi.fn((id) => {
-      if (id === 1) {
-        return {
-          chainId: 1,
-          name: 'Ethereum Mainnet',
-          tags: ['L1'],
-          sources: ['chains']
-        };
-      }
-      return null;
-    }),
-    getAllChains: vi.fn(() => [
-      {
-        chainId: 1,
-        name: 'Ethereum Mainnet',
-        tags: ['L1']
-      },
-      {
-        chainId: 137,
-        name: 'Polygon',
-        tags: ['L2']
-      },
-      {
-        chainId: 11155111,
-        name: 'Sepolia',
-        tags: ['Testnet']
-      }
-    ]),
-    getAllRelations: vi.fn(() => ({
-      '1': {
-        '137': {
-          parentName: 'Ethereum Mainnet',
-          kind: 'l1Of',
-          childName: 'Polygon',
-          chainId: 137
-        }
-      }
-    })),
-    getRelationsById: vi.fn((id) => {
-      if (id === 137) {
-        return {
-          chainId: 137,
-          chainName: 'Polygon',
-          relations: [{ kind: 'l2Of', chainId: 1 }]
-        };
-      }
-      return null;
-    }),
-    getEndpointsById: vi.fn((id) => {
-      if (id === 1) {
-        return {
-          chainId: 1,
-          name: 'Ethereum Mainnet',
-          rpc: ['https://eth.llamarpc.com'],
-          firehose: [],
-          substreams: []
-        };
-      }
-      return null;
-    }),
-    getAllEndpoints: vi.fn(() => [
-      {
-        chainId: 1,
-        name: 'Ethereum Mainnet',
-        rpc: ['https://eth.llamarpc.com'],
-        firehose: [],
-        substreams: []
-      }
-    ]),
-    validateChainData: vi.fn(() => ({
-      totalErrors: 2,
-      errorsByRule: {
-        rule1_relation_conflicts: [
-          {
-            rule: 1,
-            chainId: 137,
-            chainName: 'Polygon',
-            message: 'Example validation error'
-          }
-        ],
-        rule2_slip44_testnet_mismatch: [],
-        rule3_name_testnet_mismatch: [
-          {
-            rule: 3,
-            chainId: 11155111,
-            chainName: 'Sepolia',
-            message: 'Name contains testnet keyword'
-          }
-        ],
-        rule4_sepolia_hoodie_issues: [],
-        rule5_status_conflicts: [],
-        rule6_goerli_not_deprecated: []
-      },
-      summary: {
-        rule1: 1,
-        rule2: 0,
-        rule3: 1,
-        rule4: 0,
-        rule5: 0,
-        rule6: 0
-      },
-      allErrors: [
-        {
-          rule: 1,
-          chainId: 137,
-          chainName: 'Polygon',
-          message: 'Example validation error'
-        },
-        {
-          rule: 3,
-          chainId: 11155111,
-          chainName: 'Sepolia',
-          message: 'Name contains testnet keyword'
-        }
-      ]
-    })),
-    getRpcMonitoringResults: vi.fn(() => ({
-      lastUpdated: new Date().toISOString(),
-      totalEndpoints: 100,
-      testedEndpoints: 50,
-      workingEndpoints: 30,
-      failedEndpoints: 20,
-      results: [
-        {
-          chainId: 1,
-          chainName: 'Ethereum Mainnet',
-          url: 'https://eth.llamarpc.com',
-          status: 'working',
-          blockNumber: 12345678,
-          latencyMs: 150,
-          error: null
-        }
-      ]
-    })),
-    getRpcMonitoringStatus: vi.fn(() => ({
-      isMonitoring: false,
-      lastUpdated: new Date().toISOString()
-    })),
-    startRpcHealthCheck: vi.fn(),
-    getAllKeywords: vi.fn(() => ({
-      totalKeywords: 13,
-      keywords: {
-        blockchainNames: ['Ethereum Mainnet', 'Polygon'],
-        networkNames: ['eth', 'matic'],
-        softwareClients: ['Geth'],
-        currencySymbols: ['ETH', 'MATIC'],
-        tags: ['L2', 'Testnet'],
-        relationKinds: ['l2Of'],
-        sources: ['chainlist', 'chains'],
-        statuses: ['active'],
-        generic: ['ethereum', 'geth']
-      }
-    }))
-  };
-});
+    },
+    theGraph: { status: 'loaded' },
+    chainlist: { status: 'loaded' },
+    chains: { status: 'loaded' },
+    slip44: { 60: { symbol: 'ETH', name: 'Ether' }, 966: { symbol: 'MATIC', name: 'Polygon' } },
+    l2beat: { source: 'live', fetchedAt: new Date().toISOString(), projects: [{ slug: 'arbitrum', chainId: 42161, displayName: 'Arbitrum One' }] },
+    lastUpdated: new Date().toISOString()
+  }));
+  mocks.searchChains.mockImplementation((query) => {
+    const lowerQuery = query.toLowerCase();
+    if (lowerQuery.includes('eth') || query === '1') {
+      return [{ chainId: 1, name: 'Ethereum Mainnet', tags: ['L1'] }];
+    }
+    return [];
+  });
+  mocks.getChainById.mockImplementation((id) => {
+    if (id === 1) return { chainId: 1, name: 'Ethereum Mainnet', tags: ['L1'], sources: ['chains'] };
+    return null;
+  });
+  mocks.getAllChains.mockReturnValue([
+    { chainId: 1, name: 'Ethereum Mainnet', tags: ['L1'] },
+    { chainId: 137, name: 'Polygon', tags: ['L2'] },
+    { chainId: 11155111, name: 'Sepolia', tags: ['Testnet'] }
+  ]);
+  mocks.getAllRelations.mockReturnValue({
+    '1': { '137': { parentName: 'Ethereum Mainnet', kind: 'l1Of', childName: 'Polygon', chainId: 137 } }
+  });
+  mocks.getRelationsById.mockImplementation((id) => {
+    if (id === 137) return { chainId: 137, chainName: 'Polygon', relations: [{ kind: 'l2Of', chainId: 1 }] };
+    return null;
+  });
+  mocks.traverseRelations.mockReturnValue(null);
+  mocks.getEndpointsById.mockImplementation((id) => {
+    if (id === 1) {
+      return { chainId: 1, name: 'Ethereum Mainnet', rpc: ['https://eth.llamarpc.com'], firehose: [], substreams: [] };
+    }
+    return null;
+  });
+  mocks.getAllEndpoints.mockReturnValue([
+    { chainId: 1, name: 'Ethereum Mainnet', rpc: ['https://eth.llamarpc.com'], firehose: [], substreams: [] }
+  ]);
+  mocks.validateChainData.mockReturnValue({
+    totalErrors: 2,
+    errorsByRule: {
+      rule1_relation_conflicts: [{ rule: 1, chainId: 137, chainName: 'Polygon', message: 'Example validation error' }],
+      rule2_slip44_testnet_mismatch: [],
+      rule3_name_testnet_mismatch: [{ rule: 3, chainId: 11155111, chainName: 'Sepolia', message: 'Name contains testnet keyword' }],
+      rule4_sepolia_hoodie_issues: [],
+      rule5_status_conflicts: [],
+      rule6_goerli_not_deprecated: []
+    },
+    summary: { rule1: 1, rule2: 0, rule3: 1, rule4: 0, rule5: 0, rule6: 0 },
+    allErrors: [
+      { rule: 1, chainId: 137, chainName: 'Polygon', message: 'Example validation error' },
+      { rule: 3, chainId: 11155111, chainName: 'Sepolia', message: 'Name contains testnet keyword' }
+    ]
+  });
+  mocks.getRpcMonitoringResults.mockReturnValue({
+    lastUpdated: new Date().toISOString(),
+    totalEndpoints: 100,
+    testedEndpoints: 50,
+    workingEndpoints: 30,
+    failedEndpoints: 20,
+    results: [
+      { chainId: 1, chainName: 'Ethereum Mainnet', url: 'https://eth.llamarpc.com', status: 'working', blockNumber: 12345678, latencyMs: 150, error: null }
+    ]
+  });
+  mocks.getRpcMonitoringStatus.mockReturnValue({ isMonitoring: false, lastUpdated: new Date().toISOString() });
+  mocks.getAllKeywords.mockReturnValue({
+    totalKeywords: 13,
+    keywords: {
+      blockchainNames: ['Ethereum Mainnet', 'Polygon'],
+      networkNames: ['eth', 'matic'],
+      softwareClients: ['Geth'],
+      currencySymbols: ['ETH', 'MATIC'],
+      tags: ['L2', 'Testnet'],
+      relationKinds: ['l2Of'],
+      sources: ['chainlist', 'chains'],
+      statuses: ['active'],
+      generic: ['ethereum', 'geth']
+    }
+  });
+  mocks.countChainsByTag.mockReturnValue({
+    totalChains: 3,
+    totalMainnets: 1,
+    totalTestnets: 1,
+    totalL2s: 1,
+    totalBeacons: 0
+  });
+}
+
+installMockDefaults();
+
+// Legacy test references: `dataService.X` still resolves to the same hoisted
+// mock fn instance because dataService.js re-exports from the mocked src/
+// modules. No code change needed in the test bodies below.
 
 describe('API Endpoints', () => {
   let app;

@@ -1,4 +1,4 @@
-import { getAllRelations, getRelationsById, traverseRelations } from '../../../dataService.js';
+import { getAllRelations, getRelationsById, traverseRelations } from '../../domain/relations.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
 

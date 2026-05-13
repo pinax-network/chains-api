@@ -1,4 +1,4 @@
-import { getAllChains, getChainById } from '../../../dataService.js';
+import { getAllChains, getChainById } from '../../store/queries.js';
 import { getL2BeatRefreshStatus } from '../../services/l2beatRefresher.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';

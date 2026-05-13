@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../dataService.js', () => ({
-  getCachedData: vi.fn(),
-  getRpcMonitoringStatus: vi.fn(() => ({ isMonitoring: false, lastUpdated: null })),
+vi.mock('../../../src/store/cache.js', () => ({
+  getCachedData: vi.fn()
+}));
+
+vi.mock('../../../src/services/rpcHealth.js', () => ({
+  getRpcMonitoringStatus: vi.fn(() => ({ isMonitoring: false, lastUpdated: null }))
+}));
+
+vi.mock('../../../src/services/validation.js', () => ({
   validateChainData: vi.fn(() => ({
     totalErrors: 0,
     summary: { rule1: 0, rule12: 3, rule13: 1 },
@@ -23,9 +29,12 @@ vi.mock('../../../src/services/l2beatRefresher.js', () => ({
 }));
 
 import Fastify from 'fastify';
-import * as dataService from '../../../dataService.js';
+import { getCachedData } from '../../../src/store/cache.js';
 import { metricsRoute } from '../../../src/http/routes/metrics.js';
 import { incCounter, _resetMetricsForTests } from '../../../src/util/metrics.js';
+
+// Local alias to keep test body using `dataService.getCachedData.mockReturnValue(...)`.
+const dataService = { getCachedData };
 
 async function buildApp() {
   const app = Fastify({ logger: false });

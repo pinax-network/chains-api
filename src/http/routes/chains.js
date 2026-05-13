@@ -1,4 +1,4 @@
-import { searchChains, getChainById, getAllChains } from '../../../dataService.js';
+import { searchChains, getChainById, getAllChains } from '../../store/queries.js';
 import { MAX_SEARCH_QUERY_LENGTH, RATE_LIMIT_WINDOW_MS, SEARCH_RATE_LIMIT_MAX } from '../../../config.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
