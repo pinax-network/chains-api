@@ -2,6 +2,12 @@ import { getRpcMonitoringResults, getRpcMonitoringStatus } from '../../../dataSe
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
 
+const intIdParam = {
+  type: 'object',
+  properties: { id: { type: 'string', pattern: '^-?\\d+$' } },
+  required: ['id']
+};
+
 export async function rpcMonitorRoutes(fastify) {
   fastify.get('/rpc-monitor', async () => {
     const results = getRpcMonitoringResults();
@@ -9,11 +15,10 @@ export async function rpcMonitorRoutes(fastify) {
     return { ...status, ...results };
   });
 
-  fastify.get('/rpc-monitor/:id', async (request, reply) => {
+  fastify.get('/rpc-monitor/:id', {
+    schema: { params: intIdParam }
+  }, async (request, reply) => {
     const chainId = parseIntParam(request.params.id);
-    if (chainId === null) {
-      return sendError(reply, 400, 'Invalid chain ID');
-    }
 
     const results = getRpcMonitoringResults();
     const chainResults = results.results.filter(r => r.chainId === chainId);

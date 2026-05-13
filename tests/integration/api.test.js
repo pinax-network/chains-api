@@ -378,6 +378,18 @@ describe('API Endpoints', () => {
       expect(data).toHaveProperty('error');
       expect(data.error).toContain('Invalid tag');
     });
+
+    it('should return 400 for unknown query parameters (schema additionalProperties)', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/chains?tags=L2'  // typo: should be ?tag=
+      });
+
+      expect(response.statusCode).toBe(400);
+      const data = JSON.parse(response.payload);
+      expect(data.error).toContain('Unknown query parameter');
+      expect(data.error).toContain('tags');
+    });
   });
 
   describe('GET /chains/:id', () => {

@@ -28,6 +28,71 @@ function resolveCorsOrigin(value) {
   return value.split(',').map(s => s.trim());
 }
 
+// Field-name → user-friendly noun for error messages. Defaults to the field
+// name itself when not listed.
+const FIELD_NOUNS = {
+  id: 'chain ID',
+  coinType: 'coin type',
+  tag: 'tag',
+  q: 'q',
+  depth: 'depth'
+};
+
+function nounFor(field) {
+  return FIELD_NOUNS[field] ?? field;
+}
+
+/**
+ * Translate a JSON Schema validation failure into the project's `{ error: ... }`
+ * envelope, preserving the wording style of the manual sendError() messages
+ * the handlers used to produce before schemas were added.
+ */
+function formatSchemaValidationError(errors, dataVar) {
+  const first = errors[0];
+  const field = (first.instancePath || '').replace(/^\//, '')
+    || first.params?.missingProperty
+    || '';
+  const noun = nounFor(field);
+
+  let detail;
+  switch (first.keyword) {
+    case 'enum':
+      detail = `Invalid ${noun}. Allowed: ${first.params.allowedValues.join(', ')}`;
+      break;
+    case 'required':
+      detail = `Query parameter "${first.params.missingProperty}" is required`;
+      break;
+    case 'maxLength':
+      detail = noun === 'q'
+        ? `Query too long. Max length: ${first.params.limit}`
+        : `${noun} too long. Max length: ${first.params.limit}`;
+      break;
+    case 'minLength':
+      detail = `Query parameter "${field}" is required`;
+      break;
+    case 'pattern':
+    case 'type':
+      // Depth values that look numeric but aren't integers fall here.
+      detail = field === 'depth'
+        ? 'Invalid depth. Must be between 1 and 5'
+        : `Invalid ${noun}`;
+      break;
+    case 'minimum':
+    case 'maximum':
+      detail = `Invalid ${noun}. Must be between ${first.parentSchema?.minimum ?? '?'} and ${first.parentSchema?.maximum ?? '?'}`;
+      break;
+    case 'additionalProperties':
+      detail = `Unknown ${dataVar === 'querystring' ? 'query parameter' : 'field'}: "${first.params.additionalProperty}"`;
+      break;
+    default:
+      detail = first.message || `Invalid ${dataVar}`;
+  }
+
+  const err = new Error(detail);
+  err.statusCode = 400;
+  return err;
+}
+
 export async function buildApp(options = {}) {
   const {
     logger = true,
@@ -36,7 +101,25 @@ export async function buildApp(options = {}) {
     loadDataOnStartup = true
   } = options;
 
-  const fastify = Fastify({ logger, bodyLimit, maxParamLength });
+  const fastify = Fastify({
+    logger,
+    bodyLimit,
+    maxParamLength,
+    schemaErrorFormatter: formatSchemaValidationError,
+    ajv: {
+      // Default fastify behavior silently strips unknown query params;
+      // disable so additionalProperties:false on schemas actually rejects them.
+      customOptions: { removeAdditional: false, useDefaults: true, coerceTypes: 'array' }
+    }
+  });
+
+  fastify.setErrorHandler((error, _request, reply) => {
+    if (error.validation || error.statusCode === 400) {
+      return reply.code(400).send({ error: error.message });
+    }
+    fastify.log.error(error);
+    return reply.code(error.statusCode || 500).send({ error: error.message || 'Internal Server Error' });
+  });
 
   await fastify.register(cors, {
     origin: resolveCorsOrigin(CORS_ORIGIN),

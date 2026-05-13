@@ -25,20 +25,19 @@ export async function scalingRoutes(fastify) {
 
   fastify.get('/scaling/status', async () => getL2BeatRefreshStatus());
 
-  fastify.get('/scaling/:id', async (request, reply) => {
+  fastify.get('/scaling/:id', {
+    schema: {
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string', pattern: '^-?\\d+$' } },
+        required: ['id']
+      }
+    }
+  }, async (request, reply) => {
     const chainId = parseIntParam(request.params.id);
-    if (chainId === null) {
-      return sendError(reply, 400, 'Invalid chain ID');
-    }
-
     const chain = getChainById(chainId);
-    if (!chain) {
-      return sendError(reply, 404, 'Chain not found');
-    }
-    if (!chain.l2Beat) {
-      return sendError(reply, 404, 'No L2BEAT data for this chain');
-    }
-
+    if (!chain) return sendError(reply, 404, 'Chain not found');
+    if (!chain.l2Beat) return sendError(reply, 404, 'No L2BEAT data for this chain');
     return chain;
   });
 }
