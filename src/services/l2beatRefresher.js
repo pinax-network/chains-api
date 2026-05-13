@@ -1,4 +1,6 @@
 import { L2BEAT_REFRESH_INTERVAL_MS } from '../../config.js';
+import { logger } from '../util/logger.js';
+import { incCounter } from '../util/metrics.js';
 import { fetchL2Beat } from '../sources/l2beat.js';
 import { cachedData } from '../store/cache.js';
 import { indexL2BeatSource } from '../store/indexer.js';
@@ -13,7 +15,7 @@ let lastRefreshProjectCount = 0;
 
 export async function runL2BeatRefresh() {
   if (!cachedData.indexed) {
-    console.warn('L2BEAT refresh skipped: data not loaded');
+    logger.warn('L2BEAT refresh skipped: data not loaded');
     return { skipped: 'no-data' };
   }
 
@@ -23,12 +25,14 @@ export async function runL2BeatRefresh() {
     fresh = await fetchL2Beat();
   } catch (err) {
     lastRefreshError = err.message;
-    console.error('L2BEAT refresh failed:', err.message);
+    logger.error({ err: err.message }, 'L2BEAT refresh failed');
+    incCounter('chains_api_refresh_total', { refresher: 'l2beat', outcome: 'error' });
     return { skipped: 'fetch-error', error: err.message };
   }
 
   if (cachedData.lastUpdated !== dataVersion) {
-    console.warn('L2BEAT refresh skipped: data changed during run');
+    logger.warn('L2BEAT refresh skipped: data changed during run');
+    incCounter('chains_api_refresh_total', { refresher: 'l2beat', outcome: 'data-changed' });
     return { skipped: 'data-changed' };
   }
 
@@ -40,9 +44,11 @@ export async function runL2BeatRefresh() {
   lastRefreshError = null;
   lastRefreshProjectCount = fresh.projects.length;
 
-  console.log(
-    `L2BEAT refresh completed (source=${fresh.source}, projects=${fresh.projects.length})`
+  logger.info(
+    { source: fresh.source, projects: fresh.projects.length },
+    'L2BEAT refresh completed'
   );
+  incCounter('chains_api_refresh_total', { refresher: 'l2beat', outcome: fresh.source });
   return { source: fresh.source, projectCount: fresh.projects.length };
 }
 
@@ -57,7 +63,7 @@ function scheduleNext() {
   runL2BeatRefresh()
     .catch(err => {
       lastRefreshError = err.message;
-      console.error('L2BEAT refresh failed:', err.message || err);
+      logger.error({ err: err.message || err }, 'L2BEAT refresh failed');
     })
     .finally(() => {
       refreshInProgress = false;

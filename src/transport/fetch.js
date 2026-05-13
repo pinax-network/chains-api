@@ -1,4 +1,6 @@
 import { proxyFetch } from '../../fetchUtil.js';
+import { logger } from '../util/logger.js';
+import { incCounter } from '../util/metrics.js';
 
 /**
  * Fetch JSON or text from a URL using proxyFetch.
@@ -12,13 +14,21 @@ export async function fetchData(url, format = 'json') {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    if (format === 'json') return await response.json();
-    if (format === 'text') return await response.text();
+    if (format === 'json') {
+      incCounter('chains_api_source_fetch_total', { url, outcome: 'success' });
+      return await response.json();
+    }
+    if (format === 'text') {
+      incCounter('chains_api_source_fetch_total', { url, outcome: 'success' });
+      return await response.text();
+    }
     // Unknown format — surface as a failed fetch rather than returning undefined.
-    console.error(`Error fetching data from ${url}: unsupported format "${format}"`);
+    logger.error({ url, format }, 'Unsupported fetch format');
+    incCounter('chains_api_source_fetch_total', { url, outcome: 'bad_format' });
     return null;
   } catch (error) {
-    console.error(`Error fetching data from ${url}:`, error.message);
+    logger.error({ url, err: error.message }, 'Source fetch failed');
+    incCounter('chains_api_source_fetch_total', { url, outcome: 'error' });
     return null;
   }
 }

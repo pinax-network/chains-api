@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { DATA_CACHE_ENABLED, DATA_CACHE_FILE } from '../../config.js';
+import { logger } from '../util/logger.js';
 
 const SNAPSHOT_SCHEMA_VERSION = 1;
 const DATA_CACHE_PATH = resolve(DATA_CACHE_FILE);
@@ -59,14 +60,14 @@ export async function readSnapshotFromDisk() {
     const parsed = JSON.parse(raw);
 
     if (!isValidSnapshot(parsed)) {
-      console.warn(`Ignoring invalid cache snapshot at ${DATA_CACHE_PATH}`);
+      logger.warn({ path: DATA_CACHE_PATH }, 'Ignoring invalid cache snapshot');
       return null;
     }
 
     return parsed.data;
   } catch (error) {
     if (error?.code === 'ENOENT') return null;
-    console.warn(`Failed to read cache snapshot at ${DATA_CACHE_PATH}: ${error.message}`);
+    logger.warn({ path: DATA_CACHE_PATH, err: error.message }, 'Failed to read cache snapshot');
     return null;
   }
 }
@@ -87,6 +88,6 @@ export async function writeSnapshotToDiskAtomic(data) {
     } catch {
       // best-effort temp cleanup
     }
-    console.warn(`Failed to persist cache snapshot at ${DATA_CACHE_PATH}: ${error.message}`);
+    logger.warn({ path: DATA_CACHE_PATH, err: error.message }, 'Failed to persist cache snapshot');
   }
 }

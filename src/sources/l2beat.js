@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DATA_SOURCE_L2BEAT_API, L2BEAT_FETCH_TIMEOUT_MS } from '../../config.js';
 import { proxyFetch } from '../../fetchUtil.js';
+import { logger } from '../util/logger.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const FALLBACK_PATH = join(__dir, '..', '..', 'data', 'l2beat-fallback.json');
@@ -25,7 +26,7 @@ async function fetchLive() {
   try {
     const response = await proxyFetch(DATA_SOURCE_L2BEAT_API, { signal: controller.signal });
     if (!response.ok) {
-      console.warn(`L2BEAT live fetch HTTP ${response.status}; falling back to static snapshot.`);
+      logger.warn({ status: response.status }, 'L2BEAT live fetch failed; falling back to static snapshot');
       return null;
     }
     const json = await response.json();
@@ -33,7 +34,7 @@ async function fetchLive() {
     return { source: 'live', fetchedAt: new Date().toISOString(), projects };
   } catch (err) {
     const reason = err.name === 'AbortError' ? `timeout after ${L2BEAT_FETCH_TIMEOUT_MS}ms` : err.message;
-    console.warn(`L2BEAT live fetch failed (${reason}); falling back to static snapshot.`);
+    logger.warn({ reason }, 'L2BEAT live fetch failed; falling back to static snapshot');
     return null;
   } finally {
     clearTimeout(timer);
@@ -47,7 +48,7 @@ async function loadFallback() {
     const projects = Array.isArray(data?.projects) ? data.projects : [];
     return { source: 'fallback', fetchedAt: data?.fetchedAt ?? null, projects };
   } catch (err) {
-    console.warn(`L2BEAT fallback unavailable: ${err.message}`);
+    logger.warn({ err: err.message }, 'L2BEAT fallback unavailable');
     return { source: 'unavailable', fetchedAt: null, projects: [] };
   }
 }

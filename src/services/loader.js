@@ -14,6 +14,7 @@ import {
   writeSnapshotToDiskAtomic,
   DATA_CACHE_PATH
 } from '../store/snapshot.js';
+import { logger } from '../util/logger.js';
 
 const DATA_SOURCES = {
   theGraph: DATA_SOURCE_THE_GRAPH,
@@ -36,7 +37,7 @@ function countLoadedSources(data) {
 }
 
 async function fetchAndBuildData() {
-  console.log('Loading data from all sources...');
+  logger.info('Loading data from all sources');
 
   const results = await Promise.allSettled([
     fetchData(DATA_SOURCES.theGraph),
@@ -55,7 +56,7 @@ async function fetchAndBuildData() {
   const sourceNames = ['theGraph', 'chainlist', 'chains', 'slip44', 'l2beat'];
   results.forEach((result, i) => {
     if (result.status === 'rejected') {
-      console.error(`Failed to load ${sourceNames[i]}: ${result.reason?.message || result.reason}`);
+      logger.error({ source: sourceNames[i], err: result.reason?.message || result.reason }, 'Failed to load source');
     }
   });
 
@@ -98,7 +99,7 @@ async function refreshDataWithGuard(options = {}) {
     await writeSnapshotToDiskAtomic(cachedData);
 
     if (logSuccessMessage) {
-      console.log(`Data loaded successfully. Total chains: ${cachedData.indexed.all.length}`);
+      logger.info({ totalChains: cachedData.indexed.all.length }, 'Data loaded successfully');
     }
 
     return cachedData;
@@ -133,23 +134,23 @@ export async function initializeDataOnStartup(options = {}) {
     if (snapshotData) {
       applyDataToCache(snapshotData);
       startupInitialized = true;
-      console.log(`Loaded cached snapshot from ${DATA_CACHE_PATH}. Total chains: ${cachedData.indexed.all.length}`);
+      logger.info({ path: DATA_CACHE_PATH, totalChains: cachedData.indexed.all.length }, 'Loaded cached snapshot');
 
       refreshDataWithGuard({ requireAtLeastOneSource: true })
         .then(() => {
-          console.log('Background refresh completed successfully.');
+          logger.info('Background refresh completed successfully');
           if (typeof onBackgroundRefreshSuccess === 'function') {
             onBackgroundRefreshSuccess();
           }
         })
         .catch(error => {
-          console.error(`Background refresh failed; continuing with cached data: ${error.message || error}`);
+          logger.error({ err: error.message || error }, 'Background refresh failed; continuing with cached data');
         });
 
       return cachedData;
     }
 
-    console.log('No valid cache snapshot found. Loading data from remote sources...');
+    logger.info('No valid cache snapshot found. Loading data from remote sources');
     const loadedData = await loadData();
     startupInitialized = true;
     return loadedData;

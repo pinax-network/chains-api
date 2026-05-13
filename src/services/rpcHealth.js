@@ -1,5 +1,7 @@
 import { jsonRpcCall } from '../../rpcUtil.js';
 import { RPC_CHECK_TIMEOUT_MS, RPC_CHECK_CONCURRENCY } from '../../config.js';
+import { logger } from '../util/logger.js';
+import { incCounter } from '../util/metrics.js';
 import { cachedData } from '../store/cache.js';
 import { getAllEndpoints } from '../store/queries.js';
 import {
@@ -77,7 +79,7 @@ async function checkRpcEndpoint(url) {
 
 export async function runRpcHealthCheck() {
   if (!cachedData.indexed) {
-    console.warn('RPC health check skipped: data not loaded');
+    logger.warn('RPC health check skipped: data not loaded');
     return;
   }
 
@@ -100,7 +102,7 @@ export async function runRpcHealthCheck() {
   cachedData.lastRpcCheck = null;
 
   if (tasks.length === 0) {
-    console.warn('RPC health check skipped: no RPC endpoints found');
+    logger.warn('RPC health check skipped: no RPC endpoints found');
     return;
   }
 
@@ -121,13 +123,17 @@ export async function runRpcHealthCheck() {
   await Promise.all(workers);
 
   if (cachedData.lastUpdated !== dataVersion) {
-    console.warn('RPC health check skipped: data changed during run');
+    logger.warn('RPC health check skipped: data changed during run');
     return;
   }
 
   cachedData.rpcHealth = results;
   cachedData.lastRpcCheck = new Date().toISOString();
-  console.log(`RPC health check completed: ${tasks.length} endpoints tested across ${Object.keys(results).length} chains`);
+  logger.info(
+    { endpointsTested: tasks.length, chainsChecked: Object.keys(results).length },
+    'RPC health check completed'
+  );
+  incCounter('chains_api_rpc_check_total', { outcome: 'completed' });
 }
 
 export function startRpcHealthCheck() {
@@ -140,7 +146,8 @@ export function startRpcHealthCheck() {
   setRpcCheckPending(false);
   runRpcHealthCheck()
     .catch(error => {
-      console.error('RPC health check failed:', error.message || error);
+      logger.error({ err: error.message || error }, 'RPC health check failed');
+      incCounter('chains_api_rpc_check_total', { outcome: 'error' });
     })
     .finally(() => {
       setRpcCheckInProgress(false);
