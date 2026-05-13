@@ -14,6 +14,7 @@ import {
   getRpcMonitoringResults,
   getRpcMonitoringStatus,
 } from './dataService.js';
+import { getL2BeatRefreshStatus } from './src/services/l2beatRefresher.js';
 
 /**
  * Get the list of MCP tool definitions (schemas)
@@ -172,6 +173,36 @@ export function getToolDefinitions() {
           },
         },
         required: ['chainId'],
+      },
+    },
+    {
+      name: 'get_scaling_chains',
+      description: 'List chains classified by L2BEAT as scaling solutions (Optimistic Rollup, ZK Rollup, Validium, Optimium). Returns each chain\'s L2BEAT view (stage, category, stack, DA layer, host chain, TVS) plus a refresher freshness block indicating whether the data is live or from the static fallback snapshot.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
+      name: 'get_l2beat_by_id',
+      description: 'Get L2BEAT scaling data for a single chain by chain ID. Includes stage classification, category, stack, DA layer, host chain, TVS, activity, and per-chain freshness metadata.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chainId: {
+            type: 'number',
+            description: 'The chain ID to fetch L2BEAT data for (e.g., 42161 for Arbitrum One)',
+          },
+        },
+        required: ['chainId'],
+      },
+    },
+    {
+      name: 'get_refresher_status',
+      description: 'Get the unified rolling chain refresher\'s current state: tick interval, in-flight status, queue depth, sweep cursor, plus per-job-type status for L2BEAT batches and RPC sweeps. Useful for diagnosing data freshness or stuck refreshes.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
       },
     },
   ];
@@ -443,6 +474,34 @@ function handleGetRpcMonitorById(args) {
 
 // --- Dispatch map ---
 
+function handleGetScalingChains() {
+  const chains = getAllChains().filter((c) => c.l2Beat);
+  return textResponse({
+    count: chains.length,
+    refresher: getL2BeatRefreshStatus(),
+    chains,
+  });
+}
+
+function handleGetL2BeatById(args) {
+  const { chainId } = args;
+  if (!isValidChainId(chainId)) {
+    return errorResponse('Invalid chainId', 'chainId must be a positive integer');
+  }
+  const chain = getChainById(chainId);
+  if (!chain) {
+    return errorResponse('Not found', `No chain with chainId ${chainId}`);
+  }
+  if (!chain.l2Beat) {
+    return errorResponse('Not found', `Chain ${chainId} (${chain.name}) is not classified by L2BEAT`);
+  }
+  return textResponse(chain);
+}
+
+function handleGetRefresherStatus() {
+  return textResponse(getL2BeatRefreshStatus());
+}
+
 const toolHandlers = {
   get_chains: handleGetChains,
   get_chain_by_id: handleGetChainById,
@@ -457,6 +516,9 @@ const toolHandlers = {
   traverse_relations: handleTraverseRelations,
   get_rpc_monitor: handleGetRpcMonitor,
   get_rpc_monitor_by_id: handleGetRpcMonitorById,
+  get_scaling_chains: handleGetScalingChains,
+  get_l2beat_by_id: handleGetL2BeatById,
+  get_refresher_status: handleGetRefresherStatus,
 };
 
 /**
