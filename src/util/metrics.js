@@ -11,10 +11,23 @@
 
 const counters = new Map();
 
+/**
+ * Escape a string for use as a Prometheus label value. Per the exposition
+ * format spec, label values must escape `\` (as `\\`), `"` (as `\"`), and
+ * newlines (as `\n`). Order matters: backslash first, otherwise the literal
+ * `\` inserted by the quote-escape would itself get re-escaped.
+ */
+function escapeLabelValue(value) {
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n');
+}
+
 function counterKey(name, labels) {
   const labelStr = Object.entries(labels || {})
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}="${String(v).replace(/"/g, '\\"')}"`)
+    .map(([k, v]) => `${k}="${escapeLabelValue(v)}"`)
     .join(',');
   return labelStr ? `${name}{${labelStr}}` : name;
 }
@@ -94,7 +107,7 @@ export function renderMetrics({ cache, rpcStatus, l2beatStatus, validationSummar
     lines.push('# HELP chains_api_validation_errors Total validation errors by rule number');
     lines.push('# TYPE chains_api_validation_errors gauge');
     for (const [ruleKey, count] of Object.entries(validationSummary)) {
-      lines.push(`chains_api_validation_errors{rule="${ruleKey}"} ${count}`);
+      lines.push(`chains_api_validation_errors{rule="${escapeLabelValue(ruleKey)}"} ${count}`);
     }
   }
 

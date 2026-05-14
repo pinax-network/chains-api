@@ -427,23 +427,40 @@ function addReverseRelations(indexed) {
   });
 }
 
-export function indexL2BeatSource(l2beat, indexed) {
-  if (!l2beat?.projects?.length) return;
+// Tags that this function attaches solely because L2BEAT classified the chain.
+// Listed here so the stale-cleanup pass can drop them when a project disappears.
+const L2BEAT_DERIVED_TAGS = new Set(['L2', 'ZK', 'Validium', 'Optimium']);
 
-  // Clear stale data first: any chain that previously had l2Beat data but
-  // isn't in the fresh project list (e.g. project was removed from L2BEAT)
-  // should lose its l2Beat field so /scaling stops reporting it.
-  const freshChainIds = new Set(l2beat.projects.map(p => p.chainId));
+export function indexL2BeatSource(l2beat, indexed) {
+  // l2beat itself missing (e.g. data load skipped entirely) → no-op.
+  if (!l2beat) return;
+
+  // Normalize project chainIds to numbers up front so all downstream
+  // comparisons (Set membership + byChainId lookups) use one type.
+  const projects = Array.isArray(l2beat.projects) ? l2beat.projects : [];
+  const normalizedProjects = projects
+    .map(p => ({ ...p, chainId: Number(p.chainId) }))
+    .filter(p => Number.isSafeInteger(p.chainId));
+  const freshChainIds = new Set(normalizedProjects.map(p => p.chainId));
+
+  // Stale cleanup: a chain that previously had l2Beat data but isn't in the
+  // fresh project list (project removed from L2BEAT, or empty refresh) loses
+  // its l2Beat field, the 'l2beat' source, and any L2BEAT-attributable tags.
+  // Tag cleanup is conservative — only tags that this function is the sole
+  // emitter of are removed.
   for (const chain of Object.values(indexed.byChainId)) {
     if (chain.l2Beat && !freshChainIds.has(chain.chainId)) {
       delete chain.l2Beat;
       if (Array.isArray(chain.sources)) {
         chain.sources = chain.sources.filter(s => s !== 'l2beat');
       }
+      if (Array.isArray(chain.tags)) {
+        chain.tags = chain.tags.filter(t => !L2BEAT_DERIVED_TAGS.has(t));
+      }
     }
   }
 
-  for (const project of l2beat.projects) {
+  for (const project of normalizedProjects) {
     const chain = indexed.byChainId[project.chainId];
     if (!chain) continue;
 

@@ -11,6 +11,7 @@ vi.mock('../../../rpcUtil.js', () => ({
 vi.mock('../../../config.js', () => ({
   RPC_CHECK_TIMEOUT_MS: 5000,
   RPC_CHECK_CONCURRENCY: 8,
+  MAX_ENDPOINTS_PER_CHAIN: 5,
   L2BEAT_REFRESH_INTERVAL_MS: 60000,
   DATA_SOURCE_L2BEAT_API: 'https://l2beat.test/api/scaling-summary',
   L2BEAT_FETCH_TIMEOUT_MS: 1000,

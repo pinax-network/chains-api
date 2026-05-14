@@ -24,7 +24,8 @@
 import { jsonRpcCall } from '../../rpcUtil.js';
 import {
   RPC_CHECK_TIMEOUT_MS,
-  L2BEAT_REFRESH_INTERVAL_MS
+  L2BEAT_REFRESH_INTERVAL_MS,
+  MAX_ENDPOINTS_PER_CHAIN
 } from '../../config.js';
 import { logger } from '../util/logger.js';
 import { incCounter } from '../util/metrics.js';
@@ -124,7 +125,12 @@ export async function processChainRpc(chainId) {
 
   const dataVersion = cachedData.lastUpdated;
   const normalized = (chain.rpc || []).map(normalizeRpcUrl).filter(Boolean);
-  const urls = Array.from(new Set(normalized)).filter(u => u.startsWith('http'));
+  // Dedupe, keep only HTTP(S), then cap per-chain fan-out so large chain
+  // entries don't create per-tick request bursts that ignore the configured
+  // MAX_ENDPOINTS_PER_CHAIN ceiling.
+  const urls = Array.from(new Set(normalized))
+    .filter(u => u.startsWith('http'))
+    .slice(0, MAX_ENDPOINTS_PER_CHAIN);
   if (urls.length === 0) return;
 
   rpcState.isMonitoring = true;

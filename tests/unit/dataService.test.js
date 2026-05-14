@@ -12,6 +12,7 @@ vi.mock('../../config.js', () => ({
   DATA_CACHE_FILE: '.cache/test-data-cache.json',
   RPC_CHECK_TIMEOUT_MS: 8000,
   RPC_CHECK_CONCURRENCY: 8,
+  MAX_ENDPOINTS_PER_CHAIN: 5,
   PROXY_URL: '',
   PROXY_ENABLED: false
 }));
@@ -1227,14 +1228,14 @@ describe('loadData', () => {
       .mockRejectedValueOnce(new Error('Error 3'))
       .mockRejectedValueOnce(new Error('Error 4'));
 
-    await expect(loadData()).rejects.toThrow('All core data sources failed during data refresh');
+    await expect(loadData()).rejects.toThrow('All chain registry sources failed during data refresh');
   });
 
   it('should reset rpcHealth and lastRpcCheck on load', async () => {
     global.fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ networks: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
       .mockResolvedValueOnce({ ok: true, text: async () => '' });
 
     const result = await loadData();
@@ -1245,9 +1246,9 @@ describe('loadData', () => {
 
   it('should set lastUpdated timestamp', async () => {
     global.fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ networks: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
       .mockResolvedValueOnce({ ok: true, text: async () => '' });
 
     const beforeTime = Date.now();
@@ -1266,9 +1267,9 @@ describe('loadData', () => {
 | 60 | 0x8000003c | ETH | Ethereum |`;
 
     global.fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ networks: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
       .mockResolvedValueOnce({
         ok: true,
         text: async () => mockSlip44
@@ -2252,7 +2253,7 @@ describe('initializeDataOnStartup with disk cache', () => {
 
     global.fetch.mockRejectedValue(new Error('network down'));
 
-    await expect(mod.loadData()).rejects.toThrow('All core data sources failed during data refresh');
+    await expect(mod.loadData()).rejects.toThrow('All chain registry sources failed during data refresh');
     expect(mod.getCachedData().indexed.byChainId[25].name).toBe('Fresh Chain');
   });
 

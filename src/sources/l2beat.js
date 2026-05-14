@@ -94,11 +94,31 @@ function normalizeProject(p) {
 }
 
 function extractChainId(p) {
-  return p.chainId
+  const candidate = p.chainId
     ?? p.chainConfig?.chainId
     ?? p.chains?.[0]?.chainId
-    ?? p.eip155Id
-    ?? null;
+    ?? p.eip155Id;
+  return coerceChainId(candidate);
+}
+
+/**
+ * Coerce an L2BEAT-provided chainId to a finite integer. Handles numbers,
+ * decimal strings ("8453"), and CAIP-2 strings ("eip155:8453"). Returns
+ * null for anything we can't represent as a safe integer so downstream
+ * indexing stays consistent.
+ */
+function coerceChainId(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && Number.isSafeInteger(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const match = value.match(/^(?:eip155:)?(\d+)$/);
+    if (!match) return null;
+    const n = Number(match[1]);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  return null;
 }
 
 function extractStage(p) {

@@ -54,6 +54,13 @@ export async function runRpcHealthCheck() {
   }
 
   for (const chain of chains) {
+    // Abort mid-sweep if a concurrent loadData() replaces the cache, so we
+    // don't leak partial results from the old data version into the fresh
+    // cache before the final guard below runs.
+    if (cachedData.lastUpdated !== dataVersion) {
+      logger.warn('RPC health check aborted: data changed mid-sweep');
+      return;
+    }
     await processChainRpc(chain.chainId);
   }
 

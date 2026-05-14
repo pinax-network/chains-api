@@ -27,12 +27,18 @@ let dataRefreshPromise = null;
 let startupInitializationPromise = null;
 let startupInitialized = false;
 
-function countLoadedSources(data) {
+/**
+ * Count how many of the three chain registries (theGraph, chainlist, chains)
+ * loaded successfully. SLIP-0044 is excluded because it only contributes
+ * coin-type metadata, not chain entries — if every chain registry fails but
+ * SLIP-0044 succeeds, the API would otherwise come up with an empty index.
+ * L2BEAT is also excluded because it has its own static fallback.
+ */
+function countLoadedChainSources(data) {
   let loaded = 0;
   if (data.theGraph !== null) loaded++;
   if (data.chainlist !== null) loaded++;
   if (data.chains !== null) loaded++;
-  if (data.slip44Text !== null) loaded++;
   return loaded;
 }
 
@@ -77,7 +83,7 @@ async function fetchAndBuildData() {
       rpcHealth: {},
       lastRpcCheck: null
     },
-    loadedSourceCount: countLoadedSources({ theGraph, chainlist, chains, slip44Text })
+    loadedSourceCount: countLoadedChainSources({ theGraph, chainlist, chains })
   };
 }
 
@@ -90,9 +96,7 @@ async function refreshDataWithGuard(options = {}) {
     const { data, loadedSourceCount } = await fetchAndBuildData();
 
     if (requireAtLeastOneSource && loadedSourceCount === 0) {
-      // L2BEAT is intentionally excluded from the count: it has its own static
-      // fallback and isn't useful on its own without the core sources.
-      throw new Error('All core data sources failed during data refresh');
+      throw new Error('All chain registry sources failed during data refresh');
     }
 
     applyDataToCache(data);
