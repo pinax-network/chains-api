@@ -21,11 +21,14 @@ import { relationsRoutes } from './routes/relations.js';
 import { endpointsRoutes } from './routes/endpoints.js';
 import { slip44Routes } from './routes/slip44.js';
 import { rpcMonitorRoutes } from './routes/rpcMonitor.js';
+import { clientsRoutes } from './routes/clients.js';
 import { scalingRoutes } from './routes/scaling.js';
 import { adminRoutes } from './routes/admin.js';
 import { metricsRoute } from './routes/metrics.js';
 import { refresherRoute } from './routes/refresher.js';
 import { rootRoute } from './routes/root.js';
+import { prefetchAllPrices } from '../../priceService.js';
+import { logger } from '../util/logger.js';
 
 function resolveCorsOrigin(value) {
   if (value === '*') return true;
@@ -145,6 +148,12 @@ export async function buildApp(options = {}) {
     });
     startRpcHealthCheck();
     startL2BeatRefresh();
+    // Warm the price cache in the background so the first /chains request
+    // doesn't pay a CoinGecko round-trip. Failures are silent — a cold
+    // cache falls back to per-request fetching with the same timeout.
+    prefetchAllPrices().catch(err => {
+      logger.warn({ err: err.message }, 'Initial price prefetch failed');
+    });
   }
 
   await fastify.register(adminRoutes);
@@ -153,6 +162,7 @@ export async function buildApp(options = {}) {
   await fastify.register(endpointsRoutes);
   await fastify.register(slip44Routes);
   await fastify.register(rpcMonitorRoutes);
+  await fastify.register(clientsRoutes);
   await fastify.register(scalingRoutes);
   await fastify.register(metricsRoute);
   await fastify.register(refresherRoute);

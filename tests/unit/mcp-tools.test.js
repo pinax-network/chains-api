@@ -78,7 +78,25 @@ vi.mock('../../src/services/l2beatRefresher.js', () => ({
   })),
 }));
 
+vi.mock('../../clientsView.js', () => ({
+  getClientsByChain: vi.fn(() => null),
+  summarizeChainClients: vi.fn(() => null),
+}));
+
+vi.mock('../../priceService.js', () => ({
+  getPricesForChains: vi.fn(async (chainIds) => {
+    const map = new Map();
+    for (const id of chainIds) map.set(id, null);
+    return map;
+  }),
+  getPriceForChain: vi.fn(async () => null),
+  getCoinGeckoId: vi.fn(() => null),
+  clearPriceCache: vi.fn(),
+}));
+
 import * as dataService from '../../dataService.js';
+import * as clientsView from '../../clientsView.js';
+import * as priceService from '../../priceService.js';
 import { getToolDefinitions, handleToolCall } from '../../mcp-tools.js';
 
 describe('MCP Tools - Shared Module', () => {
@@ -133,10 +151,10 @@ describe('MCP Tools - Shared Module', () => {
   });
 
   describe('getToolDefinitions', () => {
-    it('should return an array of 16 tools', () => {
+    it('should return an array of 17 tools', () => {
       const tools = getToolDefinitions();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(16);
+      expect(tools.length).toBe(17);
     });
 
     it('should include all expected tool names', () => {
@@ -155,6 +173,7 @@ describe('MCP Tools - Shared Module', () => {
       expect(names).toContain('traverse_relations');
       expect(names).toContain('get_rpc_monitor');
       expect(names).toContain('get_rpc_monitor_by_id');
+      expect(names).toContain('get_clients');
     });
 
     it('should require chainId for traverse_relations', () => {
@@ -230,6 +249,31 @@ describe('MCP Tools - Shared Module', () => {
       expect(data.count).toBe(0);
       expect(data.chains).toEqual([]);
     });
+
+    it('should include price field on each chain', async () => {
+      vi.mocked(dataService.getAllChains).mockReturnValue([
+        { chainId: 1, name: 'Ethereum', tags: [] },
+      ]);
+      vi.mocked(priceService.getPricesForChains).mockResolvedValue(
+        new Map([[1, { usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' }]])
+      );
+      const result = await handleToolCall('get_chains', {});
+      const data = JSON.parse(result.content[0].text);
+      expect(data.chains[0]).toHaveProperty('price');
+      expect(data.chains[0].price).toEqual({ usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' });
+    });
+
+    it('should set price: null for unknown chains', async () => {
+      vi.mocked(dataService.getAllChains).mockReturnValue([
+        { chainId: 99999, name: 'Unknown Chain', tags: [] },
+      ]);
+      vi.mocked(priceService.getPricesForChains).mockResolvedValue(
+        new Map([[99999, null]])
+      );
+      const result = await handleToolCall('get_chains', {});
+      const data = JSON.parse(result.content[0].text);
+      expect(data.chains[0].price).toBeNull();
+    });
   });
 
   describe('handleToolCall - get_chain_by_id', () => {
@@ -265,6 +309,30 @@ describe('MCP Tools - Shared Module', () => {
       expect(result.isError).toBe(true);
       const data = JSON.parse(result.content[0].text);
       expect(data.error).toBe('Chain not found');
+    });
+
+    it('should include price when CoinGecko returns data', async () => {
+      vi.mocked(dataService.getChainById).mockReturnValue({
+        chainId: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' },
+      });
+      vi.mocked(priceService.getPriceForChain).mockResolvedValue({
+        usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z',
+      });
+      const result = await handleToolCall('get_chain_by_id', { chainId: 1 });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.price).toEqual({ usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' });
+    });
+
+    it('should set price: null when CoinGecko fetch fails', async () => {
+      vi.mocked(dataService.getChainById).mockReturnValue({
+        chainId: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' },
+      });
+      vi.mocked(priceService.getPriceForChain).mockResolvedValue(null);
+      const result = await handleToolCall('get_chain_by_id', { chainId: 1 });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.price).toBeNull();
     });
   });
 
@@ -723,6 +791,62 @@ describe('MCP Tools - Shared Module', () => {
       expect(result.isError).toBe(true);
       const data = JSON.parse(result.content[0].text);
       expect(data.error).toBe('Invalid depth. Must be between 1 and 5');
+    });
+  });
+
+  describe('get_clients', () => {
+    it('returns aggregated clients across all chains when chainId omitted', async () => {
+      vi.mocked(clientsView.getClientsByChain).mockImplementation((chainId) => {
+        if (chainId === undefined) {
+          return [
+            {
+              chainId: 1,
+              chainName: 'Ethereum',
+              totalNodes: 2,
+              unknownNodes: 0,
+              clients: [{ name: 'geth', repo: 'ethereum/go-ethereum', nodeCount: 2, versions: [], known: true }]
+            }
+          ];
+        }
+        return null;
+      });
+
+      const result = await handleToolCall('get_clients', {});
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.count).toBe(1);
+      expect(data.chains[0].chainId).toBe(1);
+    });
+
+    it('returns summary for a specific chain', async () => {
+      vi.mocked(clientsView.getClientsByChain).mockReturnValue({
+        chainId: 1,
+        chainName: 'Ethereum',
+        totalNodes: 1,
+        unknownNodes: 0,
+        clients: [{ name: 'geth', repo: 'ethereum/go-ethereum', nodeCount: 1, versions: [], known: true }]
+      });
+
+      const result = await handleToolCall('get_clients', { chainId: 1 });
+      const data = JSON.parse(result.content[0].text);
+      expect(data.chainId).toBe(1);
+      expect(data.clients[0].name).toBe('geth');
+    });
+
+    it('returns error for invalid chain ID', async () => {
+      const result = await handleToolCall('get_clients', { chainId: 'not-a-number' });
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.error).toBe('Invalid chain ID');
+    });
+
+    it('returns error when no client data exists for chain', async () => {
+      vi.mocked(clientsView.getClientsByChain).mockReturnValue(null);
+
+      const result = await handleToolCall('get_clients', { chainId: 99999 });
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.error).toBe('No client data found for this chain');
     });
   });
 

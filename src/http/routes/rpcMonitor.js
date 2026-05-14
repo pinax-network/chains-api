@@ -1,5 +1,6 @@
 import { getRpcMonitoringResults } from '../../store/queries.js';
 import { getRpcMonitoringStatus } from '../../services/rpcHealth.js';
+import { summarizeChainClients } from '../../../clientsView.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
 
@@ -44,7 +45,8 @@ export async function rpcMonitorRoutes(fastify) {
       workingEndpoints: workingCount,
       failedEndpoints: failedCount,
       lastUpdated: results.lastUpdated,
-      endpoints: chainResults
+      endpoints: chainResults,
+      clients: summarizeChainClients(chainResults)?.clients ?? []
     };
   });
 }

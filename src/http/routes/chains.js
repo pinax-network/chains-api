@@ -1,4 +1,5 @@
 import { searchChains, getChainById, getAllChains } from '../../store/queries.js';
+import { getPricesForChains, getPriceForChain } from '../../../priceService.js';
 import { MAX_SEARCH_QUERY_LENGTH, RATE_LIMIT_WINDOW_MS, SEARCH_RATE_LIMIT_MAX } from '../../../config.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
@@ -26,7 +27,13 @@ export async function chainsRoutes(fastify) {
     if (tag) {
       chains = chains.filter(chain => chain.tags?.includes(tag));
     }
-    return { count: chains.length, chains };
+    const chainIds = chains.map(c => c.chainId);
+    const priceMap = await getPricesForChains(chainIds);
+    const enriched = chains.map(chain => ({
+      ...chain,
+      price: priceMap.get(chain.chainId) ?? null
+    }));
+    return { count: enriched.length, chains: enriched };
   });
 
   fastify.get('/chains/:id', {
@@ -47,7 +54,8 @@ export async function chainsRoutes(fastify) {
     const chainId = parseIntParam(request.params.id);
     const chain = getChainById(chainId);
     if (!chain) return sendError(reply, 404, 'Chain not found');
-    return chain;
+    const price = await getPriceForChain(chainId);
+    return { ...chain, price };
   });
 
   fastify.get('/search', {

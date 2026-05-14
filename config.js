@@ -98,3 +98,8 @@ export const CORS_ORIGIN = parseStringEnv('CORS_ORIGIN', '*');
 // Proxy (optional)
 export const PROXY_URL = parseStringEnv('PROXY_URL', '');
 export const PROXY_ENABLED = PROXY_URL !== '';
+
+// Price cache
+export const PRICE_CACHE_TTL_MS = parseIntEnv('PRICE_CACHE_TTL_MS', 3600000);
+export const PRICE_NEGATIVE_CACHE_TTL_MS = parseIntEnv('PRICE_NEGATIVE_CACHE_TTL_MS', 300000);
+export const PRICE_FETCH_TIMEOUT_MS = parseIntEnv('PRICE_FETCH_TIMEOUT_MS', 3000);

@@ -75,6 +75,69 @@ vi.mock('../../src/services/validation.js', () => ({
   validateChainData: mocks.validateChainData
 }));
 
+vi.mock('../../priceService.js', () => ({
+  getPricesForChains: vi.fn(async (chainIds) => {
+    const map = new Map();
+    for (const id of chainIds) {
+      map.set(id, id === 1 ? { usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' } : null);
+    }
+    return map;
+  }),
+  getPriceForChain: vi.fn(async (chainId) => {
+    if (chainId === 1) return { usd: 2000.5, updatedAt: '2026-05-01T00:00:00.000Z' };
+    return null;
+  }),
+  getCoinGeckoId: vi.fn(() => null),
+  clearPriceCache: vi.fn(),
+  prefetchAllPrices: vi.fn(async () => {})
+}));
+
+vi.mock('../../clientsView.js', () => ({
+  getClientsByChain: vi.fn((chainId) => {
+    const samples = {
+      1: {
+        chainId: 1,
+        chainName: 'Ethereum Mainnet',
+        totalNodes: 2,
+        unknownNodes: 0,
+        clients: [{
+          name: 'geth', repo: 'ethereum/go-ethereum', language: 'Go',
+          website: 'https://geth.ethereum.org', layer: 'execution', known: true,
+          nodeCount: 2, versions: [{ version: 'v1.14.5', nodeCount: 2 }]
+        }]
+      },
+      137: {
+        chainId: 137,
+        chainName: 'Polygon',
+        totalNodes: 1,
+        unknownNodes: 0,
+        clients: [{
+          name: 'bor', repo: 'maticnetwork/bor', language: 'Go',
+          website: 'https://polygon.technology', layer: 'execution', known: true,
+          nodeCount: 1, versions: [{ version: 'v1.3.0', nodeCount: 1 }]
+        }]
+      }
+    };
+    if (chainId === undefined) return Object.values(samples);
+    return samples[chainId] ?? null;
+  }),
+  summarizeChainClients: vi.fn((chainResults) => {
+    if (!chainResults || chainResults.length === 0) return null;
+    return {
+      chainId: chainResults[0].chainId,
+      chainName: chainResults[0].chainName,
+      totalNodes: chainResults.length,
+      unknownNodes: 0,
+      clients: [{
+        name: 'geth', repo: 'ethereum/go-ethereum', language: 'Go',
+        website: 'https://geth.ethereum.org', layer: 'execution', known: true,
+        nodeCount: chainResults.length,
+        versions: [{ version: 'v1.14.5', nodeCount: chainResults.length }]
+      }]
+    };
+  })
+}));
+
 // Set default implementations for the hoisted mocks. Can't do this in
 // vi.hoisted() because closures over the data would be re-created each
 // suite; this gives us one stable set used everywhere.

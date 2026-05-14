@@ -15,6 +15,8 @@ import {
   getRpcMonitoringStatus,
 } from './dataService.js';
 import { getL2BeatRefreshStatus } from './src/services/l2beatRefresher.js';
+import { getClientsByChain } from './clientsView.js';
+import { getPricesForChains, getPriceForChain } from './priceService.js';
 
 /**
  * Get the list of MCP tool definitions (schemas)
@@ -205,6 +207,19 @@ export function getToolDefinitions() {
         properties: {},
       },
     },
+    {
+      name: 'get_clients',
+      description: 'Get execution client software (name, version, GitHub repo, language) running on a chain, aggregated from live RPC endpoints. Omit chainId to get a summary across all chains.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chainId: {
+            type: 'number',
+            description: 'Optional chain ID. If provided, returns clients for that chain only. If omitted, returns a summary across all chains with monitoring data.',
+          },
+        },
+      },
+    },
   ];
 }
 
@@ -230,15 +245,21 @@ function isValidChainId(chainId) {
 
 // --- Individual tool handlers ---
 
-function handleGetChains(args) {
+async function handleGetChains(args) {
   let chains = getAllChains();
   if (args.tag) {
     chains = chains.filter((chain) => chain.tags?.includes(args.tag));
   }
-  return textResponse({ count: chains.length, chains });
+  const chainIds = chains.map((c) => c.chainId);
+  const priceMap = await getPricesForChains(chainIds);
+  const enrichedChains = chains.map((chain) => ({
+    ...chain,
+    price: priceMap.get(chain.chainId) ?? null,
+  }));
+  return textResponse({ count: enrichedChains.length, chains: enrichedChains });
 }
 
-function handleGetChainById(args) {
+async function handleGetChainById(args) {
   const { chainId } = args;
   if (!isValidChainId(chainId)) {
     return errorResponse('Invalid chain ID');
@@ -247,7 +268,8 @@ function handleGetChainById(args) {
   if (!chain) {
     return errorResponse('Chain not found');
   }
-  return textResponse(chain);
+  const price = await getPriceForChain(chainId);
+  return textResponse({ ...chain, price });
 }
 
 function handleSearchChains(args) {
@@ -472,6 +494,28 @@ function handleGetRpcMonitorById(args) {
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }
 
+function handleGetClients(args) {
+  if (args.chainId === undefined) {
+    const results = getRpcMonitoringResults();
+    const chains = getClientsByChain();
+    return textResponse({
+      lastUpdated: results.lastUpdated,
+      count: chains.length,
+      chains,
+    });
+  }
+
+  const { chainId } = args;
+  if (!isValidChainId(chainId)) {
+    return errorResponse('Invalid chain ID');
+  }
+  const summary = getClientsByChain(chainId);
+  if (!summary) {
+    return errorResponse('No client data found for this chain');
+  }
+  return textResponse(summary);
+}
+
 // --- Dispatch map ---
 
 function handleGetScalingChains() {
@@ -519,6 +563,7 @@ const toolHandlers = {
   get_scaling_chains: handleGetScalingChains,
   get_l2beat_by_id: handleGetL2BeatById,
   get_refresher_status: handleGetRefresherStatus,
+  get_clients: handleGetClients,
 };
 
 /**
@@ -533,7 +578,7 @@ export async function handleToolCall(name, args) {
     if (!handler) {
       return errorResponse(`Unknown tool: ${name}`);
     }
-    return handler(args);
+    return await handler(args);
   } catch (error) {
     return errorResponse('Internal error', error.message);
   }
