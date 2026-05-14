@@ -586,7 +586,6 @@ function showNodeHeader(node, data) {
             : 'None';
     }
 
-    // Status badge
     const statusBadge = document.getElementById('chainStatusBadge');
     if (statusBadge) {
         if (data.status) {
