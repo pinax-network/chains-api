@@ -56,7 +56,7 @@ function mergeBridges(chain, newBridges) {
   });
 }
 
-function processL2ParentRelation(chain, indexed) {
+function processL2ParentRelation(chain, indexed, source = 'chains') {
   if (chain.parent?.type !== 'L2' || !chain.parent?.chain) return;
 
   const match = chain.parent.chain.match(/^eip155-(\d+)$/);
@@ -80,14 +80,14 @@ function processL2ParentRelation(chain, indexed) {
       kind: 'l2Of',
       network: chain.parent.chain,
       chainId: parentChainId,
-      source: 'chains'
+      source
     });
   }
 
   mergeBridges(indexed.byChainId[chainId], chain.parent.bridges);
 }
 
-function processTestnetParentRelation(chain, indexed) {
+function processTestnetParentRelation(chain, indexed, source = 'chains') {
   if (chain.parent?.type !== 'testnet' || !chain.parent?.chain) return;
 
   const match = chain.parent.chain.match(/^eip155-(\d+)$/);
@@ -107,7 +107,7 @@ function processTestnetParentRelation(chain, indexed) {
       kind: 'testnetOf',
       network: chain.parent.chain,
       chainId: mainnetChainId,
-      source: 'chains'
+      source
     });
   }
 }
@@ -353,7 +353,12 @@ function indexChainlistSource(chainlist, indexed) {
   chainlist.forEach(chainData => {
     const chainId = chainData.chainId;
     if (chainId === undefined || chainId === null || Number.isNaN(Number(chainId))) return;
-    if (indexed.byChainId[chainId] && chainData.parent?.bridges) {
+    if (!indexed.byChainId[chainId]) return;
+
+    processL2ParentRelation(chainData, indexed, 'chainlist');
+    processTestnetParentRelation(chainData, indexed, 'chainlist');
+
+    if (chainData.parent?.bridges) {
       mergeBridges(indexed.byChainId[chainId], chainData.parent.bridges);
     }
   });
