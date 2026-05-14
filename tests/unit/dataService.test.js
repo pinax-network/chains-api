@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolve } from 'node:path';
+import { logger } from '../../src/util/logger.js';
 
 // Mock config before importing dataService
 vi.mock('../../config.js', () => ({
@@ -11,6 +12,7 @@ vi.mock('../../config.js', () => ({
   DATA_CACHE_FILE: '.cache/test-data-cache.json',
   RPC_CHECK_TIMEOUT_MS: 8000,
   RPC_CHECK_CONCURRENCY: 8,
+  MAX_ENDPOINTS_PER_CHAIN: 5,
   PROXY_URL: '',
   PROXY_ENABLED: false
 }));
@@ -1226,20 +1228,14 @@ describe('loadData', () => {
       .mockRejectedValueOnce(new Error('Error 3'))
       .mockRejectedValueOnce(new Error('Error 4'));
 
-    const result = await loadData();
-
-    expect(result.theGraph).toBeNull();
-    expect(result.chainlist).toBeNull();
-    expect(result.chains).toBeNull();
-    expect(result.slip44).toEqual({});
-    expect(result.indexed.all).toHaveLength(0);
+    await expect(loadData()).rejects.toThrow('All chain registry sources failed during data refresh');
   });
 
   it('should reset rpcHealth and lastRpcCheck on load', async () => {
     global.fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ networks: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
       .mockResolvedValueOnce({ ok: true, text: async () => '' });
 
     const result = await loadData();
@@ -1250,9 +1246,9 @@ describe('loadData', () => {
 
   it('should set lastUpdated timestamp', async () => {
     global.fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ networks: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
       .mockResolvedValueOnce({ ok: true, text: async () => '' });
 
     const beforeTime = Date.now();
@@ -1271,9 +1267,9 @@ describe('loadData', () => {
 | 60 | 0x8000003c | ETH | Ethereum |`;
 
     global.fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
-      .mockResolvedValueOnce({ ok: true, json: async () => null })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ networks: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
       .mockResolvedValueOnce({
         ok: true,
         text: async () => mockSlip44
@@ -1292,16 +1288,15 @@ describe('runRpcHealthCheck', () => {
   });
 
   it('should skip health check if data not loaded', async () => {
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    // Reload module to get fresh state without data
     vi.resetModules();
+    const { logger: freshLogger } = await import('../../src/util/logger.js');
+    const warnSpy = vi.spyOn(freshLogger, 'warn').mockImplementation(() => {});
     const { runRpcHealthCheck: freshRun } = await import('../../dataService.js');
 
     await freshRun();
 
-    expect(consoleWarnSpy).toHaveBeenCalledWith('RPC health check skipped: data not loaded');
-    consoleWarnSpy.mockRestore();
+    expect(warnSpy).toHaveBeenCalledWith('RPC health check skipped: data not loaded');
+    warnSpy.mockRestore();
   });
 
   it('should skip health check if no RPC endpoints found', async () => {
@@ -1320,11 +1315,11 @@ describe('runRpcHealthCheck', () => {
 
     await loadData();
 
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     await runRpcHealthCheck();
 
-    expect(consoleWarnSpy).toHaveBeenCalledWith('RPC health check skipped: no RPC endpoints found');
-    consoleWarnSpy.mockRestore();
+    expect(warnSpy).toHaveBeenCalledWith('RPC health check skipped: no RPC endpoints found');
+    warnSpy.mockRestore();
   });
 
   it('should successfully check RPC endpoints with valid responses', async () => {
@@ -1366,7 +1361,7 @@ describe('runRpcHealthCheck', () => {
         json: async () => ({ jsonrpc: '2.0', id: 1, result: '0xabcdef' })
       });
 
-    const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {});
     await runRpcHealthCheck();
 
     const cachedData = getCachedData();
@@ -1375,9 +1370,9 @@ describe('runRpcHealthCheck', () => {
     expect(cachedData.rpcHealth[1]).toHaveLength(2);
     expect(cachedData.lastRpcCheck).toBeDefined();
 
-    // Verify console.log was called with completion message
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('RPC health check completed'));
-    consoleLogSpy.mockRestore();
+    // pino signature is logger.info(obj, msg) — first arg is the structured context
+    expect(infoSpy).toHaveBeenCalledWith(expect.any(Object), expect.stringContaining('RPC health check completed'));
+    infoSpy.mockRestore();
   });
 
   it('should handle RPC endpoint with unsupported URL', async () => {
@@ -1399,12 +1394,12 @@ describe('runRpcHealthCheck', () => {
 
     await loadData();
 
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     await runRpcHealthCheck();
 
     // Should skip because no valid HTTP endpoints
-    expect(consoleWarnSpy).toHaveBeenCalledWith('RPC health check skipped: no RPC endpoints found');
-    consoleWarnSpy.mockRestore();
+    expect(warnSpy).toHaveBeenCalledWith('RPC health check skipped: no RPC endpoints found');
+    warnSpy.mockRestore();
   });
 
   it('should handle RPC endpoint requiring API key substitution', async () => {
@@ -1549,11 +1544,11 @@ describe('runRpcHealthCheck', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => mockChains })
       .mockResolvedValueOnce({ ok: true, text: async () => '' });
 
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     await runRpcHealthCheck();
 
-    expect(consoleWarnSpy).toHaveBeenCalledWith('RPC health check skipped: data changed during run');
-    consoleWarnSpy.mockRestore();
+    expect(warnSpy).toHaveBeenCalledWith('RPC health check skipped: data changed during run');
+    warnSpy.mockRestore();
   });
 
   it('should deduplicate RPC URLs', async () => {
@@ -2258,7 +2253,7 @@ describe('initializeDataOnStartup with disk cache', () => {
 
     global.fetch.mockRejectedValue(new Error('network down'));
 
-    await expect(mod.loadData()).rejects.toThrow('All data sources failed during data refresh');
+    await expect(mod.loadData()).rejects.toThrow('All chain registry sources failed during data refresh');
     expect(mod.getCachedData().indexed.byChainId[25].name).toBe('Fresh Chain');
   });
 

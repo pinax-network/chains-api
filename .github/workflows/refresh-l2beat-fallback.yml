@@ -1,0 +1,78 @@
+name: Refresh L2BEAT fallback
+
+# Runs the live L2BEAT scaling-summary endpoint weekly and opens a PR if the
+# normalized output differs from the checked-in data/l2beat-fallback.json.
+# Keeps the static safety net from drifting when the live API is unreachable.
+on:
+  schedule:
+    # 06:00 UTC every Monday
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch and normalize live L2BEAT data
+        id: fetch
+        continue-on-error: true
+        run: |
+          node --input-type=module -e '
+            import { normalizeL2BeatResponse } from "./src/sources/l2beat.js";
+            const res = await fetch(process.env.L2BEAT_API_URL || "https://l2beat.com/api/scaling-summary");
+            if (!res.ok) { process.stderr.write(`HTTP ${res.status}\n`); process.exit(1); }
+            const json = await res.json();
+            const projects = normalizeL2BeatResponse(json)
+              .filter(p => Number.isSafeInteger(p.chainId))
+              .map(p => ({
+                slug: p.slug,
+                chainId: p.chainId,
+                displayName: p.displayName,
+                stage: p.stage,
+                category: p.category,
+                stack: p.stack,
+                daLayer: p.daLayer,
+                hostChainId: p.hostChainId
+              }));
+            const payload = {
+              schemaVersion: 1,
+              fetchedAt: new Date().toISOString(),
+              note: "Auto-refreshed weekly by .github/workflows/refresh-l2beat-fallback.yml. Excludes chains whose chainId exceeds Number.MAX_SAFE_INTEGER (e.g. Starknet).",
+              projects
+            };
+            await import("node:fs/promises").then(fs =>
+              fs.writeFile("data/l2beat-fallback.json", JSON.stringify(payload, null, 2) + "\n", "utf8")
+            );
+          '
+
+      - name: Skip when fetch failed
+        if: steps.fetch.outcome != 'success'
+        run: echo "L2BEAT live API unreachable; skipping refresh until next run."
+
+      - name: Create pull request if file changed
+        if: steps.fetch.outcome == 'success'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'chore: refresh L2BEAT fallback data'
+          title: 'chore: refresh L2BEAT fallback data'
+          body: |
+            Automated weekly refresh of `data/l2beat-fallback.json` from the
+            live L2BEAT scaling-summary endpoint. Review the diff for any
+            unexpected stage transitions or removed/added projects before
+            merging.
+          branch: chore/refresh-l2beat-fallback
+          delete-branch: true
+          add-paths: data/l2beat-fallback.json

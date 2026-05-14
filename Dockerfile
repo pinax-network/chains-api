@@ -15,6 +15,9 @@ RUN npm ci --only=production
 
 # Copy application files
 COPY *.js ./
+COPY src/ ./src/
+COPY data/ ./data/
+COPY public/ ./public/
 
 # Ensure app owns the working directory
 RUN chown -R app:app /app

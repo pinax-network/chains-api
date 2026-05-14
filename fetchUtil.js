@@ -1,5 +1,6 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { PROXY_URL, PROXY_ENABLED } from './config.js';
+import { logger } from './src/util/logger.js';
 
 /**
  * Proxy-aware fetch wrapper
@@ -9,14 +10,12 @@ import { PROXY_URL, PROXY_ENABLED } from './config.js';
 
 let proxyAgent = null;
 
-// Initialize proxy agent if configured
 if (PROXY_ENABLED) {
   try {
     proxyAgent = new HttpsProxyAgent(PROXY_URL);
-    console.log(`Proxy enabled: ${PROXY_URL.replace(/:[^:@]*@/, ':****@')}`); // Hide password in logs
+    logger.info({ proxy: PROXY_URL.replace(/:[^:@]*@/, ':****@') }, 'Proxy enabled');
   } catch (error) {
-    console.error(`Failed to initialize proxy agent: ${error.message}`);
-    console.error('Proxy will be disabled. Continuing without proxy support.');
+    logger.error({ err: error.message }, 'Failed to initialize proxy agent; continuing without proxy');
   }
 }
 

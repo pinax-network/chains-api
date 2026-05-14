@@ -36,6 +36,23 @@ vi.mock('../../dataService.js', () => ({
   })),
   validateChainData: vi.fn(() => ({ totalErrors: 0, errorsByRule: {}, summary: {}, allErrors: [] })),
   traverseRelations: vi.fn(() => null),
+  countChainsByTag: vi.fn((chains) => {
+    let totalTestnets = 0;
+    let totalL2s = 0;
+    let totalBeacons = 0;
+    let totalMainnets = 0;
+    for (const chain of chains) {
+      const tags = chain.tags || [];
+      const isTestnet = tags.includes('Testnet');
+      const isL2 = tags.includes('L2');
+      const isBeacon = tags.includes('Beacon');
+      if (isTestnet) totalTestnets += 1;
+      if (isL2) totalL2s += 1;
+      if (isBeacon) totalBeacons += 1;
+      if (!isTestnet && !isL2 && !isBeacon) totalMainnets += 1;
+    }
+    return { totalChains: chains.length, totalMainnets, totalTestnets, totalL2s, totalBeacons };
+  }),
   getRpcMonitoringResults: vi.fn(() => ({
     lastUpdated: '2024-01-01T00:00:00.000Z',
     totalEndpoints: 0,
@@ -50,12 +67,22 @@ vi.mock('../../dataService.js', () => ({
   })),
 }));
 
+vi.mock('../../src/services/l2beatRefresher.js', () => ({
+  getL2BeatRefreshStatus: vi.fn(() => ({
+    isRefreshing: false,
+    lastRefreshAt: '2026-05-05T12:00:00.000Z',
+    lastRefreshSource: 'live',
+    lastRefreshError: null,
+    lastRefreshProjectCount: 28,
+    intervalMs: 300000,
+  })),
+}));
+
 vi.mock('../../clientsView.js', () => ({
   getClientsByChain: vi.fn(() => null),
   summarizeChainClients: vi.fn(() => null),
 }));
 
-// Mock priceService before importing
 vi.mock('../../priceService.js', () => ({
   getPricesForChains: vi.fn(async (chainIds) => {
     const map = new Map();
@@ -124,10 +151,10 @@ describe('MCP Tools - Shared Module', () => {
   });
 
   describe('getToolDefinitions', () => {
-    it('should return an array of 14 tools', () => {
+    it('should return an array of 17 tools', () => {
       const tools = getToolDefinitions();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(14);
+      expect(tools.length).toBe(17);
     });
 
     it('should include all expected tool names', () => {
@@ -841,6 +868,109 @@ describe('MCP Tools - Shared Module', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.error).toBe('Internal error');
       expect(data.message).toBe('Database error');
+    });
+  });
+
+  describe('handleToolCall - get_scaling_chains', () => {
+    it('returns chains with l2Beat data plus refresher status block', async () => {
+      vi.mocked(dataService.getAllChains).mockReturnValue([
+        { chainId: 1, name: 'Ethereum', tags: [] },
+        {
+          chainId: 42161,
+          name: 'Arbitrum One',
+          tags: ['L2'],
+          l2Beat: { slug: 'arbitrum', stage: 'Stage 1', category: 'Optimistic Rollup' },
+        },
+        {
+          chainId: 10,
+          name: 'OP Mainnet',
+          tags: ['L2'],
+          l2Beat: { slug: 'optimism', stage: 'Stage 1', category: 'Optimistic Rollup' },
+        },
+      ]);
+
+      const result = await handleToolCall('get_scaling_chains', {});
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.count).toBe(2);
+      expect(data.chains.map((c) => c.chainId)).toEqual([42161, 10]);
+      expect(data.refresher.lastRefreshSource).toBe('live');
+    });
+
+    it('returns count=0 when no chains have l2Beat data', async () => {
+      vi.mocked(dataService.getAllChains).mockReturnValue([
+        { chainId: 1, name: 'Ethereum', tags: [] },
+      ]);
+      const result = await handleToolCall('get_scaling_chains', {});
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.count).toBe(0);
+      expect(data.chains).toEqual([]);
+    });
+  });
+
+  describe('handleToolCall - get_l2beat_by_id', () => {
+    it('returns the chain when L2BEAT data is present', async () => {
+      vi.mocked(dataService.getChainById).mockReturnValue({
+        chainId: 42161,
+        name: 'Arbitrum One',
+        tags: ['L2'],
+        l2Beat: { slug: 'arbitrum', stage: 'Stage 1', category: 'Optimistic Rollup' },
+      });
+      const result = await handleToolCall('get_l2beat_by_id', { chainId: 42161 });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.chainId).toBe(42161);
+      expect(data.l2Beat.slug).toBe('arbitrum');
+    });
+
+    it('returns an error when the chain has no L2BEAT data', async () => {
+      vi.mocked(dataService.getChainById).mockReturnValue({
+        chainId: 1,
+        name: 'Ethereum',
+        tags: [],
+      });
+      const result = await handleToolCall('get_l2beat_by_id', { chainId: 1 });
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.error).toBe('Not found');
+      expect(data.message).toContain('not classified by L2BEAT');
+    });
+
+    it('returns an error when the chain does not exist', async () => {
+      vi.mocked(dataService.getChainById).mockReturnValue(null);
+      const result = await handleToolCall('get_l2beat_by_id', { chainId: 999999 });
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.error).toBe('Not found');
+      expect(data.message).toContain('No chain with chainId');
+    });
+
+    it('rejects invalid chainId', async () => {
+      const result = await handleToolCall('get_l2beat_by_id', { chainId: 'abc' });
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.error).toBe('Invalid chainId');
+    });
+  });
+
+  describe('handleToolCall - get_refresher_status', () => {
+    it('returns the unified refresher status block', async () => {
+      const result = await handleToolCall('get_refresher_status', {});
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data).toHaveProperty('lastRefreshAt');
+      expect(data).toHaveProperty('lastRefreshSource', 'live');
+      expect(data).toHaveProperty('intervalMs');
+    });
+  });
+
+  describe('getToolDefinitions includes new tools', () => {
+    it('exposes the three L2BEAT/scaling/refresher tools', () => {
+      const names = getToolDefinitions().map((t) => t.name);
+      expect(names).toContain('get_scaling_chains');
+      expect(names).toContain('get_l2beat_by_id');
+      expect(names).toContain('get_refresher_status');
     });
   });
 });
