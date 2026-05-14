@@ -78,18 +78,19 @@ async function fetchWithTimeout(url) {
 }
 
 async function fetchCoinIds(coinIds) {
-  if (coinIds.length === 0) return new Map();
+  if (coinIds.length === 0) return { map: new Map(), ok: true };
 
   // Coalesce: for each coinId, reuse an in-flight promise if one exists.
   // Otherwise schedule the missing IDs in a single batched request.
   const result = new Map();
+  let ok = true;
   const toFetch = [];
   const waiters = [];
 
   for (const id of coinIds) {
     const pending = inflight.get(id);
     if (pending) {
-      waiters.push(pending.then(map => [id, map.get(id)]));
+      waiters.push(pending.then(({ map, ok: pendingOk }) => ({ id, usd: map.get(id), ok: pendingOk })));
     } else {
       toFetch.push(id);
     }
@@ -98,6 +99,7 @@ async function fetchCoinIds(coinIds) {
   if (toFetch.length > 0) {
     const batchPromise = (async () => {
       const map = new Map();
+      let batchOk = true;
       const url = `${COINGECKO_PRICE_URL}?ids=${toFetch.join(',')}&vs_currencies=usd`;
       try {
         const response = await fetchWithTimeout(url);
@@ -107,19 +109,22 @@ async function fetchCoinIds(coinIds) {
             if (typeof prices?.usd === 'number') map.set(id, prices.usd);
           }
         } else {
+          batchOk = false;
           console.warn(`CoinGecko price fetch failed: HTTP ${response.status}`);
         }
       } catch (err) {
+        batchOk = false;
         console.warn(`CoinGecko price fetch error: ${err.message}`);
       }
-      return map;
+      return { map, ok: batchOk };
     })();
 
     for (const id of toFetch) {
       inflight.set(id, batchPromise);
     }
     try {
-      const map = await batchPromise;
+      const { map, ok: batchOk } = await batchPromise;
+      if (!batchOk) ok = false;
       for (const id of toFetch) {
         if (map.has(id)) result.set(id, map.get(id));
       }
@@ -128,23 +133,25 @@ async function fetchCoinIds(coinIds) {
     }
   }
 
-  for (const [id, usd] of await Promise.all(waiters.map(p => p))) {
+  for (const { id, usd, ok: waiterOk } of await Promise.all(waiters.map(p => p))) {
+    if (!waiterOk) ok = false;
     if (usd !== undefined) result.set(id, usd);
   }
 
-  return result;
+  return { map: result, ok };
 }
 
-function recordResults(coinIds, fetched) {
+function recordResults(coinIds, { map: fetched, ok }) {
   const updatedAt = new Date().toISOString();
   for (const id of coinIds) {
     if (fetched.has(id)) {
       priceCache.set(id, { usd: fetched.get(id), updatedAt });
-    } else {
-      // Negative cache: short TTL so we don't hammer CoinGecko on every request
-      // when an ID is missing or temporarily unavailable.
+    } else if (ok) {
+      // Upstream succeeded but didn't return this id — it's genuinely missing.
+      // Negative-cache with the short TTL so we don't hammer CoinGecko.
       priceCache.set(id, { usd: null, updatedAt });
     }
+    // else: upstream failed; leave any prior entry intact so retries can succeed.
   }
 }
 

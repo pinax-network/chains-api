@@ -70,10 +70,10 @@ function normalizeName(segment) {
 }
 
 /**
- * Extract the semver portion of a version segment, preserving an optional `v`
- * prefix and pre-release/build metadata. Some clients emit extra descriptors
- * (e.g. "v1.26.0+commit.abc"); we keep them intact — the raw string is still
- * available via `raw`.
+ * Trim the version segment. We intentionally keep build metadata, pre-release
+ * tags, and any other suffix the client emits (e.g. "v1.26.0+commit.abc")
+ * so the version string aggregates downstream as the client author meant it.
+ * The raw input is still available via `raw` for callers that need it.
  */
 function normalizeVersion(segment) {
   return segment.trim();

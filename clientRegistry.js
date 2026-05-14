@@ -1,7 +1,8 @@
 // Curated registry of known blockchain client software.
-// Key is the lowercased, hyphen-free client name as it appears in
-// `web3_clientVersion` responses. Add new entries as they're observed in
-// production — unknown names still round-trip through the parser with `repo: null`.
+// Key is the lowercased client name as it appears in `web3_clientVersion`
+// responses (hyphens preserved — see `op-geth`, `op-reth`). Add new entries
+// as they're observed in production — unknown names still round-trip
+// through the parser with `repo: null`.
 
 export const CLIENT_REGISTRY = {
   // Ethereum execution clients

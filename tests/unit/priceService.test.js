@@ -79,6 +79,38 @@ describe('priceService', () => {
       expect(result).toBeNull();
     });
 
+    it('should retry upstream on next call after a fetch failure', async () => {
+      vi.mocked(fetchUtil.proxyFetch)
+        .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ ethereum: { usd: 2500.0 } }),
+        });
+
+      const first = await getPriceForChain(1);
+      expect(first).toBeNull();
+
+      const second = await getPriceForChain(1);
+      expect(second).toMatchObject({ usd: 2500.0 });
+      expect(fetchUtil.proxyFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry upstream on next call after an HTTP error', async () => {
+      vi.mocked(fetchUtil.proxyFetch)
+        .mockResolvedValueOnce({ ok: false, status: 500 })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ ethereum: { usd: 1800.0 } }),
+        });
+
+      const first = await getPriceForChain(1);
+      expect(first).toBeNull();
+
+      const second = await getPriceForChain(1);
+      expect(second).toMatchObject({ usd: 1800.0 });
+      expect(fetchUtil.proxyFetch).toHaveBeenCalledTimes(2);
+    });
+
     it('should use TTL cache on second call', async () => {
       vi.mocked(fetchUtil.proxyFetch).mockResolvedValue({
         ok: true,

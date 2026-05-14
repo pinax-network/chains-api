@@ -4,9 +4,16 @@ import { parseClientVersion } from './clientParser.js';
 /**
  * Aggregate parsed client software across working RPC endpoints.
  *
- * When `chainId` is provided, returns a single summary object for that chain
- * (or null if no monitoring data exists for it). When omitted, returns an
- * array of summaries — one per chain with at least one working endpoint.
+ * When `chainId` is provided, returns a single summary for that chain
+ * (or null if no monitoring data exists for it). The single-chain form
+ * returns the summary even if every working endpoint reported an
+ * unparseable client (so the caller can still see `totalNodes` /
+ * `unknownNodes`).
+ *
+ * When `chainId` is omitted, returns an array of summaries — one per
+ * chain with at least one parseable client. Chains where every working
+ * endpoint failed to parse are excluded from the list so `/clients`
+ * stays a directory of *known* client software.
  *
  * Each summary:
  *   {
@@ -40,7 +47,7 @@ export function getClientsByChain(chainId) {
 
   return Array.from(byChain.values())
     .map(summarizeChainClients)
-    .filter(Boolean);
+    .filter(summary => summary && summary.clients.length > 0);
 }
 
 /**
