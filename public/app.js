@@ -8,9 +8,12 @@ const COLORS = {
 };
 
 // Global State
+const ALL_SOURCES = ['chains', 'chainlist', 'theGraph', 'slip44', 'l2beat'];
+let allChains = [];
 let graphData = { nodes: [], links: [] };
 let filteredData = { nodes: [], links: [] };
 let currentFilter = 'all';
+let enabledSources = new Set(ALL_SOURCES);
 let myGraph = null;
 
 // ─── Utility: Debounce ───
@@ -229,6 +232,33 @@ function initUI() {
             document.getElementById('detailsPanel')?.classList.add('hidden');
         });
     }
+
+    // Sources Toggle
+    const sourcesToggle = document.getElementById('sourcesToggle');
+    const sourcesDropdown = document.getElementById('sourcesDropdown');
+    if (sourcesToggle && sourcesDropdown) {
+        sourcesToggle.addEventListener('click', () => {
+            sourcesDropdown.classList.toggle('hidden');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#sourcesPanel')) {
+                sourcesDropdown.classList.add('hidden');
+            }
+        });
+
+        sourcesDropdown.querySelectorAll('input[data-source]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                const source = checkbox.dataset.source;
+                if (checkbox.checked) {
+                    enabledSources.add(source);
+                } else {
+                    enabledSources.delete(source);
+                }
+                rebuildGraphFromSources();
+            });
+        });
+    }
 }
 
 async function fetchExportData() {
@@ -269,10 +299,12 @@ function addRelation(relations, rel, chain) {
 async function fetchData() {
     try {
         const exportData = await fetchExportData();
-        const chains = exportData.data.indexed.all;
-        const relations = buildRelationsMap(chains);
+        allChains = exportData.data.indexed.all;
 
-        processGraphData(chains, relations);
+        const visibleChains = filterChainsBySources(allChains);
+        const visibleRelations = buildRelationsMap(visibleChains);
+
+        processGraphData(visibleChains, visibleRelations);
         updateStats();
         document.getElementById('loadingOverlay').classList.add('hidden');
         renderGraph();
@@ -282,6 +314,28 @@ async function fetchData() {
         overlay.querySelector('.spinner').style.display = 'none';
         overlay.querySelector('p').textContent = 'Failed to load data.';
         overlay.querySelector('.loading-sub').textContent = 'Check your connection or ensure the API is running.';
+    }
+}
+
+function filterChainsBySources(chains) {
+    if (enabledSources.size === ALL_SOURCES.length) return chains;
+    return chains.filter(c =>
+        c.sources && c.sources.some(s => enabledSources.has(s))
+    );
+}
+
+function rebuildGraphFromSources() {
+    if (!allChains.length) return;
+
+    const visibleChains = filterChainsBySources(allChains);
+    const visibleRelations = buildRelationsMap(visibleChains);
+
+    processGraphData(visibleChains, visibleRelations);
+    applyFilters();
+    updateStats();
+
+    if (myGraph) {
+        myGraph.graphData(filteredData);
     }
 }
 

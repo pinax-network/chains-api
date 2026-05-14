@@ -195,6 +195,101 @@ h1 {
 .filter-btn[data-filter="Testnet"].active { border-color: var(--color-testnet); color: var(--color-testnet); }
 .filter-btn[data-filter="Beacon"].active { border-color: var(--color-beacon); color: var(--color-beacon); }
 
+/* ─── Sources Panel ─── */
+.sources-panel {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    padding: 0;
+    z-index: 20;
+}
+
+.sources-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px 14px;
+    transition: color 0.2s;
+    font-family: inherit;
+}
+
+.sources-toggle:hover {
+    color: var(--text-main);
+}
+
+.sources-dropdown {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-top: 1px solid var(--panel-border);
+}
+
+.sources-dropdown.hidden {
+    display: none;
+}
+
+.source-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color 0.15s;
+    user-select: none;
+}
+
+.source-toggle:hover {
+    color: var(--text-main);
+}
+
+.source-toggle input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.source-toggle input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.source-toggle input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 4px;
+    width: 4px;
+    height: 7px;
+    border: solid white;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+
+.source-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
 /* ─── Legend ─── */
 .legend {
     position: absolute;
@@ -564,6 +659,11 @@ canvas { outline: none; }
         flex-wrap: wrap;
         gap: 8px;
         max-width: calc(100% - 24px);
+    }
+
+    .sources-panel {
+        bottom: 12px;
+        right: 12px;
     }
 }
 
