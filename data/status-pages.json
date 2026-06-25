@@ -1148,6 +1148,15 @@
       "chainIds": [
         2716446429837000
       ]
+    },
+    {
+      "id": "xdc",
+      "name": "XDC Network",
+      "url": "https://status.xdc.network/",
+      "chainIds": [
+        50,
+        51
+      ]
     }
   ]
 }
