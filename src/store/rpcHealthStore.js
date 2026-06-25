@@ -70,19 +70,28 @@ export async function loadAllRpcHealthFromDisk() {
     return empty;
   }
 
-  const byChainId = {};
-  let lastCheckedAt = null;
-  for (const f of files) {
-    if (!f.endsWith('.json')) continue;
+  // Read concurrently — this runs on the startup path before the server is
+  // ready, so a sequential loop over thousands of chains would add seconds of
+  // boot latency. Array order is preserved for a deterministic merge.
+  const jsonFiles = files.filter(f => f.endsWith('.json'));
+  const parsedEntries = await Promise.all(jsonFiles.map(async (f) => {
     try {
       const parsed = JSON.parse(await readFile(join(RPC_HEALTH_DIR, f), 'utf8'));
       if (parsed && Number.isFinite(parsed.chainId) && Array.isArray(parsed.results)) {
-        byChainId[parsed.chainId] = parsed.results;
-        if (parsed.checkedAt && (!lastCheckedAt || parsed.checkedAt > lastCheckedAt)) {
-          lastCheckedAt = parsed.checkedAt;
-        }
+        return parsed;
       }
     } catch { /* skip unreadable/corrupt entry */ }
+    return null;
+  }));
+
+  const byChainId = {};
+  let lastCheckedAt = null;
+  for (const parsed of parsedEntries) {
+    if (!parsed) continue;
+    byChainId[parsed.chainId] = parsed.results;
+    if (parsed.checkedAt && (!lastCheckedAt || parsed.checkedAt > lastCheckedAt)) {
+      lastCheckedAt = parsed.checkedAt;
+    }
   }
   return { byChainId, lastCheckedAt };
 }
