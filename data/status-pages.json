@@ -1219,6 +1219,131 @@
       "symbol": "JUP",
       "name": "Jupiter",
       "url": "https://status.jup.ag/"
+    },
+    {
+      "symbol": "XTZ",
+      "name": "Tezos",
+      "url": "https://status.tezos.com/"
+    },
+    {
+      "symbol": "APT",
+      "name": "Aptos",
+      "url": "https://status.aptoslabs.com/"
+    },
+    {
+      "symbol": "TIA",
+      "name": "Celestia",
+      "url": "https://status.celestia.org/"
+    },
+    {
+      "symbol": "OSMO",
+      "name": "Osmosis",
+      "url": "https://status.osmosis.zone/"
+    },
+    {
+      "symbol": "FLOW",
+      "name": "Flow",
+      "url": "https://status.flow.com/"
+    },
+    {
+      "symbol": "XRD",
+      "name": "Radix",
+      "url": "https://status.radixdlt.com/"
+    },
+    {
+      "symbol": "EGLD",
+      "name": "MultiversX",
+      "url": "https://status.multiversx.com/"
+    },
+    {
+      "symbol": "DYDX",
+      "name": "dYdX",
+      "url": "https://status.dydx.trade/"
+    },
+    {
+      "symbol": "STX",
+      "name": "Stacks",
+      "url": "https://status.hiro.so/"
+    },
+    {
+      "symbol": "IOTA",
+      "name": "IOTA",
+      "url": "https://status.iota.org/"
+    },
+    {
+      "symbol": "WAXP",
+      "name": "WAX",
+      "url": "https://status.wax.io/"
+    },
+    {
+      "symbol": "AXL",
+      "name": "Axelar",
+      "url": "https://status.axelar.network/"
+    },
+    {
+      "symbol": "CHR",
+      "name": "Chromia",
+      "url": "https://status.chromia.com/"
+    },
+    {
+      "symbol": "OM",
+      "name": "Mantra",
+      "url": "https://status.mantrachain.io/"
+    },
+    {
+      "symbol": "INIT",
+      "name": "Initia",
+      "url": "https://status.initia.xyz/"
+    },
+    {
+      "symbol": "NOBLE",
+      "name": "Noble",
+      "url": "https://noble.instatus.com/"
+    },
+    {
+      "symbol": "XCH",
+      "name": "Chia",
+      "url": "https://status.chia.net/"
+    },
+    {
+      "symbol": "QUBIC",
+      "name": "Qubic",
+      "url": "https://status.qubic.li/"
+    },
+    {
+      "symbol": "ALPH",
+      "name": "Alephium",
+      "url": "https://status.alephium.org/status/global"
+    },
+    {
+      "symbol": "DFI",
+      "name": "DeFiChain",
+      "url": "https://status.defichain.com/"
+    },
+    {
+      "symbol": "ARCH",
+      "name": "Archway",
+      "url": "https://status.archway.io/"
+    },
+    {
+      "symbol": "ES",
+      "name": "Eclipse",
+      "url": "https://status.eclipse.xyz/"
+    },
+    {
+      "symbol": "AURA",
+      "name": "Aura Network",
+      "url": "https://status.aura.network/incidents"
+    },
+    {
+      "symbol": "IXO",
+      "name": "ixo",
+      "url": "https://status.ixo.world/status/ixo"
+    },
+    {
+      "symbol": "ZNN",
+      "name": "Zenon",
+      "url": "https://bridgestatus.zenon.info/"
     }
   ]
 }
