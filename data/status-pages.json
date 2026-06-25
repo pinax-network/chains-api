@@ -1,25 +1,400 @@
 {
   "statusPages": [
-    { "id": "base", "name": "Base", "url": "https://base-l2.statuspage.io/", "chainIds": [8453, 84532] },
-    { "id": "optimism", "name": "OP Mainnet", "url": "https://status.optimism.io/", "chainIds": [10, 11155420] },
-    { "id": "arbitrum", "name": "Arbitrum", "url": "https://status.arbitrum.io/", "chainIds": [42161, 42170, 421614] },
-    { "id": "polygon", "name": "Polygon", "url": "https://status.polygon.technology/", "chainIds": [137, 80002, 1101, 2442] },
-    { "id": "linea", "name": "Linea", "url": "https://linea.statuspage.io/", "chainIds": [59144, 59141] },
-    { "id": "gnosis", "name": "Gnosis", "url": "https://status.gnosischain.com/", "chainIds": [100, 10200] },
-    { "id": "avalanche", "name": "Avalanche", "url": "https://status.avax.network/", "chainIds": [43114, 43113] },
-    { "id": "celo", "name": "Celo", "url": "https://status.celo.org/", "chainIds": [42220, 44787] },
-    { "id": "blast", "name": "Blast", "url": "https://status.blast.io/", "chainIds": [81457, 168587773] },
-    { "id": "taiko", "name": "Taiko", "url": "https://status.taiko.xyz/", "chainIds": [167000, 167009] },
-    { "id": "zksync", "name": "ZKsync Era", "url": "https://zksync-network.statuspage.io/", "chainIds": [324, 300] },
-    { "id": "mantle", "name": "Mantle", "url": "https://0xmantle.instatus.com/", "chainIds": [5000, 5003] },
-    { "id": "immutable", "name": "Immutable zkEVM", "url": "https://status.immutable.com/", "chainIds": [13371, 13473] },
-    { "id": "aurora", "name": "Aurora", "url": "https://status.aurora.dev/", "chainIds": [1313161554, 1313161555] },
-    { "id": "zora", "name": "Zora", "url": "https://status.zora.energy/", "chainIds": [7777777, 999999999] },
-    { "id": "manta-pacific", "name": "Manta Pacific", "url": "https://manta-pacific-status.caldera.dev/", "chainIds": [169, 3441006] },
-    { "id": "unichain", "name": "Unichain", "url": "https://statuspage.incident.io/uniswap-status", "chainIds": [130, 1301] },
-    { "id": "ink", "name": "Ink", "url": "https://status.inkonchain.com/", "chainIds": [57073, 763373] },
-    { "id": "soneium", "name": "Soneium", "url": "https://status.soneium.org/", "chainIds": [1868, 1946] },
-    { "id": "abstract", "name": "Abstract", "url": "https://status.abs.xyz/", "chainIds": [2741, 11124] },
-    { "id": "kaia", "name": "Kaia", "url": "https://status.kaia.io/", "chainIds": [8217, 1001] }
+    {
+      "id": "base",
+      "name": "Base",
+      "url": "https://base-l2.statuspage.io/",
+      "chainIds": [
+        8453,
+        84532
+      ]
+    },
+    {
+      "id": "optimism",
+      "name": "OP Mainnet",
+      "url": "https://status.optimism.io/",
+      "chainIds": [
+        10,
+        11155420
+      ]
+    },
+    {
+      "id": "arbitrum",
+      "name": "Arbitrum",
+      "url": "https://status.arbitrum.io/",
+      "chainIds": [
+        42161,
+        42170,
+        421614
+      ]
+    },
+    {
+      "id": "polygon",
+      "name": "Polygon",
+      "url": "https://status.polygon.technology/",
+      "chainIds": [
+        137,
+        80002,
+        1101,
+        2442
+      ]
+    },
+    {
+      "id": "linea",
+      "name": "Linea",
+      "url": "https://linea.statuspage.io/",
+      "chainIds": [
+        59144,
+        59141
+      ]
+    },
+    {
+      "id": "gnosis",
+      "name": "Gnosis",
+      "url": "https://status.gnosischain.com/",
+      "chainIds": [
+        100,
+        10200
+      ]
+    },
+    {
+      "id": "avalanche",
+      "name": "Avalanche",
+      "url": "https://status.avax.network/",
+      "chainIds": [
+        43114,
+        43113
+      ]
+    },
+    {
+      "id": "celo",
+      "name": "Celo",
+      "url": "https://status.celo.org/",
+      "chainIds": [
+        42220,
+        44787
+      ]
+    },
+    {
+      "id": "blast",
+      "name": "Blast",
+      "url": "https://status.blast.io/",
+      "chainIds": [
+        81457,
+        168587773
+      ]
+    },
+    {
+      "id": "taiko",
+      "name": "Taiko",
+      "url": "https://status.taiko.xyz/",
+      "chainIds": [
+        167000,
+        167009
+      ]
+    },
+    {
+      "id": "zksync",
+      "name": "ZKsync Era",
+      "url": "https://zksync-network.statuspage.io/",
+      "chainIds": [
+        324,
+        300
+      ]
+    },
+    {
+      "id": "mantle",
+      "name": "Mantle",
+      "url": "https://0xmantle.instatus.com/",
+      "chainIds": [
+        5000,
+        5003
+      ]
+    },
+    {
+      "id": "immutable",
+      "name": "Immutable zkEVM",
+      "url": "https://status.immutable.com/",
+      "chainIds": [
+        13371,
+        13473
+      ]
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "url": "https://status.aurora.dev/",
+      "chainIds": [
+        1313161554,
+        1313161555
+      ]
+    },
+    {
+      "id": "zora",
+      "name": "Zora",
+      "url": "https://status.zora.energy/",
+      "chainIds": [
+        7777777,
+        999999999
+      ]
+    },
+    {
+      "id": "manta-pacific",
+      "name": "Manta Pacific",
+      "url": "https://manta-pacific-status.caldera.dev/",
+      "chainIds": [
+        169,
+        3441006
+      ]
+    },
+    {
+      "id": "unichain",
+      "name": "Unichain",
+      "url": "https://statuspage.incident.io/uniswap-status",
+      "chainIds": [
+        130,
+        1301
+      ]
+    },
+    {
+      "id": "ink",
+      "name": "Ink",
+      "url": "https://status.inkonchain.com/",
+      "chainIds": [
+        57073,
+        763373
+      ]
+    },
+    {
+      "id": "soneium",
+      "name": "Soneium",
+      "url": "https://status.soneium.org/",
+      "chainIds": [
+        1868,
+        1946
+      ]
+    },
+    {
+      "id": "abstract",
+      "name": "Abstract",
+      "url": "https://status.abs.xyz/",
+      "chainIds": [
+        2741,
+        11124
+      ]
+    },
+    {
+      "id": "kaia",
+      "name": "Kaia",
+      "url": "https://status.kaia.io/",
+      "chainIds": [
+        8217,
+        1001
+      ]
+    },
+    {
+      "id": "intuition",
+      "name": "Intuition",
+      "url": "https://status.intuition.systems/",
+      "chainIds": [
+        1155
+      ]
+    },
+    {
+      "id": "nahmii",
+      "name": "Nahmii",
+      "url": "https://nahmii-community.github.io/status/",
+      "chainIds": [
+        5551
+      ]
+    },
+    {
+      "id": "katana",
+      "name": "Katana",
+      "url": "https://status.katana.network/",
+      "chainIds": [
+        747474,
+        737373
+      ]
+    },
+    {
+      "id": "sx",
+      "name": "SX Network",
+      "url": "https://status.sx.bet/",
+      "chainIds": [
+        4162,
+        79479957
+      ]
+    },
+    {
+      "id": "step",
+      "name": "Step Network",
+      "url": "https://step.statuspage.io/",
+      "chainIds": [
+        1234
+      ]
+    },
+    {
+      "id": "santiment",
+      "name": "Santiment Intelligence Network",
+      "url": "https://status.santiment.net/",
+      "chainIds": [
+        11888,
+        32382
+      ]
+    },
+    {
+      "id": "superposition",
+      "name": "Superposition",
+      "url": "https://status.superposition.so/",
+      "chainIds": [
+        55244
+      ]
+    },
+    {
+      "id": "reya",
+      "name": "Reya",
+      "url": "https://reya.instatus.com/",
+      "chainIds": [
+        89346162
+      ]
+    },
+    {
+      "id": "xlayer",
+      "name": "X Layer",
+      "url": "https://status.xlayer.tech/",
+      "chainIds": [
+        196,
+        195
+      ]
+    },
+    {
+      "id": "jovay",
+      "name": "Jovay",
+      "url": "https://status.jovay.io/",
+      "chainIds": [
+        5734951
+      ]
+    },
+    {
+      "id": "perennial",
+      "name": "Perennial",
+      "url": "https://perennial.statuspage.io/",
+      "chainIds": [
+        1424
+      ]
+    },
+    {
+      "id": "bsquared",
+      "name": "B2 (BSquared)",
+      "url": "https://status.bsquared.network/",
+      "chainIds": [
+        223
+      ]
+    },
+    {
+      "id": "matchain",
+      "name": "Matchain",
+      "url": "https://status.matchain.io/",
+      "chainIds": [
+        698
+      ]
+    },
+    {
+      "id": "optopia",
+      "name": "Optopia",
+      "url": "https://optopia.instatus.com/",
+      "chainIds": [
+        62050
+      ]
+    },
+    {
+      "id": "rise",
+      "name": "RISE",
+      "url": "https://status.risechain.com/",
+      "chainIds": [
+        4153
+      ]
+    },
+    {
+      "id": "appchain",
+      "name": "AppChain",
+      "url": "https://status.appchain.xyz/",
+      "chainIds": [
+        466
+      ]
+    },
+    {
+      "id": "xai",
+      "name": "Xai",
+      "url": "https://status.xai.games/",
+      "chainIds": [
+        660279
+      ]
+    },
+    {
+      "id": "kroma",
+      "name": "Kroma",
+      "url": "https://kroma.instatus.com/",
+      "chainIds": [
+        255
+      ]
+    },
+    {
+      "id": "metis",
+      "name": "Metis Andromeda",
+      "url": "https://status.metis.io/",
+      "chainIds": [
+        1088
+      ]
+    },
+    {
+      "id": "skate",
+      "name": "Skate",
+      "url": "https://skate-mainnet-status.alt.technology/",
+      "chainIds": [
+        5050
+      ]
+    },
+    {
+      "id": "fluent",
+      "name": "Fluent",
+      "url": "https://status.fluent.xyz/",
+      "chainIds": [
+        25363
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "url": "https://status.codex.xyz/",
+      "chainIds": [
+        81224
+      ]
+    },
+    {
+      "id": "lisk",
+      "name": "Lisk",
+      "url": "https://status.lisk.com/",
+      "chainIds": [
+        1135
+      ]
+    },
+    {
+      "id": "vizing",
+      "name": "Vizing",
+      "url": "https://vizing.instatus.com/",
+      "chainIds": [
+        28518
+      ]
+    },
+    {
+      "id": "doma",
+      "name": "Doma",
+      "url": "https://doma.instatus.com/",
+      "chainIds": [
+        97477
+      ]
+    }
   ]
 }
