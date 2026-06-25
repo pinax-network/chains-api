@@ -480,11 +480,13 @@
       ]
     },
     {
-      "id": "flowevmpreviewnet",
-      "name": "Flow EVM Previewnet",
+      "id": "flow",
+      "name": "Flow",
       "url": "https://status.flow.com/",
       "chainIds": [
-        646
+        545,
+        646,
+        747
       ]
     },
     {
@@ -1252,11 +1254,6 @@
       "url": "https://status.osmosis.zone/"
     },
     {
-      "symbol": "FLOW",
-      "name": "Flow",
-      "url": "https://status.flow.com/"
-    },
-    {
       "symbol": "XRD",
       "name": "Radix",
       "url": "https://status.radixdlt.com/"
@@ -1325,11 +1322,6 @@
       "symbol": "ALPH",
       "name": "Alephium",
       "url": "https://status.alephium.org/status/global"
-    },
-    {
-      "symbol": "DFI",
-      "name": "DeFiChain",
-      "url": "https://status.defichain.com/"
     },
     {
       "symbol": "ARCH",
