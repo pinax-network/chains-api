@@ -14,7 +14,10 @@ vi.mock('../../config.js', () => ({
   RPC_CHECK_CONCURRENCY: 8,
   MAX_ENDPOINTS_PER_CHAIN: 5,
   PROXY_URL: '',
-  PROXY_ENABLED: false
+  PROXY_ENABLED: false,
+  SOURCE_FETCH_MAX_RETRIES: 1,
+  SOURCE_FETCH_RETRY_BASE_MS: 0,
+  SOURCE_REFRESH_INTERVAL_MS: 0
 }));
 
 // Mock fetchUtil to use standard fetch
@@ -2133,7 +2136,10 @@ describe('initializeDataOnStartup with disk cache', () => {
       RPC_CHECK_TIMEOUT_MS: 8000,
       RPC_CHECK_CONCURRENCY: 8,
       PROXY_URL: '',
-      PROXY_ENABLED: false
+      PROXY_ENABLED: false,
+      SOURCE_FETCH_MAX_RETRIES: 1,
+      SOURCE_FETCH_RETRY_BASE_MS: 0,
+      SOURCE_REFRESH_INTERVAL_MS: 0
     }));
     vi.doMock('../../fetchUtil.js', () => ({
       proxyFetch: vi.fn((...args) => fetch(...args)),

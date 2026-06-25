@@ -80,6 +80,16 @@ export const DATA_SOURCE_L2BEAT_API = parseStringEnv(
   'https://l2beat.com/api/scaling-summary'
 );
 export const L2BEAT_FETCH_TIMEOUT_MS = parseIntEnv('L2BEAT_FETCH_TIMEOUT_MS', 10000);
+
+// Source fetch resilience. A source fetch is retried with exponential backoff
+// before being treated as failed, so a transient blip at startup doesn't leave
+// a registry permanently empty until a manual reload.
+export const SOURCE_FETCH_MAX_RETRIES = parseIntEnv('SOURCE_FETCH_MAX_RETRIES', 3);
+export const SOURCE_FETCH_RETRY_BASE_MS = parseIntEnv('SOURCE_FETCH_RETRY_BASE_MS', 500);
+// Background self-heal: every interval, if any core/supplementary source is
+// currently missing (e.g. failed at boot), re-fetch all sources. Set to 0 to
+// disable. Default 15 min.
+export const SOURCE_REFRESH_INTERVAL_MS = parseIntEnv('SOURCE_REFRESH_INTERVAL_MS', 900000);
 /**
  * @deprecated Cadence is now driven by the unified rolling refresher
  * (CHAIN_REFRESHER_TICK_MS × queue length). Kept so /scaling/status can keep

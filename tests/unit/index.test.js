@@ -22,7 +22,10 @@ vi.mock('../../config.js', () => ({
   DATA_CACHE_ENABLED: false,
   DATA_CACHE_FILE: '.cache/test-data-cache.json',
   PROXY_URL: '',
-  PROXY_ENABLED: false
+  PROXY_ENABLED: false,
+  SOURCE_FETCH_MAX_RETRIES: 1,
+  SOURCE_FETCH_RETRY_BASE_MS: 0,
+  SOURCE_REFRESH_INTERVAL_MS: 0
 }));
 
 // Stub the L2BEAT refresher so buildApp doesn't kick off a real network fetch.
