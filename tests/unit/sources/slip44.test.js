@@ -32,6 +32,39 @@ describe('parseSLIP44 (direct import from src/sources/slip44.js)', () => {
     });
   });
 
+  it('parses the current 3-column upstream format (no Path component column)', () => {
+    const md = [
+      '| Coin type  | Symbol  | Coin                |',
+      '| ---------- | ------- | ------------------- |',
+      '| 0          | BTC     | Bitcoin             |',
+      '| 1          |         | Testnet (all coins) |',
+      '| 60         | ETH     | Ether               |'
+    ].join('\n');
+
+    const result = parseSLIP44(md);
+
+    // pathComponent is derived from the coin type (0x80000000 + coinType).
+    expect(result[0]).toEqual({
+      coinType: 0,
+      pathComponent: '0x80000000',
+      symbol: 'BTC',
+      coin: 'Bitcoin'
+    });
+    expect(result[60]).toEqual({
+      coinType: 60,
+      pathComponent: '0x8000003c',
+      symbol: 'ETH',
+      coin: 'Ether'
+    });
+    // Interior empty cell (missing symbol) must not shift the coin column.
+    expect(result[1]).toEqual({
+      coinType: 1,
+      pathComponent: '0x80000001',
+      symbol: '',
+      coin: 'Testnet (all coins)'
+    });
+  });
+
   it('skips rows that are not numeric coin types', () => {
     const md = [
       '| Coin type | Path component | Symbol | Coin |',
