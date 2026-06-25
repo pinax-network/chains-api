@@ -1239,11 +1239,6 @@
       "url": "https://status.tezos.com/"
     },
     {
-      "symbol": "APT",
-      "name": "Aptos",
-      "url": "https://status.aptoslabs.com/"
-    },
-    {
       "symbol": "TIA",
       "name": "Celestia",
       "url": "https://status.celestia.org/"
@@ -1282,11 +1277,6 @@
       "symbol": "WAXP",
       "name": "WAX",
       "url": "https://status.wax.io/"
-    },
-    {
-      "symbol": "AXL",
-      "name": "Axelar",
-      "url": "https://status.axelar.network/"
     },
     {
       "symbol": "CHR",
