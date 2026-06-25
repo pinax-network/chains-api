@@ -1157,6 +1157,22 @@
         50,
         51
       ]
+    },
+    {
+      "id": "hyperliquid",
+      "name": "Hyperliquid",
+      "url": "https://hyperliquid.statuspage.io/",
+      "chainIds": [
+        998
+      ]
+    },
+    {
+      "id": "aura",
+      "name": "Aura Network",
+      "url": "https://status.aura.network/incidents",
+      "chainIds": [
+        6322
+      ]
     }
   ],
   "coins": [
@@ -1164,11 +1180,6 @@
       "symbol": "SOL",
       "name": "Solana",
       "url": "https://status.solana.com/"
-    },
-    {
-      "symbol": "HYPE",
-      "name": "Hyperliquid",
-      "url": "https://hyperliquid.statuspage.io/"
     },
     {
       "symbol": "XLM",
@@ -1329,11 +1340,6 @@
       "symbol": "ES",
       "name": "Eclipse",
       "url": "https://status.eclipse.xyz/"
-    },
-    {
-      "symbol": "AURA",
-      "name": "Aura Network",
-      "url": "https://status.aura.network/incidents"
     },
     {
       "symbol": "IXO",
