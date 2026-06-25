@@ -13,7 +13,10 @@ vi.mock('../../../config.js', () => ({
   RPC_CHECK_TIMEOUT_MS: 5000,
   RPC_CHECK_CONCURRENCY: 8,
   PROXY_URL: '',
-  PROXY_ENABLED: false
+  PROXY_ENABLED: false,
+  // chainRefresher persists sweeps via snapshot.js, which reads these.
+  DATA_CACHE_ENABLED: false,
+  DATA_CACHE_FILE: '.cache/test-refresher-cache.json'
 }));
 
 import { fetchL2Beat } from '../../../src/sources/l2beat.js';

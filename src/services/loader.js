@@ -180,7 +180,11 @@ export async function initializeDataOnStartup(options = {}) {
       startupInitialized = true;
       logger.info({ path: DATA_CACHE_PATH, totalChains: cachedData.indexed.all.length }, 'Loaded cached snapshot');
 
-      refreshDataWithGuard({ requireAtLeastOneSource: true })
+      // Preserve the RPC-health results loaded from the snapshot: the server
+      // serves the cached endpoint statuses immediately and the rolling
+      // refresher replaces each chain's entry as it re-tests it. Without this
+      // the post-boot data refresh would wipe the cached statuses.
+      refreshDataWithGuard({ requireAtLeastOneSource: true, preserveRpcHealth: true })
         .then(() => {
           logger.info('Background refresh completed successfully');
           if (typeof onBackgroundRefreshSuccess === 'function') {

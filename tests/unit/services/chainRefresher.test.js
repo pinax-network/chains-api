@@ -8,6 +8,10 @@ vi.mock('../../../rpcUtil.js', () => ({
   jsonRpcCall: vi.fn()
 }));
 
+vi.mock('../../../src/store/snapshot.js', () => ({
+  writeSnapshotToDiskAtomic: vi.fn(() => Promise.resolve())
+}));
+
 vi.mock('../../../config.js', () => ({
   RPC_CHECK_TIMEOUT_MS: 5000,
   RPC_CHECK_CONCURRENCY: 8,
@@ -16,11 +20,15 @@ vi.mock('../../../config.js', () => ({
   DATA_SOURCE_L2BEAT_API: 'https://l2beat.test/api/scaling-summary',
   L2BEAT_FETCH_TIMEOUT_MS: 1000,
   PROXY_URL: '',
-  PROXY_ENABLED: false
+  PROXY_ENABLED: false,
+  // chainRefresher now persists the sweep via snapshot.js, which reads these.
+  DATA_CACHE_ENABLED: false,
+  DATA_CACHE_FILE: '.cache/test-refresher-cache.json'
 }));
 
 import { fetchL2Beat } from '../../../src/sources/l2beat.js';
 import { jsonRpcCall } from '../../../rpcUtil.js';
+import { writeSnapshotToDiskAtomic } from '../../../src/store/snapshot.js';
 import { applyDataToCache, cachedData } from '../../../src/store/cache.js';
 import {
   processChainRpc,
@@ -186,6 +194,21 @@ describe('chainRefresher', () => {
       await tickOnce(); // l2beat_batch again (sweep #2)
 
       expect(getChainRefresherStatus().sweep.sweepNumber).toBe(2);
+    });
+
+    it('persists the RPC-health snapshot when a sweep completes', async () => {
+      writeSnapshotToDiskAtomic.mockClear();
+      seedCacheWith([seedChain(1, [])]);
+      fetchL2Beat.mockResolvedValue({
+        source: 'live', fetchedAt: '2026-05-05T00:00:00.000Z', projects: []
+      });
+      expect(writeSnapshotToDiskAtomic).not.toHaveBeenCalled();
+
+      await tickOnce(); // l2beat_batch (sweep #1)
+      await tickOnce(); // chain_rpc 1 -> queue drains
+      await tickOnce(); // rebuild -> sweep #1 ended, snapshot persisted
+
+      expect(writeSnapshotToDiskAtomic).toHaveBeenCalled();
     });
 
     it('overlap guard: a tick in flight is skipped, not queued behind itself', async () => {

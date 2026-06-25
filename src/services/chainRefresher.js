@@ -32,6 +32,7 @@ import { incCounter } from '../util/metrics.js';
 import { cachedData } from '../store/cache.js';
 import { indexL2BeatSource } from '../store/indexer.js';
 import { fetchL2Beat } from '../sources/l2beat.js';
+import { writeSnapshotToDiskAtomic } from '../store/snapshot.js';
 
 const SWEEP_TICK_MS = Number(process.env.CHAIN_REFRESHER_TICK_MS) || 1000;
 
@@ -225,6 +226,13 @@ function onSweepEnd() {
       durationMs: Date.now() - new Date(cursor.sweepStartedAt).getTime()
     },
     'Chain refresher sweep completed'
+  );
+
+  // Persist the freshly-swept RPC-health results so a restart resumes from
+  // recent status instead of re-pinging every endpoint cold. Fire-and-forget:
+  // the snapshot write is atomic (temp + rename) and a failure is non-fatal.
+  writeSnapshotToDiskAtomic(cachedData).catch(err =>
+    logger.warn({ err: err.message || err }, 'Failed to persist RPC-health snapshot after sweep')
   );
 }
 
