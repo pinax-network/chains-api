@@ -8,9 +8,12 @@ vi.mock('../../../rpcUtil.js', () => ({
   jsonRpcCall: vi.fn()
 }));
 
-vi.mock('../../../src/store/snapshot.js', () => ({
-  writeSnapshotToDiskAtomic: vi.fn(() => Promise.resolve())
-}));
+// Mock only the persistence side-effect; keep the real rpcStateChanged so the
+// change-detection behaviour is exercised end to end.
+vi.mock('../../../src/store/rpcHealthStore.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, persistChainRpcHealth: vi.fn(() => Promise.resolve()) };
+});
 
 vi.mock('../../../config.js', () => ({
   RPC_CHECK_TIMEOUT_MS: 5000,
@@ -28,7 +31,7 @@ vi.mock('../../../config.js', () => ({
 
 import { fetchL2Beat } from '../../../src/sources/l2beat.js';
 import { jsonRpcCall } from '../../../rpcUtil.js';
-import { writeSnapshotToDiskAtomic } from '../../../src/store/snapshot.js';
+import { persistChainRpcHealth } from '../../../src/store/rpcHealthStore.js';
 import { applyDataToCache, cachedData } from '../../../src/store/cache.js';
 import {
   processChainRpc,
@@ -196,19 +199,32 @@ describe('chainRefresher', () => {
       expect(getChainRefresherStatus().sweep.sweepNumber).toBe(2);
     });
 
-    it('persists the RPC-health snapshot when a sweep completes', async () => {
-      writeSnapshotToDiskAtomic.mockClear();
-      seedCacheWith([seedChain(1, [])]);
-      fetchL2Beat.mockResolvedValue({
-        source: 'live', fetchedAt: '2026-05-05T00:00:00.000Z', projects: []
-      });
-      expect(writeSnapshotToDiskAtomic).not.toHaveBeenCalled();
+    it('persists a chain incrementally when its endpoint state changes', async () => {
+      persistChainRpcHealth.mockClear();
+      seedCacheWith([seedChain(1, ['http://rpc.one'])]);
+      // healthy endpoint: clientVersion + block height
+      jsonRpcCall.mockImplementation((_url, method) =>
+        Promise.resolve(method === 'web3_clientVersion' ? 'geth/v1' : '0x10'));
 
-      await tickOnce(); // l2beat_batch (sweep #1)
-      await tickOnce(); // chain_rpc 1 -> queue drains
-      await tickOnce(); // rebuild -> sweep #1 ended, snapshot persisted
+      await processChainRpc(1); // no prior state -> changed -> persist
 
-      expect(writeSnapshotToDiskAtomic).toHaveBeenCalled();
+      expect(persistChainRpcHealth).toHaveBeenCalledTimes(1);
+      expect(persistChainRpcHealth).toHaveBeenCalledWith(1, expect.arrayContaining([
+        expect.objectContaining({ url: 'http://rpc.one', ok: true })
+      ]));
+    });
+
+    it('does not persist when only the block height advances (no state change)', async () => {
+      seedCacheWith([seedChain(1, ['http://rpc.one'])]);
+      // Prior cached state: same URL, already up.
+      cachedData.rpcHealth = { 1: [{ url: 'http://rpc.one', ok: true, blockHeight: 16 }] };
+      persistChainRpcHealth.mockClear();
+      jsonRpcCall.mockImplementation((_url, method) =>
+        Promise.resolve(method === 'web3_clientVersion' ? 'geth/v1' : '0x20')); // new block
+
+      await processChainRpc(1);
+
+      expect(persistChainRpcHealth).not.toHaveBeenCalled();
     });
 
     it('overlap guard: a tick in flight is skipped, not queued behind itself', async () => {
