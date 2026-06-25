@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   getAllStatusPages,
   getStatusPageByChainId,
+  getAllCoinStatusPages,
+  getStatusPageBySymbol,
   attachStatusPages
 } from '../../../src/sources/statusPages.js';
 
@@ -61,5 +63,35 @@ describe('status-pages source (data/status-pages.json)', () => {
   it('attachStatusPages is a no-op on malformed input', () => {
     expect(() => attachStatusPages(undefined)).not.toThrow();
     expect(() => attachStatusPages({})).not.toThrow();
+  });
+
+  describe('coin (symbol-keyed) entries', () => {
+    it('loads coin entries with symbol/name/url', () => {
+      const coins = getAllCoinStatusPages();
+      expect(coins.length).toBeGreaterThan(0);
+      for (const c of coins) {
+        expect(typeof c.symbol).toBe('string');
+        expect(c.url).toMatch(/^https:\/\//);
+      }
+    });
+
+    it('resolves a coin by symbol, case-insensitively', () => {
+      const sol = getStatusPageBySymbol('sol');
+      expect(sol.statusPage).toBe('https://status.solana.com/');
+      expect(sol.symbol).toBe('SOL');
+      expect(getStatusPageBySymbol('SOL').statusPage).toBe(sol.statusPage);
+    });
+
+    it('returns null for an unknown symbol', () => {
+      expect(getStatusPageBySymbol('NOTACOIN')).toBeNull();
+      expect(getStatusPageBySymbol(123)).toBeNull();
+    });
+
+    it('coin entries do not leak into chain attachment', () => {
+      // Solana has no chainId in our data; it must not match a chain lookup.
+      const indexed = { byChainId: { 1: { chainId: 1, name: 'Ethereum' } } };
+      attachStatusPages(indexed);
+      expect(indexed.byChainId[1].statusPage).toBeUndefined();
+    });
   });
 });

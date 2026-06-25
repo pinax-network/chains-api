@@ -172,8 +172,9 @@ Services: `chains-api` (port 3000) and `chains-api-mcp` (port 3001). Both have h
 | GET | `/scaling` | L2BEAT projects |
 | GET | `/scaling/:id` | L2BEAT project by chain ID |
 | GET | `/scaling/status` | L2BEAT refresh status |
-| GET | `/status-pages` | Curated operator status/incident pages |
+| GET | `/status-pages` | Curated operator status/incident pages (chains + coins) |
 | GET | `/status-pages/:id` | Status page for a chain (by chainId) |
+| GET | `/status-pages/symbol/:symbol` | Status page for a coin not keyed by chainId (e.g. `SOL`) |
 | GET | `/clients` | Execution-client registry |
 | GET | `/clients/:id` | Client by id |
 | GET | `/rpc-monitor` | RPC health results |

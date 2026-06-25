@@ -1158,5 +1158,67 @@
         51
       ]
     }
+  ],
+  "coins": [
+    {
+      "symbol": "SOL",
+      "name": "Solana",
+      "url": "https://status.solana.com/"
+    },
+    {
+      "symbol": "HYPE",
+      "name": "Hyperliquid",
+      "url": "https://hyperliquid.statuspage.io/"
+    },
+    {
+      "symbol": "XLM",
+      "name": "Stellar",
+      "url": "https://status.stellar.org/"
+    },
+    {
+      "symbol": "SUI",
+      "name": "Sui",
+      "url": "https://status.sui.io/"
+    },
+    {
+      "symbol": "UNI",
+      "name": "Uniswap",
+      "url": "https://status.uniswap.org/"
+    },
+    {
+      "symbol": "WLD",
+      "name": "Worldcoin",
+      "url": "https://status.world.org/"
+    },
+    {
+      "symbol": "ONDO",
+      "name": "Ondo",
+      "url": "https://status.ondo.finance/"
+    },
+    {
+      "symbol": "PI",
+      "name": "Pi Network",
+      "url": "https://status.minepi.com/"
+    },
+    {
+      "symbol": "AAVE",
+      "name": "Aave",
+      "url": "https://status.aave.com/"
+    },
+    {
+      "symbol": "ICP",
+      "name": "Internet Computer",
+      "url": "https://status.internetcomputer.org/"
+    },
+    {
+      "symbol": "MORPHO",
+      "name": "Morpho",
+      "url": "https://status.morpho.org/"
+    },
+    {
+      "symbol": "JUP",
+      "name": "Jupiter",
+      "url": "https://status.jup.ag/"
+    }
   ]
 }

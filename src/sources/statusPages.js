@@ -20,14 +20,20 @@ function loadRegistry() {
   try {
     const parsed = JSON.parse(readFileSync(REGISTRY_PATH, 'utf8'));
     const pages = Array.isArray(parsed?.statusPages) ? parsed.statusPages : [];
-    return pages.filter(p => p && typeof p.url === 'string' && Array.isArray(p.chainIds));
+    const coins = Array.isArray(parsed?.coins) ? parsed.coins : [];
+    return {
+      statusPages: pages.filter(p => p && typeof p.url === 'string' && Array.isArray(p.chainIds)),
+      // coins: symbol-keyed entries for networks not represented as a chainId
+      // in our data (non-EVM L1s, protocols) — e.g. Solana, Sui, Aave.
+      coins: coins.filter(c => c && typeof c.url === 'string' && typeof c.symbol === 'string')
+    };
   } catch (err) {
     logger.warn({ err: err.message }, 'Status-page registry unavailable');
-    return [];
+    return { statusPages: [], coins: [] };
   }
 }
 
-const STATUS_PAGES = loadRegistry();
+const { statusPages: STATUS_PAGES, coins: COIN_PAGES } = loadRegistry();
 
 // chainId -> { id, name, url } for O(1) lookups during indexing and queries.
 const BY_CHAIN_ID = new Map();
@@ -40,9 +46,32 @@ for (const page of STATUS_PAGES) {
   }
 }
 
-/** All registry entries (project id, name, url, chainIds). */
+// SYMBOL -> { symbol, name, url } for coin lookups.
+const BY_SYMBOL = new Map();
+for (const coin of COIN_PAGES) {
+  const sym = coin.symbol.toUpperCase();
+  if (!BY_SYMBOL.has(sym)) BY_SYMBOL.set(sym, { symbol: sym, name: coin.name, url: coin.url });
+}
+
+/** All chain-keyed registry entries (project id, name, url, chainIds). */
 export function getAllStatusPages() {
   return STATUS_PAGES;
+}
+
+/** All coin/symbol-keyed entries ({ symbol, name, url }). */
+export function getAllCoinStatusPages() {
+  return COIN_PAGES;
+}
+
+/**
+ * The status-page record for a coin symbol, or null. Shape:
+ * { symbol, statusPage, name }
+ */
+export function getStatusPageBySymbol(symbol) {
+  if (typeof symbol !== 'string') return null;
+  const coin = BY_SYMBOL.get(symbol.toUpperCase());
+  if (!coin) return null;
+  return { symbol: coin.symbol, statusPage: coin.url, name: coin.name };
 }
 
 /**
