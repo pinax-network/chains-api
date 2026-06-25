@@ -23,6 +23,7 @@ import { slip44Routes } from './routes/slip44.js';
 import { rpcMonitorRoutes } from './routes/rpcMonitor.js';
 import { clientsRoutes } from './routes/clients.js';
 import { scalingRoutes } from './routes/scaling.js';
+import { statusPagesRoutes } from './routes/statusPages.js';
 import { adminRoutes } from './routes/admin.js';
 import { metricsRoute } from './routes/metrics.js';
 import { refresherRoute } from './routes/refresher.js';
@@ -164,6 +165,7 @@ export async function buildApp(options = {}) {
   await fastify.register(rpcMonitorRoutes);
   await fastify.register(clientsRoutes);
   await fastify.register(scalingRoutes);
+  await fastify.register(statusPagesRoutes);
   await fastify.register(metricsRoute);
   await fastify.register(refresherRoute);
   await fastify.register(rootRoute);

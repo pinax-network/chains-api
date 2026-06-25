@@ -1,0 +1,25 @@
+{
+  "statusPages": [
+    { "id": "base", "name": "Base", "url": "https://base-l2.statuspage.io/", "chainIds": [8453, 84532] },
+    { "id": "optimism", "name": "OP Mainnet", "url": "https://status.optimism.io/", "chainIds": [10, 11155420] },
+    { "id": "arbitrum", "name": "Arbitrum", "url": "https://status.arbitrum.io/", "chainIds": [42161, 42170, 421614] },
+    { "id": "polygon", "name": "Polygon", "url": "https://status.polygon.technology/", "chainIds": [137, 80002, 1101, 2442] },
+    { "id": "linea", "name": "Linea", "url": "https://linea.statuspage.io/", "chainIds": [59144, 59141] },
+    { "id": "gnosis", "name": "Gnosis", "url": "https://status.gnosischain.com/", "chainIds": [100, 10200] },
+    { "id": "avalanche", "name": "Avalanche", "url": "https://status.avax.network/", "chainIds": [43114, 43113] },
+    { "id": "celo", "name": "Celo", "url": "https://status.celo.org/", "chainIds": [42220, 44787] },
+    { "id": "blast", "name": "Blast", "url": "https://status.blast.io/", "chainIds": [81457, 168587773] },
+    { "id": "taiko", "name": "Taiko", "url": "https://status.taiko.xyz/", "chainIds": [167000, 167009] },
+    { "id": "zksync", "name": "ZKsync Era", "url": "https://zksync-network.statuspage.io/", "chainIds": [324, 300] },
+    { "id": "mantle", "name": "Mantle", "url": "https://0xmantle.instatus.com/", "chainIds": [5000, 5003] },
+    { "id": "immutable", "name": "Immutable zkEVM", "url": "https://status.immutable.com/", "chainIds": [13371, 13473] },
+    { "id": "aurora", "name": "Aurora", "url": "https://status.aurora.dev/", "chainIds": [1313161554, 1313161555] },
+    { "id": "zora", "name": "Zora", "url": "https://status.zora.energy/", "chainIds": [7777777, 999999999] },
+    { "id": "manta-pacific", "name": "Manta Pacific", "url": "https://manta-pacific-status.caldera.dev/", "chainIds": [169, 3441006] },
+    { "id": "unichain", "name": "Unichain", "url": "https://statuspage.incident.io/uniswap-status", "chainIds": [130, 1301] },
+    { "id": "ink", "name": "Ink", "url": "https://status.inkonchain.com/", "chainIds": [57073, 763373] },
+    { "id": "soneium", "name": "Soneium", "url": "https://status.soneium.org/", "chainIds": [1868, 1946] },
+    { "id": "abstract", "name": "Abstract", "url": "https://status.abs.xyz/", "chainIds": [2741, 11124] },
+    { "id": "kaia", "name": "Kaia", "url": "https://status.kaia.io/", "chainIds": [8217, 1001] }
+  ]
+}
