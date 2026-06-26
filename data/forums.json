@@ -1,0 +1,417 @@
+{
+  "forums": [
+    {
+      "id": "ethereum",
+      "name": "Ethereum Magicians",
+      "url": "https://ethereum-magicians.org",
+      "software": "discourse",
+      "chainIds": [1]
+    },
+    {
+      "id": "flare",
+      "name": "Flare Foundation Forum",
+      "url": "https://forum.flare.network",
+      "software": "discourse",
+      "chainIds": [14, 19]
+    },
+    {
+      "id": "rootstock",
+      "name": "RootstockCollective Governance Forum",
+      "url": "https://gov.rootstockcollective.xyz",
+      "software": "discourse",
+      "chainIds": [30]
+    },
+    {
+      "id": "xdc",
+      "name": "XDC Network Community",
+      "url": "https://www.xdc.dev",
+      "software": "other",
+      "chainIds": [50]
+    },
+    {
+      "id": "optimism",
+      "name": "Optimism Collective Governance Forum",
+      "url": "https://gov.optimism.io",
+      "software": "discourse",
+      "chainIds": [10, 8453]
+    },
+    {
+      "id": "bnbchain",
+      "name": "BNB Chain Build N Build Forum",
+      "url": "https://forum.bnbchain.org",
+      "software": "discourse",
+      "chainIds": [56]
+    },
+    {
+      "id": "bittorrent",
+      "name": "BitTorrent Chain Forum",
+      "url": "https://forum.bt.io",
+      "software": "discourse",
+      "chainIds": [199]
+    },
+    {
+      "id": "syscoin",
+      "name": "Syscoin Community Forum",
+      "url": "https://support.syscoin.org",
+      "software": "discourse",
+      "chainIds": [57]
+    },
+    {
+      "id": "meter",
+      "name": "Meter Forum",
+      "url": "https://forum.meter.io",
+      "software": "discourse",
+      "chainIds": [82]
+    },
+    {
+      "id": "viction",
+      "name": "Viction Forum",
+      "url": "https://forum.viction.xyz",
+      "software": "discourse",
+      "chainIds": [88]
+    },
+    {
+      "id": "gnosis",
+      "name": "Gnosis Forum",
+      "url": "https://forum.gnosis.io",
+      "software": "discourse",
+      "chainIds": [100]
+    },
+    {
+      "id": "nuls",
+      "name": "NULS Community Forum",
+      "url": "https://forum.nuls.io",
+      "software": "discourse",
+      "chainIds": [119]
+    },
+    {
+      "id": "fuse",
+      "name": "Fuse Community Forum",
+      "url": "https://forum.fuse.io",
+      "software": "discourse",
+      "chainIds": [122]
+    },
+    {
+      "id": "polygon",
+      "name": "Polygon Community Forum",
+      "url": "https://forum.polygon.technology",
+      "software": "discourse",
+      "chainIds": [137, 1101]
+    },
+    {
+      "id": "monad",
+      "name": "Monad Forum",
+      "url": "https://forum.monad.xyz",
+      "software": "discourse",
+      "chainIds": [143]
+    },
+    {
+      "id": "iota",
+      "name": "IOTA Governance Forum",
+      "url": "https://govern.iota.org",
+      "software": "discourse",
+      "chainIds": [148, 8822]
+    },
+    {
+      "id": "fraxtal",
+      "name": "Frax Finance Governance Forum",
+      "url": "https://gov.frax.finance",
+      "software": "discourse",
+      "chainIds": [252]
+    },
+    {
+      "id": "zksync",
+      "name": "ZK Nation Forum",
+      "url": "https://forum.zknation.io",
+      "software": "discourse",
+      "chainIds": [324]
+    },
+    {
+      "id": "astar",
+      "name": "Astar / Shiden Forum",
+      "url": "https://forum.astar.network",
+      "software": "discourse",
+      "chainIds": [336, 592]
+    },
+    {
+      "id": "near",
+      "name": "NEAR Governance Forum",
+      "url": "https://gov.near.org",
+      "software": "discourse",
+      "chainIds": [397]
+    },
+    {
+      "id": "pundi-aifx",
+      "name": "Pundi AIFX Community Forum",
+      "url": "https://forum.pundi.ai",
+      "software": "discourse",
+      "chainIds": [530]
+    },
+    {
+      "id": "flow",
+      "name": "Flow Community Forum",
+      "url": "https://forum.flow.com",
+      "software": "discourse",
+      "chainIds": [747]
+    },
+    {
+      "id": "autonomys",
+      "name": "Autonomys Forum",
+      "url": "https://forum.autonomys.xyz",
+      "software": "discourse",
+      "chainIds": [870]
+    },
+    {
+      "id": "derive",
+      "name": "Derive (Lyra) Governance Forum",
+      "url": "https://forums.derive.xyz",
+      "software": "discourse",
+      "chainIds": [957]
+    },
+    {
+      "id": "bifrost-substrate",
+      "name": "Bifrost Governance (Polkadot Parachain)",
+      "url": "https://bifrost.subsquare.io/discussions",
+      "software": "other",
+      "chainIds": [996]
+    },
+    {
+      "id": "conflux",
+      "name": "Conflux Community Forum",
+      "url": "https://forum.conflux.fun",
+      "software": "discourse",
+      "chainIds": [1030]
+    },
+    {
+      "id": "metis",
+      "name": "Metis iDAO Forum",
+      "url": "https://forum.ceg.vote",
+      "software": "discourse",
+      "chainIds": [1088]
+    },
+    {
+      "id": "dymension",
+      "name": "Dymension Community Forum",
+      "url": "https://forum.dymension.xyz",
+      "software": "discourse",
+      "chainIds": [1100]
+    },
+    {
+      "id": "core",
+      "name": "Core DAO Forum",
+      "url": "https://forum.coredao.org",
+      "software": "discourse",
+      "chainIds": [1116]
+    },
+    {
+      "id": "lisk",
+      "name": "Lisk Community Forum",
+      "url": "https://forum.lisk.com",
+      "software": "discourse",
+      "chainIds": [1135]
+    },
+    {
+      "id": "moonbeam",
+      "name": "Moonbeam / Moonriver Forum",
+      "url": "https://forum.moonbeam.network",
+      "software": "discourse",
+      "chainIds": [1284, 1285]
+    },
+    {
+      "id": "sei",
+      "name": "Sei Network Governance (Commonwealth)",
+      "url": "https://common.xyz/sei-network",
+      "software": "other",
+      "chainIds": [1329]
+    },
+    {
+      "id": "reya",
+      "name": "Reya Network Forum",
+      "url": "https://reya-network.discourse.group",
+      "software": "discourse",
+      "chainIds": [1729]
+    },
+    {
+      "id": "injective",
+      "name": "Injective Governance Forum",
+      "url": "https://gov.injective.network",
+      "software": "other",
+      "chainIds": [1776, 2525]
+    },
+    {
+      "id": "lightlink",
+      "name": "LightLink Community Forum",
+      "url": "https://forum.lightlink.io",
+      "software": "discourse",
+      "chainIds": [1890]
+    },
+    {
+      "id": "centrifuge",
+      "name": "Centrifuge / Altair Governance Forum",
+      "url": "https://gov.centrifuge.io",
+      "software": "discourse",
+      "chainIds": [2031, 2088]
+    },
+    {
+      "id": "phala",
+      "name": "Phala Network Forum",
+      "url": "https://forum.phala.network",
+      "software": "discourse",
+      "chainIds": [2035]
+    },
+    {
+      "id": "game7",
+      "name": "Game7 Forum",
+      "url": "https://forum.game7.io",
+      "software": "discourse",
+      "chainIds": [2187]
+    },
+    {
+      "id": "bifrost-evm",
+      "name": "Bifrost Network Forum",
+      "url": "https://forum.bifrostnetwork.com",
+      "software": "discourse",
+      "chainIds": [3068]
+    },
+    {
+      "id": "beam",
+      "name": "Beam Governance Forum",
+      "url": "https://gov.onbeam.com",
+      "software": "discourse",
+      "chainIds": [4337]
+    },
+    {
+      "id": "iotex",
+      "name": "IoTeX Community Forum",
+      "url": "https://community.iotex.io",
+      "software": "discourse",
+      "chainIds": [4689]
+    },
+    {
+      "id": "mantle",
+      "name": "Mantle Governance Forum",
+      "url": "https://forum.mantle.xyz",
+      "software": "discourse",
+      "chainIds": [5000]
+    },
+    {
+      "id": "laos",
+      "name": "LAOS Governance (Subsquare)",
+      "url": "https://laos.subsquare.io",
+      "software": "other",
+      "chainIds": [6283]
+    },
+    {
+      "id": "irisnet",
+      "name": "IRISnet Community Forum",
+      "url": "https://forum.irisnet.org",
+      "software": "discourse",
+      "chainIds": [6688]
+    },
+    {
+      "id": "horizen",
+      "name": "Horizen Community Forum",
+      "url": "https://horizen.discourse.group",
+      "software": "discourse",
+      "chainIds": [7332]
+    },
+    {
+      "id": "canto",
+      "name": "Canto Community Forum",
+      "url": "https://forum.canto.io",
+      "software": "discourse",
+      "chainIds": [7700]
+    },
+    {
+      "id": "kaia",
+      "name": "Kaia (Klaytn) Developer Forum",
+      "url": "https://devforum.kaia.io",
+      "software": "discourse",
+      "chainIds": [8217]
+    },
+    {
+      "id": "evmos",
+      "name": "Evmos Governance (Commonwealth)",
+      "url": "https://commonwealth.im/evmos",
+      "software": "other",
+      "chainIds": [9001]
+    },
+    {
+      "id": "boba",
+      "name": "Boba Network Forum",
+      "url": "https://forum.boba.network",
+      "software": "discourse",
+      "chainIds": [9728]
+    },
+    {
+      "id": "mapprotocol",
+      "name": "MAP Protocol Forum",
+      "url": "https://forum.mapprotocol.io",
+      "software": "discourse",
+      "chainIds": [22776]
+    },
+    {
+      "id": "zilliqa",
+      "name": "Zilliqa Governance Forum",
+      "url": "https://gov.zilliqa.com",
+      "software": "discourse",
+      "chainIds": [32769, 33101]
+    },
+    {
+      "id": "mode",
+      "name": "Mode Governance Forum",
+      "url": "https://forum.mode.network",
+      "software": "discourse",
+      "chainIds": [34443]
+    },
+    {
+      "id": "arbitrum",
+      "name": "Arbitrum Governance Forum",
+      "url": "https://forum.arbitrum.foundation",
+      "software": "discourse",
+      "chainIds": [42161, 42170]
+    },
+    {
+      "id": "celo",
+      "name": "Celo Community Forum",
+      "url": "https://forum.celo.org",
+      "software": "discourse",
+      "chainIds": [42220]
+    },
+    {
+      "id": "avalanche",
+      "name": "Avalanche Community Forum",
+      "url": "https://forum.avax.network",
+      "software": "discourse",
+      "chainIds": [43114]
+    },
+    {
+      "id": "linea",
+      "name": "Linea Community Forum",
+      "url": "https://community.linea.build",
+      "software": "discourse",
+      "chainIds": [59144]
+    },
+    {
+      "id": "bob",
+      "name": "BOB Governance Forum",
+      "url": "https://forum.gobob.xyz",
+      "software": "discourse",
+      "chainIds": [60808]
+    },
+    {
+      "id": "taiko",
+      "name": "Taiko Community Forum",
+      "url": "https://community.taiko.xyz",
+      "software": "discourse",
+      "chainIds": [167000]
+    },
+    {
+      "id": "scroll",
+      "name": "Scroll DAO Governance Forum",
+      "url": "https://forum.scroll.io",
+      "software": "discourse",
+      "chainIds": [534352]
+    }
+  ]
+}
