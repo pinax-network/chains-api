@@ -172,7 +172,7 @@
       "id": "bifrost-substrate",
       "name": "Bifrost Governance (Polkadot Parachain)",
       "url": "https://bifrost.subsquare.io/discussions",
-      "software": "other",
+      "software": "subsquare",
       "chainIds": [996]
     },
     {
@@ -221,7 +221,8 @@
       "id": "sei",
       "name": "Sei Network Governance (Commonwealth)",
       "url": "https://common.xyz/sei-network",
-      "software": "other",
+      "software": "commonwealth",
+      "communityId": "sei-network",
       "chainIds": [1329]
     },
     {
@@ -235,7 +236,8 @@
       "id": "injective",
       "name": "Injective Governance Forum",
       "url": "https://gov.injective.network",
-      "software": "other",
+      "software": "commonwealth",
+      "communityId": "injective",
       "chainIds": [1776, 2525]
     },
     {
@@ -298,7 +300,7 @@
       "id": "laos",
       "name": "LAOS Governance (Subsquare)",
       "url": "https://laos.subsquare.io",
-      "software": "other",
+      "software": "subsquare",
       "chainIds": [6283]
     },
     {
@@ -333,7 +335,8 @@
       "id": "evmos",
       "name": "Evmos Governance (Commonwealth)",
       "url": "https://commonwealth.im/evmos",
-      "software": "other",
+      "software": "commonwealth",
+      "communityId": "evmos",
       "chainIds": [9001]
     },
     {
