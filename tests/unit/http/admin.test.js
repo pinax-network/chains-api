@@ -49,7 +49,8 @@ vi.mock('../../../config.js', () => ({
   RELOAD_RATE_LIMIT_MAX: 5,
   RATE_LIMIT_WINDOW_MS: 60000,
   DATA_CACHE_ENABLED: false,
-  DATA_CACHE_FILE: '.cache/test-data.json'
+  DATA_CACHE_FILE: '.cache/test-data.json',
+  L2BEAT_STALE_AFTER_MS: 6 * 60 * 60 * 1000
 }));
 
 import Fastify from 'fastify';
@@ -119,6 +120,59 @@ describe('GET /health (deepened)', () => {
 
     const res = await app.inject({ method: 'GET', url: '/health' });
     expect(res.json().status).toBe('down');
+  });
+
+  it('stays status=ok when L2BEAT is on its static fallback (graceful, not degraded)', async () => {
+    const now = new Date().toISOString();
+    dataService.getCachedData.mockReturnValue({
+      theGraph: {},
+      chainlist: [],
+      chains: [],
+      slip44: { 60: {} },
+      l2beat: { source: 'fallback', fetchedAt: now, projects: [{ slug: 'arbitrum', chainId: 42161 }] },
+      indexed: { all: [{ chainId: 1 }] },
+      lastUpdated: now
+    });
+    dataService.getRpcMonitoringStatus.mockReturnValue({ isMonitoring: false, lastUpdated: now });
+    getL2BeatRefreshStatus.mockReturnValue({
+      isRefreshing: false,
+      lastRefreshAt: now,
+      lastRefreshSource: 'fallback',
+      lastRefreshError: null,
+      lastRefreshProjectCount: 1,
+      intervalMs: 300000
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    const body = res.json();
+    expect(body.status).toBe('ok');
+    expect(body.sources.l2beat.source).toBe('fallback');
+  });
+
+  it('returns status=degraded only when L2BEAT has not refreshed for a very long time', async () => {
+    const now = new Date().toISOString();
+    const sevenHoursAgo = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+    dataService.getCachedData.mockReturnValue({
+      theGraph: {},
+      chainlist: [],
+      chains: [],
+      slip44: { 60: {} },
+      l2beat: { source: 'live', fetchedAt: sevenHoursAgo, projects: [{ chainId: 1 }] },
+      indexed: { all: [{ chainId: 1 }] },
+      lastUpdated: now
+    });
+    dataService.getRpcMonitoringStatus.mockReturnValue({ isMonitoring: false, lastUpdated: now });
+    getL2BeatRefreshStatus.mockReturnValue({
+      isRefreshing: false,
+      lastRefreshAt: sevenHoursAgo,   // > L2BEAT_STALE_AFTER_MS (6h) → genuinely stuck
+      lastRefreshSource: 'live',
+      lastRefreshError: null,
+      lastRefreshProjectCount: 1,
+      intervalMs: 300000
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    expect(res.json().status).toBe('degraded');
   });
 
   it('returns status=degraded when slip44 fetch failed (null) but core sources loaded', async () => {

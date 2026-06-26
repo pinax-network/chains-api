@@ -88,6 +88,58 @@ describe('normalizeL2BeatResponse', () => {
     });
     expect(result[0].chainId).toBe(42161);
   });
+
+  // Current L2BEAT API: projects is a slug-keyed object with NO chainId field;
+  // chainId is resolved through data/l2beat-chain-map.json.
+  it('extracts projects from the slug-keyed object shape and resolves chainId via the map', () => {
+    const result = normalizeL2BeatResponse({
+      projects: {
+        arbitrum: { id: 'arbitrum', name: 'Arbitrum One', type: 'layer2', stage: 'Stage 1' },
+        base: { id: 'base', name: 'Base Chain', stage: 'Stage 1' }
+      }
+    });
+    const byId = Object.fromEntries(result.map(p => [p.chainId, p]));
+    expect(byId[42161]?.slug).toBe('arbitrum');
+    expect(byId[8453]?.slug).toBe('base');
+  });
+
+  it('uses the object KEY (not the project\'s own slug field) to resolve chainId', () => {
+    // Object key "optimism" is mapped (→10); the project's own slug is the
+    // unrelated display slug "op-mainnet", which must NOT win.
+    const result = normalizeL2BeatResponse({
+      projects: {
+        optimism: { id: 'optimism', slug: 'op-mainnet', name: 'OP Mainnet' }
+      }
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].slug).toBe('optimism');
+    expect(result[0].chainId).toBe(10);
+  });
+
+  it('drops object-map projects whose slug is not in the chain map', () => {
+    const result = normalizeL2BeatResponse({
+      projects: {
+        'totally-unknown-l2': { id: 'totally-unknown-l2', name: 'Nope' }
+      }
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('reads DA layer from the badges array (current API shape)', () => {
+    const result = normalizeL2BeatResponse({
+      projects: {
+        arbitrum: {
+          id: 'arbitrum',
+          name: 'Arbitrum One',
+          badges: [
+            { id: 'EVM', type: 'VM', name: 'EVM' },
+            { id: 'EthereumBlobs', type: 'DA', name: 'Ethereum with blobs' }
+          ]
+        }
+      }
+    });
+    expect(result[0].daLayer).toBe('Ethereum with blobs');
+  });
 });
 
 describe('fetchL2Beat (integration with mocked transport)', () => {

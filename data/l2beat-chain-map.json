@@ -1,0 +1,30 @@
+{
+  "note": "Curated L2BEAT project-slug -> EVM chainId map. L2BEAT's scaling/summary API no longer returns chainId per project (it is keyed by slug only), so this table supplies the join key used to attach L2BEAT enrichment (stage, category, TVS, DA layer) to chains. Entries are verified against L2BEAT's prior chainId-bearing API. Extend with care: a wrong chainId attaches another chain's risk/TVS data to the wrong network. Slugs match the keys under `projects` in https://l2beat.com/api/scaling/summary.",
+  "map": {
+    "arbitrum": 42161,
+    "base": 8453,
+    "blast": 81457,
+    "bob": 60808,
+    "bobanetwork": 288,
+    "fraxtal": 252,
+    "ink": 57073,
+    "linea": 59144,
+    "lisk": 1135,
+    "mantapacific": 169,
+    "mantle": 5000,
+    "metis": 1088,
+    "mode": 34443,
+    "morph": 2818,
+    "optimism": 10,
+    "polygonzkevm": 1101,
+    "scroll": 534352,
+    "soneium": 1868,
+    "taiko": 167000,
+    "unichain": 130,
+    "worldchain": 480,
+    "xlayer": 196,
+    "zircuit": 48900,
+    "zksync2": 324,
+    "zora": 7777777
+  }
+}

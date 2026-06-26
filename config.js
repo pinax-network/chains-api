@@ -77,9 +77,17 @@ export const DATA_SOURCE_SLIP44 = parseStringEnv(
 );
 export const DATA_SOURCE_L2BEAT_API = parseStringEnv(
   'DATA_SOURCE_L2BEAT_API',
-  'https://l2beat.com/api/scaling-summary'
+  'https://l2beat.com/api/scaling/summary'
 );
 export const L2BEAT_FETCH_TIMEOUT_MS = parseIntEnv('L2BEAT_FETCH_TIMEOUT_MS', 10000);
+
+// How long L2BEAT data may go without a successful refresh before /health
+// flags it stale. L2BEAT refreshes once per full rolling sweep
+// (CHAIN_REFRESHER_TICK_MS × chain count ≈ tens of minutes for ~3k chains),
+// so this bound must be generous — a tight value (e.g. the old 2× refresh
+// interval) reads as permanently "degraded" even though the refresher is
+// healthy. Default 6h catches a genuinely stuck refresher without false alarms.
+export const L2BEAT_STALE_AFTER_MS = parseIntEnv('L2BEAT_STALE_AFTER_MS', 6 * 60 * 60 * 1000);
 
 // Source fetch resilience. A source fetch is retried with exponential backoff
 // before being treated as failed, so a transient blip at startup doesn't leave
