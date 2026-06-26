@@ -134,6 +134,26 @@ describe('chainRefresher', () => {
       expect(cachedData.rpcHealth?.[1]).toBeUndefined();
       expect(jsonRpcCall).not.toHaveBeenCalled();
     });
+
+    it('excludes key-templated endpoints entirely (not tested, not reported)', async () => {
+      seedCacheWith([seedChain(1, [
+        'https://mainnet.infura.io/v3/${INFURA_API_KEY}',
+        'https://rpc.ankr.com/eth/${ANKR_API_KEY}',
+        'https://ethereum-rpc.publicnode.com'
+      ])]);
+      jsonRpcCall
+        .mockResolvedValueOnce('Geth/v1.0') // publicnode clientVersion
+        .mockResolvedValueOnce('0x10');     // publicnode blockNumber
+
+      await processChainRpc(1);
+
+      // Only the real public endpoint is tested and stored; the ${...} ones
+      // never appear in the results.
+      expect(cachedData.rpcHealth[1]).toHaveLength(1);
+      expect(cachedData.rpcHealth[1][0].url).toBe('https://ethereum-rpc.publicnode.com');
+      const testedUrls = cachedData.rpcHealth[1].map(r => r.url);
+      expect(testedUrls.some(u => u.includes('${'))).toBe(false);
+    });
   });
 
   describe('processL2BeatBatch', () => {

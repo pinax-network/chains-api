@@ -126,11 +126,16 @@ export async function processChainRpc(chainId) {
 
   const dataVersion = cachedData.lastUpdated;
   const normalized = (chain.rpc || []).map(normalizeRpcUrl).filter(Boolean);
-  // Dedupe, keep only HTTP(S), then cap per-chain fan-out so large chain
-  // entries don't create per-tick request bursts that ignore the configured
-  // MAX_ENDPOINTS_PER_CHAIN ceiling.
+  // Dedupe, keep only HTTP(S), drop key-templated endpoints, then cap per-chain
+  // fan-out so large chain entries don't create per-tick request bursts that
+  // ignore the configured MAX_ENDPOINTS_PER_CHAIN ceiling.
+  //
+  // Endpoints with an unsubstituted `${...}` placeholder (e.g.
+  // https://mainnet.infura.io/v3/${INFURA_API_KEY}) require an API key we don't
+  // have, so they can never be reached. Exclude them entirely rather than
+  // report them as perpetually "failed" — they aren't real public endpoints.
   const urls = Array.from(new Set(normalized))
-    .filter(u => u.startsWith('http'))
+    .filter(u => u.startsWith('http') && !u.includes('${'))
     .slice(0, MAX_ENDPOINTS_PER_CHAIN);
   if (urls.length === 0) return;
 
