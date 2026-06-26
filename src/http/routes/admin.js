@@ -15,7 +15,8 @@ import {
   RELOAD_RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
   DATA_CACHE_ENABLED,
-  DATA_CACHE_FILE
+  DATA_CACHE_FILE,
+  L2BEAT_STALE_AFTER_MS
 } from '../../../config.js';
 import { sendError } from '../util/sendError.js';
 
@@ -57,12 +58,18 @@ function deriveOverallStatus(sources, refreshers) {
   const coreLoaded = coreSources.every(s => sources[s].loaded);
   if (!coreLoaded) return 'down';
 
+  // Supplementary data is "degraded" only when it's entirely absent. L2BEAT
+  // serving its static fallback (source: 'fallback') is graceful degradation,
+  // not a failure — the data is present and usable — so it does NOT degrade
+  // overall status; the per-source `source` field still surfaces it.
   const supplementaryDegraded = !sources.slip44.loaded || !sources.l2beat.loaded;
   const rpcStale = refreshers.rpc.lastRunAt &&
     ageSeconds(refreshers.rpc.lastRunAt) > 30 * 60; // > 30 min
+  // L2BEAT refreshes once per full rolling sweep (tens of minutes for ~3k
+  // chains), so it's only "stale" when a genuinely stuck refresher leaves it
+  // un-refreshed for far longer than a normal sweep — see L2BEAT_STALE_AFTER_MS.
   const l2beatStale = refreshers.l2beat.lastRefreshAt &&
-    refreshers.l2beat.intervalMs &&
-    ageSeconds(refreshers.l2beat.lastRefreshAt) > (refreshers.l2beat.intervalMs / 1000) * 2;
+    ageSeconds(refreshers.l2beat.lastRefreshAt) > L2BEAT_STALE_AFTER_MS / 1000;
 
   if (supplementaryDegraded || rpcStale || l2beatStale) return 'degraded';
   return 'ok';
