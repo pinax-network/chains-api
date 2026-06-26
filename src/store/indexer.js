@@ -1,4 +1,5 @@
 import { attachStatusPages } from '../sources/statusPages.js';
+import { attachForums } from '../sources/forums.js';
 
 /**
  * Build a mapping of network IDs to chain IDs from The Graph data
@@ -524,6 +525,7 @@ export function indexData(theGraph, chainlist, chains, slip44, l2beat) {
   indexTheGraphSource(theGraph, indexed, networkIdToChainId);
   attachSlip44Info(slip44, indexed);
   attachStatusPages(indexed);
+  attachForums(indexed);
   applyDefaultStatus(indexed);
   addReverseRelations(indexed);
   indexL2BeatSource(l2beat, indexed);
