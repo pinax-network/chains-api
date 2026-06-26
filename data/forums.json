@@ -22,6 +22,13 @@
       "chainIds": [56]
     },
     {
+      "id": "bittorrent",
+      "name": "BitTorrent Chain Forum",
+      "url": "https://forum.bt.io",
+      "software": "discourse",
+      "chainIds": [199]
+    },
+    {
       "id": "meter",
       "name": "Meter Forum",
       "url": "https://forum.meter.io",
