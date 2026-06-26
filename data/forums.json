@@ -8,6 +8,27 @@
       "chainIds": [1]
     },
     {
+      "id": "flare",
+      "name": "Flare Foundation Forum",
+      "url": "https://forum.flare.network",
+      "software": "discourse",
+      "chainIds": [14, 19]
+    },
+    {
+      "id": "rootstock",
+      "name": "RootstockCollective Governance Forum",
+      "url": "https://gov.rootstockcollective.xyz",
+      "software": "discourse",
+      "chainIds": [30]
+    },
+    {
+      "id": "xdc",
+      "name": "XDC Network Community",
+      "url": "https://www.xdc.dev",
+      "software": "other",
+      "chainIds": [50]
+    },
+    {
       "id": "optimism",
       "name": "Optimism Collective Governance Forum",
       "url": "https://gov.optimism.io",
@@ -27,6 +48,13 @@
       "url": "https://forum.bt.io",
       "software": "discourse",
       "chainIds": [199]
+    },
+    {
+      "id": "syscoin",
+      "name": "Syscoin Community Forum",
+      "url": "https://support.syscoin.org",
+      "software": "discourse",
+      "chainIds": [57]
     },
     {
       "id": "meter",
