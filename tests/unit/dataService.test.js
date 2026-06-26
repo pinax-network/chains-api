@@ -1405,7 +1405,7 @@ describe('runRpcHealthCheck', () => {
     warnSpy.mockRestore();
   });
 
-  it('should handle RPC endpoint requiring API key substitution', async () => {
+  it('should exclude RPC endpoints requiring API key substitution', async () => {
     const mockTheGraph = { networks: [] };
     const mockChainlist = [
       {
@@ -1428,8 +1428,10 @@ describe('runRpcHealthCheck', () => {
     await runRpcHealthCheck();
 
     const cachedData = getCachedData();
-    expect(cachedData.rpcHealth[1]).toBeDefined();
-    expect(cachedData.rpcHealth[1][0].error).toBe('RPC URL requires API key substitution');
+    // Key-templated endpoints (${API_KEY}) require a key we don't have, so they
+    // are excluded entirely — not tested, not reported. With no other endpoint,
+    // the chain gets no rpcHealth entry at all.
+    expect(cachedData.rpcHealth[1]).toBeUndefined();
     consoleLogSpy.mockRestore();
   });
 
