@@ -149,6 +149,11 @@ export async function processChainRpc(chainId) {
   const previous = cachedData.rpcHealth[chainId];
   cachedData.rpcHealth[chainId] = results;
   chain.lastTested = new Date().toISOString();
+  // Freshness signal for /clients and /rpc-monitor. Stamped per chain as
+  // results are written — not at sweep end — because a full sweep can abort
+  // mid-pass on a data-version change (so onSweepEnd may never run), which
+  // would otherwise leave lastRpcCheck (and /clients lastUpdated) null.
+  cachedData.lastRpcCheck = chain.lastTested;
 
   // Live, incremental persistence: write only this chain's state, and only
   // when an endpoint's up/down status actually changed (not on every block

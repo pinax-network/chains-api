@@ -94,6 +94,22 @@ describe('chainRefresher', () => {
       expect(cachedData.rpcHealth[1]).toHaveLength(2);
       expect(cachedData.rpcHealth[1][0].ok).toBe(true);
       expect(cachedData.indexed.byChainId[1].lastTested).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      // lastRpcCheck (the /clients + /rpc-monitor freshness signal) is stamped
+      // per chain as results are written, not only at sweep completion.
+      expect(cachedData.lastRpcCheck).toBe(cachedData.indexed.byChainId[1].lastTested);
+    });
+
+    it('does not stamp lastRpcCheck when the data-version race guard trips', async () => {
+      seedCacheWith([seedChain(1, ['https://rpc-a.example'])]);
+      cachedData.lastRpcCheck = null;
+      jsonRpcCall.mockImplementation(async () => {
+        cachedData.lastUpdated = '2026-05-05T02:00:00.000Z';
+        return 'whatever';
+      });
+
+      await processChainRpc(1);
+
+      expect(cachedData.lastRpcCheck).toBeNull();
     });
 
     it('respects the data-version race guard', async () => {
