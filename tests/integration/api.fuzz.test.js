@@ -746,7 +746,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       "' OR 1=1--"
     ];
 
-    test.each(sqlInjectionPayloads)('should safely handle SQL injection: %s', async (payload) => {
+    it.each(sqlInjectionPayloads)('should safely handle SQL injection: %s', async (payload) => {
       const response = await fastify.inject({
         method: 'GET',
         url: `/relations/${encodeURIComponent(payload)}/graph`
@@ -779,7 +779,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       '/relations/1/graph?depth=3'
     ];
 
-    test.each(endpoints)('GET %s should always return valid response', async (endpoint) => {
+    it.each(endpoints)('GET %s should always return valid response', async (endpoint) => {
       const response = await fastify.inject({
         method: 'GET',
         url: endpoint
@@ -789,7 +789,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       expect(() => JSON.parse(response.payload)).not.toThrow();
     });
 
-    test.each(endpoints)('POST %s should handle invalid method', async (endpoint) => {
+    it.each(endpoints)('POST %s should handle invalid method', async (endpoint) => {
       const response = await fastify.inject({
         method: 'POST',
         url: endpoint
@@ -799,7 +799,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       expect([404, 405]).toContain(response.statusCode);
     });
 
-    test.each(endpoints)('DELETE %s should handle invalid method', async (endpoint) => {
+    it.each(endpoints)('DELETE %s should handle invalid method', async (endpoint) => {
       const response = await fastify.inject({
         method: 'DELETE',
         url: endpoint
@@ -808,7 +808,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       expect([404, 405]).toContain(response.statusCode);
     });
 
-    test.each(endpoints)('PUT %s should handle invalid method', async (endpoint) => {
+    it.each(endpoints)('PUT %s should handle invalid method', async (endpoint) => {
       const response = await fastify.inject({
         method: 'PUT',
         url: endpoint
@@ -860,7 +860,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       "1' UNION SELECT * FROM users--"
     ];
 
-    test.each(sqlInjectionPayloads)('should safely handle SQL injection attempt in chain ID: %s', async (payload) => {
+    it.each(sqlInjectionPayloads)('should safely handle SQL injection attempt in chain ID: %s', async (payload) => {
       const response = await fastify.inject({
         method: 'GET',
         url: `/chains/${encodeURIComponent(payload)}`
@@ -876,7 +876,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       expect(data).toBeDefined();
     });
 
-    test.each(sqlInjectionPayloads)('should safely handle SQL injection in search: %s', async (payload) => {
+    it.each(sqlInjectionPayloads)('should safely handle SQL injection in search: %s', async (payload) => {
       const response = await fastify.inject({
         method: 'GET',
         url: `/search?q=${encodeURIComponent(payload)}`
@@ -902,7 +902,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       '"><script>alert(String.fromCharCode(88,83,83))</script>'
     ];
 
-    test.each(xssPayloads)('should safely handle XSS attempt: %s', async (payload) => {
+    it.each(xssPayloads)('should safely handle XSS attempt: %s', async (payload) => {
       const response = await fastify.inject({
         method: 'GET',
         url: `/search?q=${encodeURIComponent(payload)}`
@@ -929,7 +929,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       '%252e%252e%252f'
     ];
 
-    test.each(pathTraversalPayloads)('should safely handle path traversal: %s', async (payload) => {
+    it.each(pathTraversalPayloads)('should safely handle path traversal: %s', async (payload) => {
       const response = await fastify.inject({
         method: 'GET',
         url: `/chains/${encodeURIComponent(payload)}`
@@ -974,7 +974,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       '👨‍👩‍👧‍👦'
     ];
 
-    test.each(specialUnicode)('should handle special unicode: %s', async (unicode) => {
+    it.each(specialUnicode)('should handle special unicode: %s', async (unicode) => {
       const response = await fastify.inject({
         method: 'GET',
         url: `/search?q=${encodeURIComponent(unicode)}`
@@ -1266,7 +1266,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       "' OR 1=1--"
     ];
 
-    test.each(sqlInjectionPayloads)('should safely handle SQL injection: %s', async (payload) => {
+    it.each(sqlInjectionPayloads)('should safely handle SQL injection: %s', async (payload) => {
       const response = await fastify.inject({
         method: 'GET',
         url: `/slip44/${encodeURIComponent(payload)}`
@@ -1382,7 +1382,7 @@ describe('Fuzz Testing - API Endpoints', () => {
       '<img src=x onerror=alert("XSS")>'
     ];
 
-    test.each(xssPayloads)('should safely handle XSS in body: %s', async (payload) => {
+    it.each(xssPayloads)('should safely handle XSS in body: %s', async (payload) => {
       const response = await fastify.inject({
         method: 'POST',
         url: '/reload',
