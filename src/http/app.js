@@ -9,6 +9,7 @@ import ajvErrors from 'ajv-errors';
 import { initializeDataOnStartup } from '../services/loader.js';
 import { startRpcHealthCheck } from '../services/rpcHealth.js';
 import { startL2BeatRefresh } from '../services/l2beatRefresher.js';
+import { startSourceRefresher } from '../services/sourceRefresher.js';
 import {
   BODY_LIMIT,
   MAX_PARAM_LENGTH,
@@ -149,6 +150,7 @@ export async function buildApp(options = {}) {
     });
     startRpcHealthCheck();
     startL2BeatRefresh();
+    startSourceRefresher();
     // Warm the price cache in the background so the first /chains request
     // doesn't pay a CoinGecko round-trip. Failures are silent — a cold
     // cache falls back to per-request fetching with the same timeout.

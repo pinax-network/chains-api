@@ -88,7 +88,11 @@ async function fetchAndBuildData() {
 }
 
 async function refreshDataWithGuard(options = {}) {
-  const { requireAtLeastOneSource = false, logSuccessMessage = true } = options;
+  const {
+    requireAtLeastOneSource = false,
+    logSuccessMessage = true,
+    preserveRpcHealth = false
+  } = options;
 
   if (dataRefreshPromise) return dataRefreshPromise;
 
@@ -97,6 +101,14 @@ async function refreshDataWithGuard(options = {}) {
 
     if (requireAtLeastOneSource && loadedSourceCount === 0) {
       throw new Error('All chain registry sources failed during data refresh');
+    }
+
+    // Background self-heal refreshes carry over the live RPC-health results so
+    // re-fetching the registries (e.g. to recover a source that failed at boot)
+    // doesn't wipe an in-progress monitoring sweep. The initial load has none.
+    if (preserveRpcHealth) {
+      data.rpcHealth = cachedData.rpcHealth;
+      data.lastRpcCheck = cachedData.lastRpcCheck;
     }
 
     applyDataToCache(data);
@@ -118,6 +130,34 @@ async function refreshDataWithGuard(options = {}) {
 
 export async function loadData() {
   return refreshDataWithGuard({ requireAtLeastOneSource: true });
+}
+
+/**
+ * Names of core/supplementary registries whose fetch failed (value is null).
+ * Used by the background self-healer to decide whether to re-fetch. Note this
+ * checks fetch failure only — a SLIP-0044 that fetched but parsed to zero rows
+ * ({}) is a data-format issue a re-fetch can't fix, so it is NOT listed here.
+ * L2BEAT is excluded: it has its own fallback + rolling refresher.
+ */
+export function getFailedSources() {
+  const failed = [];
+  if (cachedData.theGraph == null) failed.push('theGraph');
+  if (cachedData.chainlist == null) failed.push('chainlist');
+  if (cachedData.chains == null) failed.push('chains');
+  if (cachedData.slip44 == null) failed.push('slip44');
+  return failed;
+}
+
+/**
+ * Re-fetch all sources, preserving in-progress RPC-health results. Used by the
+ * background self-healer (recovery from a transient boot-time fetch failure).
+ */
+export async function refreshAllSources() {
+  return refreshDataWithGuard({
+    requireAtLeastOneSource: true,
+    logSuccessMessage: false,
+    preserveRpcHealth: true
+  });
 }
 
 /**

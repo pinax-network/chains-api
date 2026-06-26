@@ -195,4 +195,23 @@ describe('GET /sources (extended with l2beat + slip44 null awareness)', () => {
     const res = await app.inject({ method: 'GET', url: '/sources' });
     expect(res.json().sources.l2beat).toBe('loaded');
   });
+
+  it('reports slip44: not loaded when fetched but parsed zero rows ({})', async () => {
+    dataService.getCachedData.mockReturnValue({
+      theGraph: {},
+      chainlist: [],
+      chains: [],
+      slip44: {}, // fetched OK but parser produced nothing (e.g. upstream drift)
+      l2beat: { projects: [{ chainId: 1 }] },
+      indexed: { all: [] },
+      lastUpdated: null
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/sources' });
+    expect(res.json().sources.slip44).toBe('not loaded');
+
+    const health = await app.inject({ method: 'GET', url: '/health' });
+    expect(health.json().sources.slip44.loaded).toBe(false);
+    expect(health.json().status).toBe('degraded'); // supplementary source missing
+  });
 });

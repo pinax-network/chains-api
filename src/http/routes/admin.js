@@ -26,17 +26,24 @@ function ageSeconds(isoTimestamp) {
   return Math.round(ms / 1000);
 }
 
+// SLIP-0044 only counts as loaded when it actually parsed rows: null = fetch
+// failed, {} = fetched but parsed nothing (e.g. upstream table format drift).
+// Both surface as "not loaded" so a silently empty registry stays visible.
+function slip44Loaded(cache) {
+  return cache.slip44 != null && Object.keys(cache.slip44).length > 0;
+}
+
 function sourceFreshness(cache) {
   const dataAge = ageSeconds(cache.lastUpdated);
   const hasL2Beat = cache.l2beat != null
     && Array.isArray(cache.l2beat.projects)
     && cache.l2beat.projects.length > 0;
+  const hasSlip44 = slip44Loaded(cache);
   return {
     theGraph: { loaded: cache.theGraph != null, ageSeconds: cache.theGraph != null ? dataAge : null },
     chainlist: { loaded: cache.chainlist != null, ageSeconds: cache.chainlist != null ? dataAge : null },
     chains: { loaded: cache.chains != null, ageSeconds: cache.chains != null ? dataAge : null },
-    // slip44 distinguishes failure (null) from empty parse ({}), see loader.js.
-    slip44: { loaded: cache.slip44 != null, ageSeconds: cache.slip44 != null ? dataAge : null },
+    slip44: { loaded: hasSlip44, ageSeconds: hasSlip44 ? dataAge : null },
     l2beat: {
       loaded: hasL2Beat,
       ageSeconds: ageSeconds(cache.l2beat?.fetchedAt),
@@ -93,7 +100,7 @@ export async function adminRoutes(fastify) {
         theGraph: cachedData.theGraph ? 'loaded' : 'not loaded',
         chainlist: cachedData.chainlist ? 'loaded' : 'not loaded',
         chains: cachedData.chains ? 'loaded' : 'not loaded',
-        slip44: cachedData.slip44 != null ? 'loaded' : 'not loaded',
+        slip44: slip44Loaded(cachedData) ? 'loaded' : 'not loaded',
         l2beat: cachedData.l2beat?.projects?.length > 0 ? 'loaded' : 'not loaded'
       }
     };

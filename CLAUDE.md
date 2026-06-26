@@ -130,6 +130,9 @@ Copy `.env.example` to `.env` for local configuration. Key variables:
 | `DATA_SOURCE_L2BEAT_API` | `https://l2beat.com/api/scaling-summary` | L2BEAT endpoint |
 | `L2BEAT_FETCH_TIMEOUT_MS` | `10000` | L2BEAT live fetch timeout |
 | `RPC_MONITOR_LOOP` | `false` | Enable continuous RPC monitoring (legacy; superseded by chainRefresher) |
+| `SOURCE_FETCH_MAX_RETRIES` | `3` | Attempts per source fetch before it's treated as failed |
+| `SOURCE_FETCH_RETRY_BASE_MS` | `500` | Backoff base for source-fetch retries (`base × 2^(attempt-1)`) |
+| `SOURCE_REFRESH_INTERVAL_MS` | `900000` | Self-heal interval: re-fetch sources if any failed to load (0 disables) |
 
 See `config.js` and `.env.example` for the full list.
 
