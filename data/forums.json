@@ -225,13 +225,6 @@
       "chainIds": [1329]
     },
     {
-      "id": "story",
-      "name": "Story Protocol Forum",
-      "url": "https://forum.story.foundation",
-      "software": "discourse",
-      "chainIds": [1514]
-    },
-    {
       "id": "reya",
       "name": "Reya Network Forum",
       "url": "https://reya-network.discourse.group",
@@ -251,13 +244,6 @@
       "url": "https://forum.lightlink.io",
       "software": "discourse",
       "chainIds": [1890]
-    },
-    {
-      "id": "edgeware",
-      "name": "Edgeware Governance (Commonwealth)",
-      "url": "https://gov.edgewa.re",
-      "software": "other",
-      "chainIds": [2021]
     },
     {
       "id": "centrifuge",
@@ -281,32 +267,11 @@
       "chainIds": [2187]
     },
     {
-      "id": "morph",
-      "name": "Morph Community Forum",
-      "url": "https://forum.morphl2.io",
-      "software": "discourse",
-      "chainIds": [2702]
-    },
-    {
       "id": "bifrost-evm",
       "name": "Bifrost Network Forum",
       "url": "https://forum.bifrostnetwork.com",
       "software": "discourse",
       "chainIds": [3068]
-    },
-    {
-      "id": "movement",
-      "name": "Movement Network Forum",
-      "url": "https://forums.movementnetwork.xyz",
-      "software": "discourse",
-      "chainIds": [3073]
-    },
-    {
-      "id": "xone",
-      "name": "Xone Forum",
-      "url": "https://forum.xone.org",
-      "software": "discourse",
-      "chainIds": [3721]
     },
     {
       "id": "beam",
@@ -349,13 +314,6 @@
       "url": "https://horizen.discourse.group",
       "software": "discourse",
       "chainIds": [7332]
-    },
-    {
-      "id": "cyber",
-      "name": "Cyber Community Forum",
-      "url": "https://forum.cyber.co",
-      "software": "discourse",
-      "chainIds": [7560]
     },
     {
       "id": "canto",
