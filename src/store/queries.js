@@ -31,6 +31,7 @@ function transformChain(chain) {
   if (chain.status) transformedChain.status = chain.status;
   if (chain.bridges) transformedChain.bridges = chain.bridges;
   if (chain.l2Beat) transformedChain.l2Beat = chain.l2Beat;
+  if (chain.forumUrl) transformedChain.forumUrl = chain.forumUrl;
 
   return transformedChain;
 }
