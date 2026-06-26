@@ -14,6 +14,7 @@ import {
   writeSnapshotToDiskAtomic,
   DATA_CACHE_PATH
 } from '../store/snapshot.js';
+import { loadAllRpcHealthFromDisk } from '../store/rpcHealthStore.js';
 import { logger } from '../util/logger.js';
 
 const DATA_SOURCES = {
@@ -161,6 +162,21 @@ export async function refreshAllSources() {
 }
 
 /**
+ * Overlay the per-chain RPC-health cache (written live by the rolling
+ * refresher) onto the in-memory state, so on startup the server serves each
+ * endpoint's last known status until the refresher re-tests it. The per-chain
+ * store is authoritative over whatever rpcHealth rode along in the data
+ * snapshot.
+ */
+async function overlayDiskRpcHealth() {
+  const { byChainId, lastCheckedAt } = await loadAllRpcHealthFromDisk();
+  if (Object.keys(byChainId).length === 0) return;
+  cachedData.rpcHealth = byChainId;
+  if (lastCheckedAt) cachedData.lastRpcCheck = lastCheckedAt;
+  logger.info({ chains: Object.keys(byChainId).length }, 'Loaded cached RPC-health state');
+}
+
+/**
  * Stale-first startup:
  *  1. Load valid snapshot from disk if available.
  *  2. Trigger background refresh; keep serving stale data on failure.
@@ -177,10 +193,15 @@ export async function initializeDataOnStartup(options = {}) {
 
     if (snapshotData) {
       applyDataToCache(snapshotData);
+      await overlayDiskRpcHealth();
       startupInitialized = true;
       logger.info({ path: DATA_CACHE_PATH, totalChains: cachedData.indexed.all.length }, 'Loaded cached snapshot');
 
-      refreshDataWithGuard({ requireAtLeastOneSource: true })
+      // Preserve the RPC-health results loaded from disk: the server
+      // serves the cached endpoint statuses immediately and the rolling
+      // refresher replaces each chain's entry as it re-tests it. Without this
+      // the post-boot data refresh would wipe the cached statuses.
+      refreshDataWithGuard({ requireAtLeastOneSource: true, preserveRpcHealth: true })
         .then(() => {
           logger.info('Background refresh completed successfully');
           if (typeof onBackgroundRefreshSuccess === 'function') {
@@ -196,6 +217,7 @@ export async function initializeDataOnStartup(options = {}) {
 
     logger.info('No valid cache snapshot found. Loading data from remote sources');
     const loadedData = await loadData();
+    await overlayDiskRpcHealth();
     startupInitialized = true;
     return loadedData;
   })();

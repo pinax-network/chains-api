@@ -2230,6 +2230,31 @@ describe('initializeDataOnStartup with disk cache', () => {
     expect(fsMock.rename).toHaveBeenCalled();
   });
 
+  it('preserves cached RPC-health across the warm-start background refresh', async () => {
+    const { mod, fsMock } = await importWithDiskCacheEnabled();
+    const snap = buildSnapshot(1, 'Stale Chain');
+    snap.data.rpcHealth = { 1: [{ url: 'https://rpc.test', ok: true }] };
+    snap.data.lastRpcCheck = '2024-01-01T00:00:00.000Z';
+    fsMock.readFile.mockResolvedValueOnce(JSON.stringify(snap));
+
+    global.fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ networks: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [{ chainId: 25, name: 'Fresh Chain' }] })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, text: async () => '' });
+
+    await mod.initializeDataOnStartup();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const cache = mod.getCachedData();
+    // Index was refreshed from the network...
+    expect(cache.indexed.byChainId[25].name).toBe('Fresh Chain');
+    // ...but the RPC-health cache from disk is preserved (served until the
+    // rolling refresher re-tests each chain), not wiped.
+    expect(cache.rpcHealth).toEqual({ 1: [{ url: 'https://rpc.test', ok: true }] });
+    expect(cache.lastRpcCheck).toBe('2024-01-01T00:00:00.000Z');
+  });
+
   it('keeps stale data when background refresh fails', async () => {
     const { mod, fsMock } = await importWithDiskCacheEnabled();
     fsMock.readFile.mockResolvedValueOnce(JSON.stringify(buildSnapshot(1, 'Stale Chain')));

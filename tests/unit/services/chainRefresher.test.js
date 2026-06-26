@@ -8,6 +8,13 @@ vi.mock('../../../rpcUtil.js', () => ({
   jsonRpcCall: vi.fn()
 }));
 
+// Mock only the persistence side-effect; keep the real rpcStateChanged so the
+// change-detection behaviour is exercised end to end.
+vi.mock('../../../src/store/rpcHealthStore.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, persistChainRpcHealth: vi.fn(() => Promise.resolve()) };
+});
+
 vi.mock('../../../config.js', () => ({
   RPC_CHECK_TIMEOUT_MS: 5000,
   RPC_CHECK_CONCURRENCY: 8,
@@ -16,11 +23,15 @@ vi.mock('../../../config.js', () => ({
   DATA_SOURCE_L2BEAT_API: 'https://l2beat.test/api/scaling-summary',
   L2BEAT_FETCH_TIMEOUT_MS: 1000,
   PROXY_URL: '',
-  PROXY_ENABLED: false
+  PROXY_ENABLED: false,
+  // chainRefresher now persists the sweep via snapshot.js, which reads these.
+  DATA_CACHE_ENABLED: false,
+  DATA_CACHE_FILE: '.cache/test-refresher-cache.json'
 }));
 
 import { fetchL2Beat } from '../../../src/sources/l2beat.js';
 import { jsonRpcCall } from '../../../rpcUtil.js';
+import { persistChainRpcHealth } from '../../../src/store/rpcHealthStore.js';
 import { applyDataToCache, cachedData } from '../../../src/store/cache.js';
 import {
   processChainRpc,
@@ -186,6 +197,34 @@ describe('chainRefresher', () => {
       await tickOnce(); // l2beat_batch again (sweep #2)
 
       expect(getChainRefresherStatus().sweep.sweepNumber).toBe(2);
+    });
+
+    it('persists a chain incrementally when its endpoint state changes', async () => {
+      persistChainRpcHealth.mockClear();
+      seedCacheWith([seedChain(1, ['http://rpc.one'])]);
+      // healthy endpoint: clientVersion + block height
+      jsonRpcCall.mockImplementation((_url, method) =>
+        Promise.resolve(method === 'web3_clientVersion' ? 'geth/v1' : '0x10'));
+
+      await processChainRpc(1); // no prior state -> changed -> persist
+
+      expect(persistChainRpcHealth).toHaveBeenCalledTimes(1);
+      expect(persistChainRpcHealth).toHaveBeenCalledWith(1, expect.arrayContaining([
+        expect.objectContaining({ url: 'http://rpc.one', ok: true })
+      ]));
+    });
+
+    it('does not persist when only the block height advances (no state change)', async () => {
+      seedCacheWith([seedChain(1, ['http://rpc.one'])]);
+      // Prior cached state: same URL, already up.
+      cachedData.rpcHealth = { 1: [{ url: 'http://rpc.one', ok: true, blockHeight: 16 }] };
+      persistChainRpcHealth.mockClear();
+      jsonRpcCall.mockImplementation((_url, method) =>
+        Promise.resolve(method === 'web3_clientVersion' ? 'geth/v1' : '0x20')); // new block
+
+      await processChainRpc(1);
+
+      expect(persistChainRpcHealth).not.toHaveBeenCalled();
     });
 
     it('overlap guard: a tick in flight is skipped, not queued behind itself', async () => {

@@ -32,6 +32,7 @@ import { incCounter } from '../util/metrics.js';
 import { cachedData } from '../store/cache.js';
 import { indexL2BeatSource } from '../store/indexer.js';
 import { fetchL2Beat } from '../sources/l2beat.js';
+import { persistChainRpcHealth, rpcStateChanged } from '../store/rpcHealthStore.js';
 
 const SWEEP_TICK_MS = Number(process.env.CHAIN_REFRESHER_TICK_MS) || 1000;
 
@@ -145,8 +146,17 @@ export async function processChainRpc(chainId) {
   }
 
   if (!cachedData.rpcHealth) cachedData.rpcHealth = {};
+  const previous = cachedData.rpcHealth[chainId];
   cachedData.rpcHealth[chainId] = results;
   chain.lastTested = new Date().toISOString();
+
+  // Live, incremental persistence: write only this chain's state, and only
+  // when an endpoint's up/down status actually changed (not on every block
+  // advance). Fire-and-forget; the store logs its own failures.
+  if (rpcStateChanged(previous, results)) {
+    persistChainRpcHealth(chainId, results).catch(() => {});
+  }
+
   incCounter('chains_api_rpc_check_total', { outcome: 'completed' }, results.length);
 }
 
@@ -226,6 +236,8 @@ function onSweepEnd() {
     },
     'Chain refresher sweep completed'
   );
+  // RPC-health is persisted incrementally per chain in processChainRpc (on
+  // state change), so there is nothing to flush here at sweep end.
 }
 
 export async function tickOnce() {
