@@ -4,14 +4,17 @@
 
 Chains API is a Node.js service that aggregates blockchain chain data from five external sources, maintains an in-memory index, and exposes it via a REST API (Fastify), MCP stdio server, and MCP HTTP server. No database — data is fetched from remote JSON/Markdown sources, indexed in memory, and optionally cached to disk for stale-first startup.
 
+**Single data source per container:** `server.js` runs the REST API and the MCP HTTP server in **one process** (default `npm start` / Docker `CMD`). Both surfaces read the same module-level in-memory store (`src/store/`), and only the REST side starts the refreshers — so a container never refreshes the same public RPC endpoint twice. `index.js` (REST only) and `mcp-server-http.js` (MCP only) remain runnable standalone for local/dev use. The MCP tool surface in `mcp-tools.js` mirrors the REST read endpoints (chains, search, relations, endpoints, clients, scaling, slip44, status-pages, stats, keywords, rpc-monitor, refresher, validate).
+
 ## Quick Reference
 
 ```bash
 npm install          # Install dependencies (Node >=20 required)
-npm start            # Start REST API on port 3000
-npm run dev          # Start with --watch for auto-reload
+npm start            # Start combined server: REST API (3000) + MCP HTTP (3001), one process
+npm run start:rest   # Start ONLY the REST API on port 3000 (node index.js)
+npm run dev          # Start combined server with --watch for auto-reload
 npm run mcp          # Start MCP stdio server
-npm run mcp:http     # Start MCP HTTP server on port 3001
+npm run mcp:http     # Start ONLY the MCP HTTP server on port 3001
 npm test             # Run all tests (vitest run)
 npm run test:watch   # Run tests in watch mode
 npm run test:coverage # Run tests with v8 coverage report

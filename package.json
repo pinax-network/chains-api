@@ -1,6 +1,6 @@
 {
   "name": "chains-api",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "API query service for blockchain chain data from multiple sources",
   "main": "index.js",
   "type": "module",
@@ -9,8 +9,9 @@
     "chains-api-mcp-http": "./mcp-server-http.js"
   },
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
+    "start": "node server.js",
+    "start:rest": "node index.js",
+    "dev": "node --watch server.js",
     "mcp": "node mcp-server.js",
     "mcp:http": "node mcp-server-http.js",
     "test": "vitest run",

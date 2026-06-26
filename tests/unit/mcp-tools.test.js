@@ -83,6 +83,25 @@ vi.mock('../../clientsView.js', () => ({
   summarizeChainClients: vi.fn(() => null),
 }));
 
+vi.mock('../../src/sources/statusPages.js', () => ({
+  getAllStatusPages: vi.fn(() => [
+    { id: 'base', name: 'Base', url: 'https://base-l2.statuspage.io/', chainIds: [8453, 84532] },
+  ]),
+  getAllCoinStatusPages: vi.fn(() => [
+    { symbol: 'SOL', name: 'Solana', url: 'https://status.solana.com/' },
+  ]),
+  getStatusPageByChainId: vi.fn((chainId) =>
+    chainId === 8453
+      ? { chainId: 8453, statusPage: 'https://base-l2.statuspage.io/', project: { id: 'base', name: 'Base' } }
+      : null
+  ),
+  getStatusPageBySymbol: vi.fn((symbol) =>
+    typeof symbol === 'string' && symbol.toUpperCase() === 'SOL'
+      ? { symbol: 'SOL', statusPage: 'https://status.solana.com/', name: 'Solana' }
+      : null
+  ),
+}));
+
 vi.mock('../../priceService.js', () => ({
   getPricesForChains: vi.fn(async (chainIds) => {
     const map = new Map();
@@ -151,10 +170,10 @@ describe('MCP Tools - Shared Module', () => {
   });
 
   describe('getToolDefinitions', () => {
-    it('should return an array of 17 tools', () => {
+    it('should return an array of 20 tools', () => {
       const tools = getToolDefinitions();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(17);
+      expect(tools.length).toBe(20);
     });
 
     it('should include all expected tool names', () => {
@@ -971,6 +990,75 @@ describe('MCP Tools - Shared Module', () => {
       expect(names).toContain('get_scaling_chains');
       expect(names).toContain('get_l2beat_by_id');
       expect(names).toContain('get_refresher_status');
+    });
+
+    it('exposes the three status-page tools', () => {
+      const names = getToolDefinitions().map((t) => t.name);
+      expect(names).toContain('get_status_pages');
+      expect(names).toContain('get_status_page_by_chain');
+      expect(names).toContain('get_status_page_by_symbol');
+    });
+
+    it('requires chainId for get_status_page_by_chain and symbol for get_status_page_by_symbol', () => {
+      const tools = getToolDefinitions();
+      expect(tools.find((t) => t.name === 'get_status_page_by_chain').inputSchema.required).toContain('chainId');
+      expect(tools.find((t) => t.name === 'get_status_page_by_symbol').inputSchema.required).toContain('symbol');
+    });
+  });
+
+  describe('handleToolCall - get_status_pages', () => {
+    it('returns chain-keyed projects and coin entries with counts', async () => {
+      const result = await handleToolCall('get_status_pages', {});
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.chainCount).toBe(1);
+      expect(data.coinCount).toBe(1);
+      expect(data.statusPages[0].id).toBe('base');
+      expect(data.coins[0].symbol).toBe('SOL');
+    });
+  });
+
+  describe('handleToolCall - get_status_page_by_chain', () => {
+    it('returns the status page covering a chain', async () => {
+      const result = await handleToolCall('get_status_page_by_chain', { chainId: 8453 });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.statusPage).toBe('https://base-l2.statuspage.io/');
+      expect(data.project.name).toBe('Base');
+    });
+
+    it('rejects an invalid chain ID', async () => {
+      const result = await handleToolCall('get_status_page_by_chain', { chainId: 'nope' });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).error).toBe('Invalid chain ID');
+    });
+
+    it('returns an error when no status page covers the chain', async () => {
+      const result = await handleToolCall('get_status_page_by_chain', { chainId: 999999 });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).error).toBe('No status page found for this chain');
+    });
+  });
+
+  describe('handleToolCall - get_status_page_by_symbol', () => {
+    it('returns the status page for a coin symbol (case-insensitive)', async () => {
+      const result = await handleToolCall('get_status_page_by_symbol', { symbol: 'sol' });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.statusPage).toBe('https://status.solana.com/');
+      expect(data.name).toBe('Solana');
+    });
+
+    it('requires a non-empty symbol', async () => {
+      const result = await handleToolCall('get_status_page_by_symbol', { symbol: '  ' });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).error).toBe('Symbol is required');
+    });
+
+    it('returns an error for an unknown symbol', async () => {
+      const result = await handleToolCall('get_status_page_by_symbol', { symbol: 'XYZ' });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).error).toBe('No status page found for this symbol');
     });
   });
 });
