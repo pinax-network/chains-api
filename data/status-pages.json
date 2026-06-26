@@ -1,0 +1,1119 @@
+{
+  "statusPages": [
+    {
+      "id": "base",
+      "name": "Base",
+      "url": "https://base-l2.statuspage.io/",
+      "chainIds": [
+        8453,
+        84532
+      ]
+    },
+    {
+      "id": "optimism",
+      "name": "OP Mainnet",
+      "url": "https://status.optimism.io/",
+      "chainIds": [
+        10,
+        11155420
+      ]
+    },
+    {
+      "id": "arbitrum",
+      "name": "Arbitrum",
+      "url": "https://status.arbitrum.io/",
+      "chainIds": [
+        42161,
+        42170,
+        421614
+      ]
+    },
+    {
+      "id": "polygon",
+      "name": "Polygon",
+      "url": "https://status.polygon.technology/",
+      "chainIds": [
+        137,
+        80002,
+        1101,
+        2442
+      ]
+    },
+    {
+      "id": "linea",
+      "name": "Linea",
+      "url": "https://linea.statuspage.io/",
+      "chainIds": [
+        59144,
+        59141
+      ]
+    },
+    {
+      "id": "gnosis",
+      "name": "Gnosis",
+      "url": "https://status.gnosischain.com/",
+      "chainIds": [
+        100,
+        10200
+      ]
+    },
+    {
+      "id": "avalanche",
+      "name": "Avalanche",
+      "url": "https://status.avax.network/",
+      "chainIds": [
+        43114,
+        43113
+      ]
+    },
+    {
+      "id": "celo",
+      "name": "Celo",
+      "url": "https://status.celo.org/",
+      "chainIds": [
+        42220,
+        44787
+      ]
+    },
+    {
+      "id": "blast",
+      "name": "Blast",
+      "url": "https://status.blast.io/",
+      "chainIds": [
+        81457,
+        168587773
+      ]
+    },
+    {
+      "id": "taiko",
+      "name": "Taiko",
+      "url": "https://status.taiko.xyz/",
+      "chainIds": [
+        167000,
+        167009
+      ]
+    },
+    {
+      "id": "zksync",
+      "name": "ZKsync Era",
+      "url": "https://zksync-network.statuspage.io/",
+      "chainIds": [
+        324,
+        300
+      ]
+    },
+    {
+      "id": "mantle",
+      "name": "Mantle",
+      "url": "https://0xmantle.instatus.com/",
+      "chainIds": [
+        5000,
+        5003
+      ]
+    },
+    {
+      "id": "immutable",
+      "name": "Immutable zkEVM",
+      "url": "https://status.immutable.com/",
+      "chainIds": [
+        13371,
+        13473
+      ]
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "url": "https://status.aurora.dev/",
+      "chainIds": [
+        1313161554,
+        1313161555
+      ]
+    },
+    {
+      "id": "zora",
+      "name": "Zora",
+      "url": "https://status.zora.energy/",
+      "chainIds": [
+        7777777,
+        999999999
+      ]
+    },
+    {
+      "id": "manta-pacific",
+      "name": "Manta Pacific",
+      "url": "https://manta-pacific-status.caldera.dev/",
+      "chainIds": [
+        169,
+        3441006
+      ]
+    },
+    {
+      "id": "ink",
+      "name": "Ink",
+      "url": "https://status.inkonchain.com/",
+      "chainIds": [
+        57073,
+        763373
+      ]
+    },
+    {
+      "id": "soneium",
+      "name": "Soneium",
+      "url": "https://status.soneium.org/",
+      "chainIds": [
+        1868,
+        1946
+      ]
+    },
+    {
+      "id": "abstract",
+      "name": "Abstract",
+      "url": "https://status.abs.xyz/",
+      "chainIds": [
+        2741,
+        11124
+      ]
+    },
+    {
+      "id": "kaia",
+      "name": "Kaia",
+      "url": "https://status.kaia.io/",
+      "chainIds": [
+        8217,
+        1001
+      ]
+    },
+    {
+      "id": "intuition",
+      "name": "Intuition",
+      "url": "https://status.intuition.systems/",
+      "chainIds": [
+        1155
+      ]
+    },
+    {
+      "id": "nahmii",
+      "name": "Nahmii",
+      "url": "https://nahmii-community.github.io/status/",
+      "chainIds": [
+        5551
+      ]
+    },
+    {
+      "id": "katana",
+      "name": "Katana",
+      "url": "https://status.katana.network/",
+      "chainIds": [
+        747474,
+        737373
+      ]
+    },
+    {
+      "id": "santiment",
+      "name": "Santiment Intelligence Network",
+      "url": "https://status.santiment.net/",
+      "chainIds": [
+        11888,
+        32382
+      ]
+    },
+    {
+      "id": "superposition",
+      "name": "Superposition",
+      "url": "https://status.superposition.so/",
+      "chainIds": [
+        55244
+      ]
+    },
+    {
+      "id": "reya",
+      "name": "Reya",
+      "url": "https://reya.instatus.com/",
+      "chainIds": [
+        89346162
+      ]
+    },
+    {
+      "id": "xlayer",
+      "name": "X Layer",
+      "url": "https://status.xlayer.tech/",
+      "chainIds": [
+        196,
+        195
+      ]
+    },
+    {
+      "id": "bsquared",
+      "name": "B2 (BSquared)",
+      "url": "https://status.bsquared.network/",
+      "chainIds": [
+        223,
+        213
+      ]
+    },
+    {
+      "id": "optopia",
+      "name": "Optopia",
+      "url": "https://optopia.instatus.com/",
+      "chainIds": [
+        62050
+      ]
+    },
+    {
+      "id": "rise",
+      "name": "RISE",
+      "url": "https://status.risechain.com/",
+      "chainIds": [
+        4153
+      ]
+    },
+    {
+      "id": "appchain",
+      "name": "AppChain",
+      "url": "https://status.appchain.xyz/",
+      "chainIds": [
+        466
+      ]
+    },
+    {
+      "id": "kroma",
+      "name": "Kroma",
+      "url": "https://kroma.instatus.com/",
+      "chainIds": [
+        255
+      ]
+    },
+    {
+      "id": "metis",
+      "name": "Metis Andromeda",
+      "url": "https://status.metis.io/",
+      "chainIds": [
+        1088
+      ]
+    },
+    {
+      "id": "skate",
+      "name": "Skate",
+      "url": "https://skate-mainnet-status.alt.technology/",
+      "chainIds": [
+        5050
+      ]
+    },
+    {
+      "id": "fluent",
+      "name": "Fluent",
+      "url": "https://status.fluent.xyz/",
+      "chainIds": [
+        25363
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "url": "https://status.codex.xyz/",
+      "chainIds": [
+        81224
+      ]
+    },
+    {
+      "id": "lisk",
+      "name": "Lisk",
+      "url": "https://status.lisk.com/",
+      "chainIds": [
+        1135
+      ]
+    },
+    {
+      "id": "vizing",
+      "name": "Vizing",
+      "url": "https://vizing.instatus.com/",
+      "chainIds": [
+        28518
+      ]
+    },
+    {
+      "id": "doma",
+      "name": "Doma",
+      "url": "https://doma.instatus.com/",
+      "chainIds": [
+        97477
+      ]
+    },
+    {
+      "id": "darwinia",
+      "name": "Darwinia Network",
+      "url": "https://status.darwinia.network/",
+      "chainIds": [
+        46
+      ]
+    },
+    {
+      "id": "decimal",
+      "name": "Decimal Smart Chain Mainnet",
+      "url": "https://status.decimalchain.com/",
+      "chainIds": [
+        75
+      ]
+    },
+    {
+      "id": "fuse",
+      "name": "Fuse Mainnet",
+      "url": "https://status.fuse.io/",
+      "chainIds": [
+        122,
+        12001
+      ]
+    },
+    {
+      "id": "namefi",
+      "name": "Namefi Chain Mainnet",
+      "url": "https://status.namefi.io/",
+      "chainIds": [
+        132
+      ]
+    },
+    {
+      "id": "energyweb",
+      "name": "Energy Web Chain",
+      "url": "https://status.energyweb.org/",
+      "chainIds": [
+        246
+      ]
+    },
+    {
+      "id": "hedera",
+      "name": "Hedera Mainnet",
+      "url": "https://status.hedera.com/",
+      "chainIds": [
+        295
+      ]
+    },
+    {
+      "id": "filecoin",
+      "name": "Filecoin - Mainnet",
+      "url": "https://status.filecoin.io/",
+      "chainIds": [
+        314,
+        380
+      ]
+    },
+    {
+      "id": "near",
+      "name": "NEAR Protocol",
+      "url": "https://status.near.org/",
+      "chainIds": [
+        397
+      ]
+    },
+    {
+      "id": "flow",
+      "name": "Flow",
+      "url": "https://status.flow.com/",
+      "chainIds": [
+        545,
+        646,
+        747
+      ]
+    },
+    {
+      "id": "daily",
+      "name": "Daily Network Mainnet",
+      "url": "https://status.dailycrypto.net/",
+      "chainIds": [
+        824
+      ]
+    },
+    {
+      "id": "dymension",
+      "name": "Dymension",
+      "url": "https://status.dymension.xyz/",
+      "chainIds": [
+        1100
+      ]
+    },
+    {
+      "id": "defichainevm",
+      "name": "DeFiChain EVM Network Mainnet",
+      "url": "https://status.defichain.com/",
+      "chainIds": [
+        1130
+      ]
+    },
+    {
+      "id": "onino",
+      "name": "ONINO Mainnet",
+      "url": "https://status.onino.io/",
+      "chainIds": [
+        1425
+      ]
+    },
+    {
+      "id": "story",
+      "name": "Story",
+      "url": "https://status.story.foundation/",
+      "chainIds": [
+        1514
+      ]
+    },
+    {
+      "id": "metall2",
+      "name": "Metal L2",
+      "url": "https://status.metall2.com/",
+      "chainIds": [
+        1750
+      ]
+    },
+    {
+      "id": "sanko",
+      "name": "Sanko",
+      "url": "https://status.sanko.xyz/",
+      "chainIds": [
+        1996
+      ]
+    },
+    {
+      "id": "phala",
+      "name": "Phala Network",
+      "url": "https://status.phala.network/",
+      "chainIds": [
+        2035
+      ]
+    },
+    {
+      "id": "mfx",
+      "name": "MFX Network",
+      "url": "https://status.mfx.network/",
+      "chainIds": [
+        2064
+      ]
+    },
+    {
+      "id": "kava",
+      "name": "Kava",
+      "url": "https://status.kava.io/",
+      "chainIds": [
+        2222
+      ]
+    },
+    {
+      "id": "splendor",
+      "name": "Splendor Mainnet",
+      "url": "https://status.splendor.org/status/public",
+      "chainIds": [
+        2691
+      ]
+    },
+    {
+      "id": "ganchainl1",
+      "name": "GANchain L1",
+      "url": "https://status.gpu.net/",
+      "chainIds": [
+        4048
+      ]
+    },
+    {
+      "id": "citrea",
+      "name": "Citrea Mainnet",
+      "url": "https://status.citrea.xyz/",
+      "chainIds": [
+        4114
+      ]
+    },
+    {
+      "id": "layeredge",
+      "name": "Layer Edge Mainnet",
+      "url": "https://status.layeredge.io/",
+      "chainIds": [
+        4207
+      ]
+    },
+    {
+      "id": "tempopresto",
+      "name": "Tempo Mainnet Presto",
+      "url": "https://status.tempo.xyz/",
+      "chainIds": [
+        4217,
+        42431
+      ]
+    },
+    {
+      "id": "iotex",
+      "name": "IoTeX Network Mainnet",
+      "url": "https://status.iotex.io/",
+      "chainIds": [
+        4689,
+        4690
+      ]
+    },
+    {
+      "id": "bitrock",
+      "name": "Bitrock Mainnet",
+      "url": "https://status.bit-rock.io/",
+      "chainIds": [
+        7171
+      ]
+    },
+    {
+      "id": "b3",
+      "name": "B3",
+      "url": "https://status.b3.fun/",
+      "chainIds": [
+        8333
+      ]
+    },
+    {
+      "id": "giwa",
+      "name": "GIWA",
+      "url": "https://status.giwa.io/",
+      "chainIds": [
+        9134
+      ]
+    },
+    {
+      "id": "loadalphanet",
+      "name": "Load Alphanet",
+      "url": "https://status.load.network/",
+      "chainIds": [
+        9496
+      ]
+    },
+    {
+      "id": "quadransblockchain",
+      "name": "Quadrans Blockchain",
+      "url": "https://status.quadrans.io/",
+      "chainIds": [
+        10946
+      ]
+    },
+    {
+      "id": "ranntax",
+      "name": "RANNTA X-Chain",
+      "url": "https://status.rannta.com/",
+      "chainIds": [
+        13113
+      ]
+    },
+    {
+      "id": "oasissapphire",
+      "name": "Oasis Sapphire",
+      "url": "https://status.oasis.io/",
+      "chainIds": [
+        23294
+      ]
+    },
+    {
+      "id": "integra",
+      "name": "Integra",
+      "url": "https://status.integralayer.com/",
+      "chainIds": [
+        26217
+      ]
+    },
+    {
+      "id": "etherlink",
+      "name": "Etherlink Mainnet",
+      "url": "https://status.etherlink.com/",
+      "chainIds": [
+        42793,
+        127823
+      ]
+    },
+    {
+      "id": "apollo",
+      "name": "Apollo Mainnet",
+      "url": "https://status.apolloscan.io/",
+      "chainIds": [
+        62606
+      ]
+    },
+    {
+      "id": "nv",
+      "name": "NV-CHAIN",
+      "url": "https://status.neurovatic.ai/",
+      "chainIds": [
+        73790
+      ]
+    },
+    {
+      "id": "zedxion",
+      "name": "ZEDXION",
+      "url": "https://status.zedscan.net/",
+      "chainIds": [
+        83872
+      ]
+    },
+    {
+      "id": "lux",
+      "name": "Lux Mainnet",
+      "url": "https://status.lux.network/",
+      "chainIds": [
+        96369
+      ]
+    },
+    {
+      "id": "dorsen",
+      "name": "Dorsen Chain",
+      "url": "https://status.dorsenscan.io/",
+      "chainIds": [
+        99110
+      ]
+    },
+    {
+      "id": "ethernova",
+      "name": "Ethernova Mainnet",
+      "url": "https://status.ethnova.net/",
+      "chainIds": [
+        121525
+      ]
+    },
+    {
+      "id": "zoo",
+      "name": "Zoo Mainnet",
+      "url": "https://status.zoo.network/",
+      "chainIds": [
+        200200
+      ]
+    },
+    {
+      "id": "oneworld",
+      "name": "One World Chain Mainnet",
+      "url": "https://status.oneworldchain.org/",
+      "chainIds": [
+        309075
+      ]
+    },
+    {
+      "id": "dexalotsubnet",
+      "name": "Dexalot Subnet",
+      "url": "https://status.dexalot.com/",
+      "chainIds": [
+        432204
+      ]
+    },
+    {
+      "id": "octaspace",
+      "name": "OctaSpace",
+      "url": "https://status.octa.space/",
+      "chainIds": [
+        800001
+      ]
+    },
+    {
+      "id": "astriaevmdusknet",
+      "name": "Astria EVM Dusknet",
+      "url": "https://status.astria.org/",
+      "chainIds": [
+        912559
+      ]
+    },
+    {
+      "id": "xrplevmsidechain",
+      "name": "XRPL EVM Sidechain",
+      "url": "https://status.xrplevm.org/",
+      "chainIds": [
+        1440000
+      ]
+    },
+    {
+      "id": "alienx",
+      "name": "AlienX Mainnet",
+      "url": "https://status.alienxchain.io/",
+      "chainIds": [
+        10241024
+      ]
+    },
+    {
+      "id": "xmtp",
+      "name": "XMTP",
+      "url": "https://status.xmtp.org/",
+      "chainIds": [
+        24132016
+      ]
+    },
+    {
+      "id": "neonevm",
+      "name": "Neon EVM Mainnet",
+      "url": "https://status.neonevm.org/",
+      "chainIds": [
+        245022934
+      ]
+    },
+    {
+      "id": "mfev",
+      "name": "MFEV CHAIN MAINNET",
+      "url": "https://status.mfevscan.com/",
+      "chainIds": [
+        9982
+      ]
+    },
+    {
+      "id": "ontology",
+      "name": "Ontology Mainnet",
+      "url": "https://ontology.statuspage.io/",
+      "chainIds": [
+        58
+      ]
+    },
+    {
+      "id": "fncy",
+      "name": "FNCY",
+      "url": "https://fncy.statuspage.io/",
+      "chainIds": [
+        73
+      ]
+    },
+    {
+      "id": "defioraclemeta",
+      "name": "Defi Oracle Meta Mainnet",
+      "url": "https://status.d-bis.org/",
+      "chainIds": [
+        138
+      ]
+    },
+    {
+      "id": "tac",
+      "name": "TAC Mainnet",
+      "url": "https://tac.statuspage.io/",
+      "chainIds": [
+        239
+      ]
+    },
+    {
+      "id": "lachain",
+      "name": "LaChain",
+      "url": "https://status.lachain.network/",
+      "chainIds": [
+        274
+      ]
+    },
+    {
+      "id": "taraxa",
+      "name": "Taraxa Mainnet",
+      "url": "https://taraxa.statuspage.io/",
+      "chainIds": [
+        841
+      ]
+    },
+    {
+      "id": "autonomys",
+      "name": "Autonomys Mainnet",
+      "url": "https://status.autonomys.xyz/status/network",
+      "chainIds": [
+        870,
+        8700
+      ]
+    },
+    {
+      "id": "lyra",
+      "name": "Lyra Chain",
+      "url": "https://status.derive.xyz/",
+      "chainIds": [
+        957
+      ]
+    },
+    {
+      "id": "lightlinkphoenix",
+      "name": "Lightlink Phoenix Mainnet",
+      "url": "https://lightlink.statuspage.io/",
+      "chainIds": [
+        1890
+      ]
+    },
+    {
+      "id": "movementevm",
+      "name": "Movement EVM",
+      "url": "https://status.movementnetwork.xyz/",
+      "chainIds": [
+        3073
+      ]
+    },
+    {
+      "id": "arc",
+      "name": "Arc",
+      "url": "https://status.arc.io/",
+      "chainIds": [
+        5042
+      ]
+    },
+    {
+      "id": "arthera",
+      "name": "Arthera Mainnet",
+      "url": "https://arthera.instatus.com/",
+      "chainIds": [
+        10242
+      ]
+    },
+    {
+      "id": "entropy",
+      "name": "Entropy Chain",
+      "url": "https://status.entropy.xyz/",
+      "chainIds": [
+        19911
+      ]
+    },
+    {
+      "id": "zilliqa2",
+      "name": "Zilliqa 2",
+      "url": "https://zilliqa.statuspage.io/",
+      "chainIds": [
+        32769,
+        33101
+      ]
+    },
+    {
+      "id": "juneojune",
+      "name": "Juneo JUNE-Chain",
+      "url": "https://juneo.statuspage.io/",
+      "chainIds": [
+        45003
+      ]
+    },
+    {
+      "id": "automata",
+      "name": "Automata Mainnet",
+      "url": "https://automata.instatus.com/",
+      "chainIds": [
+        65536
+      ]
+    },
+    {
+      "id": "godwoken",
+      "name": "Godwoken Mainnet",
+      "url": "https://godwoken.statuspage.io/",
+      "chainIds": [
+        71402
+      ]
+    },
+    {
+      "id": "borachain",
+      "name": "BORAchain mainnet",
+      "url": "https://status.boraportal.com/",
+      "chainIds": [
+        77001
+      ]
+    },
+    {
+      "id": "chiliz",
+      "name": "Chiliz Chain Mainnet",
+      "url": "https://status.chiliz.com/",
+      "chainIds": [
+        88882,
+        88888
+      ]
+    },
+    {
+      "id": "bexchain",
+      "name": "BEXChain",
+      "url": "https://status.bexchain.com/",
+      "chainIds": [
+        140586
+      ]
+    },
+    {
+      "id": "ternoa",
+      "name": "Ternoa",
+      "url": "https://status.ternoa.network/",
+      "chainIds": [
+        752025
+      ]
+    },
+    {
+      "id": "vision",
+      "name": "Vision - Mainnet",
+      "url": "https://vision.statuspage.io/",
+      "chainIds": [
+        888888
+      ]
+    },
+    {
+      "id": "dchain",
+      "name": "DCHAIN",
+      "url": "https://dchain.instatus.com/",
+      "chainIds": [
+        2716446429837000
+      ]
+    },
+    {
+      "id": "xdc",
+      "name": "XDC Network",
+      "url": "https://status.xdc.network/",
+      "chainIds": [
+        50,
+        51
+      ]
+    },
+    {
+      "id": "hyperliquid",
+      "name": "Hyperliquid",
+      "url": "https://hyperliquid.statuspage.io/",
+      "chainIds": [
+        998
+      ]
+    },
+    {
+      "id": "aura",
+      "name": "Aura Network",
+      "url": "https://status.aura.network/incidents",
+      "chainIds": [
+        6322
+      ]
+    }
+  ],
+  "coins": [
+    {
+      "symbol": "SOL",
+      "name": "Solana",
+      "url": "https://status.solana.com/"
+    },
+    {
+      "symbol": "XLM",
+      "name": "Stellar",
+      "url": "https://status.stellar.org/"
+    },
+    {
+      "symbol": "SUI",
+      "name": "Sui",
+      "url": "https://status.sui.io/"
+    },
+    {
+      "symbol": "UNI",
+      "name": "Uniswap",
+      "url": "https://status.uniswap.org/"
+    },
+    {
+      "symbol": "WLD",
+      "name": "Worldcoin",
+      "url": "https://status.world.org/"
+    },
+    {
+      "symbol": "ONDO",
+      "name": "Ondo",
+      "url": "https://status.ondo.finance/"
+    },
+    {
+      "symbol": "PI",
+      "name": "Pi Network",
+      "url": "https://status.minepi.com/"
+    },
+    {
+      "symbol": "AAVE",
+      "name": "Aave",
+      "url": "https://status.aave.com/"
+    },
+    {
+      "symbol": "ICP",
+      "name": "Internet Computer",
+      "url": "https://status.internetcomputer.org/"
+    },
+    {
+      "symbol": "MORPHO",
+      "name": "Morpho",
+      "url": "https://status.morpho.org/"
+    },
+    {
+      "symbol": "JUP",
+      "name": "Jupiter",
+      "url": "https://status.jup.ag/"
+    },
+    {
+      "symbol": "XTZ",
+      "name": "Tezos",
+      "url": "https://status.tezos.com/"
+    },
+    {
+      "symbol": "TIA",
+      "name": "Celestia",
+      "url": "https://status.celestia.org/"
+    },
+    {
+      "symbol": "OSMO",
+      "name": "Osmosis",
+      "url": "https://status.osmosis.zone/"
+    },
+    {
+      "symbol": "XRD",
+      "name": "Radix",
+      "url": "https://status.radixdlt.com/"
+    },
+    {
+      "symbol": "EGLD",
+      "name": "MultiversX",
+      "url": "https://status.multiversx.com/"
+    },
+    {
+      "symbol": "DYDX",
+      "name": "dYdX",
+      "url": "https://status.dydx.trade/"
+    },
+    {
+      "symbol": "STX",
+      "name": "Stacks",
+      "url": "https://status.hiro.so/"
+    },
+    {
+      "symbol": "IOTA",
+      "name": "IOTA",
+      "url": "https://status.iota.org/"
+    },
+    {
+      "symbol": "WAXP",
+      "name": "WAX",
+      "url": "https://status.wax.io/"
+    },
+    {
+      "symbol": "CHR",
+      "name": "Chromia",
+      "url": "https://status.chromia.com/"
+    },
+    {
+      "symbol": "OM",
+      "name": "Mantra",
+      "url": "https://status.mantrachain.io/"
+    },
+    {
+      "symbol": "INIT",
+      "name": "Initia",
+      "url": "https://status.initia.xyz/"
+    },
+    {
+      "symbol": "NOBLE",
+      "name": "Noble",
+      "url": "https://noble.instatus.com/"
+    },
+    {
+      "symbol": "XCH",
+      "name": "Chia",
+      "url": "https://status.chia.net/"
+    },
+    {
+      "symbol": "QUBIC",
+      "name": "Qubic",
+      "url": "https://status.qubic.li/"
+    },
+    {
+      "symbol": "ALPH",
+      "name": "Alephium",
+      "url": "https://status.alephium.org/status/global"
+    },
+    {
+      "symbol": "ARCH",
+      "name": "Archway",
+      "url": "https://status.archway.io/"
+    },
+    {
+      "symbol": "ES",
+      "name": "Eclipse",
+      "url": "https://status.eclipse.xyz/"
+    },
+    {
+      "symbol": "IXO",
+      "name": "ixo",
+      "url": "https://status.ixo.world/status/ixo"
+    },
+    {
+      "symbol": "ZNN",
+      "name": "Zenon",
+      "url": "https://bridgestatus.zenon.info/"
+    }
+  ]
+}
