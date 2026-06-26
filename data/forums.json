@@ -442,13 +442,6 @@
       "chainIds": [60808]
     },
     {
-      "id": "blast",
-      "name": "Blast Forum",
-      "url": "https://forum.blast.io",
-      "software": "other",
-      "chainIds": [81457]
-    },
-    {
       "id": "taiko",
       "name": "Taiko Community Forum",
       "url": "https://community.taiko.xyz",
