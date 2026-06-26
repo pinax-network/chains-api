@@ -17,6 +17,12 @@ import {
 import { getL2BeatRefreshStatus } from './src/services/l2beatRefresher.js';
 import { getClientsByChain } from './clientsView.js';
 import { getPricesForChains, getPriceForChain } from './priceService.js';
+import {
+  getAllStatusPages,
+  getAllCoinStatusPages,
+  getStatusPageByChainId,
+  getStatusPageBySymbol,
+} from './src/sources/statusPages.js';
 
 /**
  * Get the list of MCP tool definitions (schemas)
@@ -218,6 +224,42 @@ export function getToolDefinitions() {
             description: 'Optional chain ID. If provided, returns clients for that chain only. If omitted, returns a summary across all chains with monitoring data.',
           },
         },
+      },
+    },
+    {
+      name: 'get_status_pages',
+      description: 'Get the curated registry of operator status/incident pages. Returns chain-keyed projects (each with the chainIds it covers) plus coin/symbol-keyed entries for networks not represented by a chainId (e.g. Solana, Sui).',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
+      name: 'get_status_page_by_chain',
+      description: 'Get the operator status/incident page covering a specific chain by its chain ID (e.g. 8453 for Base → base-l2.statuspage.io).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chainId: {
+            type: 'number',
+            description: 'The chain ID to look up a status page for (e.g., 1 for Ethereum, 8453 for Base)',
+          },
+        },
+        required: ['chainId'],
+      },
+    },
+    {
+      name: 'get_status_page_by_symbol',
+      description: 'Get the operator status/incident page for a coin/network keyed by symbol rather than chain ID (e.g. SOL for Solana). Case-insensitive.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          symbol: {
+            type: 'string',
+            description: 'The coin/network symbol to look up (e.g., "SOL", "SUI", "AAVE")',
+          },
+        },
+        required: ['symbol'],
       },
     },
   ];
@@ -546,6 +588,41 @@ function handleGetRefresherStatus() {
   return textResponse(getL2BeatRefreshStatus());
 }
 
+function handleGetStatusPages() {
+  const chains = getAllStatusPages();
+  const coins = getAllCoinStatusPages();
+  return textResponse({
+    chainCount: chains.length,
+    coinCount: coins.length,
+    statusPages: chains,
+    coins,
+  });
+}
+
+function handleGetStatusPageByChain(args) {
+  const { chainId } = args;
+  if (!isValidChainId(chainId)) {
+    return errorResponse('Invalid chain ID');
+  }
+  const page = getStatusPageByChainId(chainId);
+  if (!page) {
+    return errorResponse('No status page found for this chain');
+  }
+  return textResponse(page);
+}
+
+function handleGetStatusPageBySymbol(args) {
+  const { symbol } = args;
+  if (typeof symbol !== 'string' || symbol.trim() === '') {
+    return errorResponse('Symbol is required');
+  }
+  const page = getStatusPageBySymbol(symbol);
+  if (!page) {
+    return errorResponse('No status page found for this symbol');
+  }
+  return textResponse(page);
+}
+
 const toolHandlers = {
   get_chains: handleGetChains,
   get_chain_by_id: handleGetChainById,
@@ -564,6 +641,9 @@ const toolHandlers = {
   get_l2beat_by_id: handleGetL2BeatById,
   get_refresher_status: handleGetRefresherStatus,
   get_clients: handleGetClients,
+  get_status_pages: handleGetStatusPages,
+  get_status_page_by_chain: handleGetStatusPageByChain,
+  get_status_page_by_symbol: handleGetStatusPageBySymbol,
 };
 
 /**
