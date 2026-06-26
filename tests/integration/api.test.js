@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { createRequire } from 'node:module';
 import { buildApp } from '../../index.js';
 import * as dataService from '../../dataService.js';
 import * as fsPromises from 'node:fs/promises';
+
+// Read the real package version (createRequire bypasses the node:fs/promises
+// mock below) so this test tracks the single source of truth instead of a
+// hardcoded literal that breaks on every release bump.
+const { version: PKG_VERSION } = createRequire(import.meta.url)('../../package.json');
 
 vi.mock('node:fs/promises', () => ({
   readFile: vi.fn()
@@ -304,7 +310,7 @@ describe('API Endpoints', () => {
       expect(response.statusCode).toBe(200);
       const data = JSON.parse(response.payload);
       expect(data).toHaveProperty('name', 'Chains API');
-      expect(data).toHaveProperty('version', '1.1.1');
+      expect(data).toHaveProperty('version', PKG_VERSION);
       expect(data).toHaveProperty('description');
       expect(data).toHaveProperty('endpoints');
       expect(data).toHaveProperty('dataSources');
