@@ -148,15 +148,6 @@
       ]
     },
     {
-      "id": "unichain",
-      "name": "Unichain",
-      "url": "https://statuspage.incident.io/uniswap-status",
-      "chainIds": [
-        130,
-        1301
-      ]
-    },
-    {
       "id": "ink",
       "name": "Ink",
       "url": "https://status.inkonchain.com/",
@@ -218,23 +209,6 @@
       ]
     },
     {
-      "id": "sx",
-      "name": "SX Network",
-      "url": "https://status.sx.bet/",
-      "chainIds": [
-        4162,
-        79479957
-      ]
-    },
-    {
-      "id": "step",
-      "name": "Step Network",
-      "url": "https://step.statuspage.io/",
-      "chainIds": [
-        1234
-      ]
-    },
-    {
       "id": "santiment",
       "name": "Santiment Intelligence Network",
       "url": "https://status.santiment.net/",
@@ -269,36 +243,12 @@
       ]
     },
     {
-      "id": "jovay",
-      "name": "Jovay",
-      "url": "https://status.jovay.io/",
-      "chainIds": [
-        5734951
-      ]
-    },
-    {
-      "id": "perennial",
-      "name": "Perennial",
-      "url": "https://perennial.statuspage.io/",
-      "chainIds": [
-        1424
-      ]
-    },
-    {
       "id": "bsquared",
       "name": "B2 (BSquared)",
       "url": "https://status.bsquared.network/",
       "chainIds": [
         223,
         213
-      ]
-    },
-    {
-      "id": "matchain",
-      "name": "Matchain",
-      "url": "https://status.matchain.io/",
-      "chainIds": [
-        698
       ]
     },
     {
@@ -323,14 +273,6 @@
       "url": "https://status.appchain.xyz/",
       "chainIds": [
         466
-      ]
-    },
-    {
-      "id": "xai",
-      "name": "Xai",
-      "url": "https://status.xai.games/",
-      "chainIds": [
-        660279
       ]
     },
     {
@@ -414,14 +356,6 @@
       ]
     },
     {
-      "id": "genechain",
-      "name": "GeneChain",
-      "url": "https://status.genechain.io/",
-      "chainIds": [
-        80
-      ]
-    },
-    {
       "id": "fuse",
       "name": "Fuse Mainnet",
       "url": "https://status.fuse.io/",
@@ -472,14 +406,6 @@
       ]
     },
     {
-      "id": "avocado",
-      "name": "Avocado",
-      "url": "https://status.instadapp.io/",
-      "chainIds": [
-        634
-      ]
-    },
-    {
       "id": "flow",
       "name": "Flow",
       "url": "https://status.flow.com/",
@@ -490,27 +416,11 @@
       ]
     },
     {
-      "id": "endurance",
-      "name": "Endurance Smart Chain Mainnet",
-      "url": "https://status.fusionist.io/status/fusionist",
-      "chainIds": [
-        648
-      ]
-    },
-    {
       "id": "daily",
       "name": "Daily Network Mainnet",
       "url": "https://status.dailycrypto.net/",
       "chainIds": [
         824
-      ]
-    },
-    {
-      "id": "taproot",
-      "name": "TAPROOT Mainnet",
-      "url": "https://status.taprootchain.io/",
-      "chainIds": [
-        911
       ]
     },
     {
@@ -527,14 +437,6 @@
       "url": "https://status.defichain.com/",
       "chainIds": [
         1130
-      ]
-    },
-    {
-      "id": "blitzsubnet",
-      "name": "Blitz Subnet",
-      "url": "https://status.blitz.gg/",
-      "chainIds": [
-        1343
       ]
     },
     {
@@ -562,14 +464,6 @@
       ]
     },
     {
-      "id": "redecoin",
-      "name": "RedeCoin",
-      "url": "https://status.redecoin.eu/",
-      "chainIds": [
-        1972
-      ]
-    },
-    {
       "id": "sanko",
       "name": "Sanko",
       "url": "https://status.sanko.xyz/",
@@ -594,14 +488,6 @@
       ]
     },
     {
-      "id": "snaxchain",
-      "name": "SnaxChain",
-      "url": "https://status.synthetix.io/",
-      "chainIds": [
-        2192
-      ]
-    },
-    {
       "id": "kava",
       "name": "Kava",
       "url": "https://status.kava.io/",
@@ -615,22 +501,6 @@
       "url": "https://status.splendor.org/status/public",
       "chainIds": [
         2691
-      ]
-    },
-    {
-      "id": "paribunet",
-      "name": "Paribu Net Mainnet",
-      "url": "https://status.paribu.com/",
-      "chainIds": [
-        3400
-      ]
-    },
-    {
-      "id": "crossbell",
-      "name": "Crossbell",
-      "url": "https://status.crossbell.io/",
-      "chainIds": [
-        3737
       ]
     },
     {
@@ -708,14 +578,6 @@
       ]
     },
     {
-      "id": "maxxchain",
-      "name": "MaxxChain Mainnet",
-      "url": "https://status.maxxchain.org/",
-      "chainIds": [
-        10201
-      ]
-    },
-    {
       "id": "quadransblockchain",
       "name": "Quadrans Blockchain",
       "url": "https://status.quadrans.io/",
@@ -729,30 +591,6 @@
       "url": "https://status.rannta.com/",
       "chainIds": [
         13113
-      ]
-    },
-    {
-      "id": "bitroot",
-      "name": "Bitroot",
-      "url": "https://status.bitroot.co/zh",
-      "chainIds": [
-        15888
-      ]
-    },
-    {
-      "id": "0gnewton",
-      "name": "0G-Newton-Testnet",
-      "url": "https://status.0g.ai/",
-      "chainIds": [
-        16600
-      ]
-    },
-    {
-      "id": "proofofmemes",
-      "name": "Proof Of Memes",
-      "url": "https://status.proofofmemes.org/",
-      "chainIds": [
-        18159
       ]
     },
     {
@@ -772,28 +610,12 @@
       ]
     },
     {
-      "id": "zeus",
-      "name": "ZEUS Mainnet",
-      "url": "https://status.zeuschainscan.io/",
-      "chainIds": [
-        34504
-      ]
-    },
-    {
       "id": "etherlink",
       "name": "Etherlink Mainnet",
       "url": "https://status.etherlink.com/",
       "chainIds": [
         42793,
         127823
-      ]
-    },
-    {
-      "id": "orange",
-      "name": "Orange Chain Mainnet",
-      "url": "https://status.orangechain.xyz/",
-      "chainIds": [
-        61022
       ]
     },
     {
@@ -834,14 +656,6 @@
       "url": "https://status.dorsenscan.io/",
       "chainIds": [
         99110
-      ]
-    },
-    {
-      "id": "globaltrust",
-      "name": "Global Trust Network",
-      "url": "https://status.stabilityprotocol.com/",
-      "chainIds": [
-        101010
       ]
     },
     {
@@ -922,30 +736,6 @@
       "url": "https://status.neonevm.org/",
       "chainIds": [
         245022934
-      ]
-    },
-    {
-      "id": "iexecsidechain",
-      "name": "iExec Sidechain",
-      "url": "https://status.iex.ec/",
-      "chainIds": [
-        134
-      ]
-    },
-    {
-      "id": "taker",
-      "name": "Taker Chain Mainnet",
-      "url": "https://status.taker.xyz/",
-      "chainIds": [
-        1125
-      ]
-    },
-    {
-      "id": "catecoin",
-      "name": "Catecoin Chain Mainnet",
-      "url": "https://status.catechain.com/",
-      "chainIds": [
-        1618
       ]
     },
     {
@@ -1076,14 +866,6 @@
       "url": "https://juneo.statuspage.io/",
       "chainIds": [
         45003
-      ]
-    },
-    {
-      "id": "zircuit",
-      "name": "Zircuit Testnet",
-      "url": "https://status.zircuit.com/",
-      "chainIds": [
-        48899
       ]
     },
     {
