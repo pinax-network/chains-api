@@ -92,6 +92,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initIncidentControls();
     initChainsTableHeader();
     initScalingHeader();
+    // Start the live incidents feed immediately — it must NOT wait on the heavy
+    // /export bulk load (13MB + 3D graph build) or it appears stuck.
+    connectStatusFeed();
     loadStatsLine();
     loadBulk();
     window.addEventListener('popstate', applyUrlState);
@@ -129,7 +132,6 @@ async function loadBulk() {
         document.getElementById('statsLine').textContent = `${state.chains.length} chains loaded`;
     }
     loadStatusPages();      // populate drawer status-page links (no list UI)
-    connectStatusFeed();    // incidents
     applyUrlState();        // deep-link ?chain=
 }
 
@@ -495,13 +497,16 @@ function parseIncidentTimes(ev) {
 }
 function incidentModel(ev) {
     const chain = ev.chains?.[0];
-    const when = ev.publishedAt || ev.updatedAt;
+    const raw = ev.publishedAt || ev.updatedAt;
     const times = parseIncidentTimes(ev);
+    let when = raw ? new Date(raw) : null;
+    if (when && Number.isNaN(when.getTime())) when = null;
+    if (!when && times) when = new Date(times.end);
     return {
         id: ev.id || ev.url || ev.title,
         title: ev.title || '(untitled)',
         url: ev.url,
-        when: when ? new Date(when) : (times ? new Date(times.end) : null),
+        when,
         status: parseIncidentStatus(ev),
         durationMs: times ? times.end - times.start : null,
         netName: chain?.name || ev.statusPage?.name || ev.statusPage?.id || 'Unknown',
@@ -509,7 +514,7 @@ function incidentModel(ev) {
         spId: ev.statusPage?.id || (chain?.chainId != null ? String(chain.chainId) : 'unknown')
     };
 }
-function dayKey(d) { return d ? d.toISOString().slice(0, 10) : null; }
+function dayKey(d) { return d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null; }
 
 function addIncidents(events) {
     let added = false;
@@ -521,7 +526,7 @@ function addIncidents(events) {
     if (!added) return;
     incidents.items.sort((a, b) => (b.when?.getTime() || 0) - (a.when?.getTime() || 0));
     if (incidents.items.length > 500) incidents.items.length = 500;
-    renderIncidents();
+    try { renderIncidents(); } catch (err) { console.error('incident render failed', err); }
 }
 
 function initIncidentControls() {
