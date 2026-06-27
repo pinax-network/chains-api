@@ -88,10 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initSearch();
     initGraphControls();
     initDrawer();
-    initChainFilter();
     initIncidentControls();
     initChainsTableHeader();
     initScalingHeader();
+    applyUrlState();        // restore view + ?q= immediately (before data loads)
+    // Start the live incidents feed immediately — it must NOT wait on the heavy
+    // /export bulk load (13MB + 3D graph build) or it appears stuck.
+    connectStatusFeed();
     loadStatsLine();
     loadBulk();
     window.addEventListener('popstate', applyUrlState);
@@ -129,7 +132,6 @@ async function loadBulk() {
         document.getElementById('statsLine').textContent = `${state.chains.length} chains loaded`;
     }
     loadStatusPages();      // populate drawer status-page links (no list UI)
-    connectStatusFeed();    // incidents
     applyUrlState();        // deep-link ?chain=
 }
 
@@ -163,25 +165,60 @@ function buildRelations() {
 function initTabs() {
     document.querySelectorAll('#tabs .tab').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
 }
-function switchView(view) {
+// View / search / selected-chain are all reflected in the URL so each tab is a
+// separate, shareable, reloadable page (e.g. ?view=incidents&q=base).
+const VIEWS = ['graph', 'networks', 'incidents'];
+let activeView = 'graph';
+let searchQuery = '';
+let openChainId = null;
+
+function switchView(view, opts = {}) {
+    if (!VIEWS.includes(view)) view = 'graph';
+    activeView = view;
     document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(`view-${view}`).classList.add('active');
     document.body.classList.toggle('graph-active', view === 'graph');
     if (view === 'graph' && myGraph) setTimeout(() => myGraph.width(window.innerWidth).height(window.innerHeight), 0);
+    updateSearchPlaceholder();
+    applySearch();
+    if (!opts.fromUrl) updateUrl({ push: true });
 }
 
-// ─────────────────────────────── URL deep-link ───────────────────────────────
+function updateSearchPlaceholder() {
+    const input = document.getElementById('searchInput');
+    if (input) input.placeholder = activeView === 'networks' ? 'Filter networks — id or name…'
+        : activeView === 'incidents' ? 'Filter incidents — network or title…'
+        : 'Find a network — id or name…';
+}
+
+// Apply the current ?q= search to whichever page is active.
+function applySearch() {
+    if (activeView === 'networks') { chainShown = CHAIN_PAGE; renderChainsView(); }
+    else if (activeView === 'incidents') renderIncidentList();
+}
+
+function updateUrl({ push = false } = {}) {
+    const u = new URL(location.href);
+    const set = (k, v) => { if (v == null || v === '') u.searchParams.delete(k); else u.searchParams.set(k, v); };
+    set('view', activeView === 'graph' ? null : activeView); // graph is the default; keep URL clean
+    set('q', searchQuery || null);
+    set('chain', openChainId);
+    history[push ? 'pushState' : 'replaceState'](null, '', u);
+}
+
+// Restore view + query + open-chain from the URL (on load and on back/forward).
 function applyUrlState() {
     const params = new URLSearchParams(location.search);
+    const q = params.get('q') || '';
+    searchQuery = q.trim().toLowerCase();
+    const input = document.getElementById('searchInput');
+    if (input && input.value !== q) input.value = q;
+    switchView(params.get('view') || 'graph', { fromUrl: true });
+
     const chain = params.get('chain');
     if (chain && state.byId.has(Number(chain))) openChainDetail(Number(chain), { fromUrl: true });
     else closeDrawer({ fromUrl: true });
-}
-function setUrlChain(id) {
-    const u = new URL(location.href);
-    if (id == null) u.searchParams.delete('chain'); else u.searchParams.set('chain', id);
-    history.replaceState(null, '', u);
 }
 
 // ─────────────────────────────── search (global) ───────────────────────────────
@@ -190,8 +227,10 @@ function initSearch() {
     const dd = document.getElementById('searchDropdown');
     let activeIdx = -1;
 
-    const render = debounce(q => {
-        if (!q) { dd.classList.add('hidden'); return; }
+    // On the graph view there's no list to filter, so offer a jump-to-network
+    // autocomplete. On Networks/Incidents the same query filters the page.
+    const renderDropdown = debounce(q => {
+        if (!q || activeView !== 'graph') { dd.classList.add('hidden'); return; }
         const matches = state.chains.filter(c =>
             String(c.chainId).includes(q) || c.name?.toLowerCase().includes(q) || c.shortName?.toLowerCase().includes(q)
         ).sort((a, b) => {
@@ -203,22 +242,27 @@ function initSearch() {
         dd.textContent = ''; activeIdx = -1;
         if (!matches.length) dd.appendChild(el('div', { class: 'dropdown-empty', text: 'No networks found.' }));
         for (const c of matches) {
-            const item = el('div', { class: 'dropdown-item', 'data-id': c.chainId, onclick: () => pick(c.chainId) }, [
+            dd.appendChild(el('div', { class: 'dropdown-item', 'data-id': c.chainId, onclick: () => pick(c.chainId) }, [
                 networkIcon(c.name, COLORS[classify(c)], 'dropdown-icon'),
                 el('div', { class: 'dropdown-info' }, [
                     el('span', { class: 'dropdown-name', text: c.name || `Chain ${c.chainId}` }),
                     el('div', { class: 'dropdown-meta', text: `ID: ${c.chainId} · ${(c.tags || []).join(', ') || classify(c)}` })
                 ])
-            ]);
-            dd.appendChild(item);
+            ]));
         }
         dd.classList.remove('hidden');
     }, 140);
 
-    function pick(id) { input.value = state.byId.get(id)?.name || String(id); dd.classList.add('hidden'); openChainDetail(id); if (document.body.classList.contains('graph-active')) focusNodeById(id); }
+    function onInput(raw) {
+        searchQuery = raw.trim().toLowerCase();
+        updateUrl();           // ?q= reflects the search (shareable / reloadable)
+        applySearch();         // filter the active page (networks / incidents)
+        renderDropdown(searchQuery);
+    }
+    function pick(id) { dd.classList.add('hidden'); openChainDetail(id); if (activeView === 'graph') focusNodeById(id); }
     globalThis.pickChain = pick;
 
-    input.addEventListener('input', e => render(e.target.value.toLowerCase().trim()));
+    input.addEventListener('input', e => onInput(e.target.value));
     input.addEventListener('keydown', e => {
         const items = dd.querySelectorAll('.dropdown-item');
         if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); mark(items); }
@@ -329,7 +373,6 @@ function renderRpcStatCards(s) {
 // ─────────────────────────────── Chains table ───────────────────────────────
 let chainSort = { key: 'chainId', dir: 1 };
 let chainTagFilter = 'all';
-let chainTextFilter = '';
 const CHAIN_PAGE = 200;
 let chainShown = CHAIN_PAGE;
 
@@ -342,10 +385,6 @@ function initChainsTableHeader() {
         chip.classList.add('active'); chainTagFilter = chip.dataset.tag; chainShown = CHAIN_PAGE; renderChainsView();
     }));
 }
-function initChainFilter() {
-    const inp = document.getElementById('chainFilter');
-    inp?.addEventListener('input', debounce(e => { chainTextFilter = e.target.value.toLowerCase().trim(); chainShown = CHAIN_PAGE; renderChainsView(); }, 140));
-}
 function chainRowData(c) {
     const rpcCount = (c.rpc || []).filter(u => { const url = typeof u === 'string' ? u : u?.url; return url && url.startsWith('http') && !url.includes('${'); }).length;
     return {
@@ -355,9 +394,10 @@ function chainRowData(c) {
 }
 function renderChainsView() {
     const body = document.getElementById('chainsTableBody'); if (!body) return;
+    const q = searchQuery;
     let rows = state.chains.filter(c => {
         if (chainTagFilter === 'Mainnet' ? classify(c) !== 'Mainnet' : (chainTagFilter !== 'all' && !c.tags?.includes(chainTagFilter))) return false;
-        if (chainTextFilter && !(`${c.chainId}`.includes(chainTextFilter) || c.name?.toLowerCase().includes(chainTextFilter) || c.shortName?.toLowerCase().includes(chainTextFilter))) return false;
+        if (q && !(`${c.chainId}`.includes(q) || c.name?.toLowerCase().includes(q) || c.shortName?.toLowerCase().includes(q))) return false;
         return true;
     }).map(chainRowData);
 
@@ -495,13 +535,16 @@ function parseIncidentTimes(ev) {
 }
 function incidentModel(ev) {
     const chain = ev.chains?.[0];
-    const when = ev.publishedAt || ev.updatedAt;
+    const raw = ev.publishedAt || ev.updatedAt;
     const times = parseIncidentTimes(ev);
+    let when = raw ? new Date(raw) : null;
+    if (when && Number.isNaN(when.getTime())) when = null;
+    if (!when && times) when = new Date(times.end);
     return {
         id: ev.id || ev.url || ev.title,
         title: ev.title || '(untitled)',
         url: ev.url,
-        when: when ? new Date(when) : (times ? new Date(times.end) : null),
+        when,
         status: parseIncidentStatus(ev),
         durationMs: times ? times.end - times.start : null,
         netName: chain?.name || ev.statusPage?.name || ev.statusPage?.id || 'Unknown',
@@ -509,7 +552,7 @@ function incidentModel(ev) {
         spId: ev.statusPage?.id || (chain?.chainId != null ? String(chain.chainId) : 'unknown')
     };
 }
-function dayKey(d) { return d ? d.toISOString().slice(0, 10) : null; }
+function dayKey(d) { return d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null; }
 
 function addIncidents(events) {
     let added = false;
@@ -521,7 +564,7 @@ function addIncidents(events) {
     if (!added) return;
     incidents.items.sort((a, b) => (b.when?.getTime() || 0) - (a.when?.getTime() || 0));
     if (incidents.items.length > 500) incidents.items.length = 500;
-    renderIncidents();
+    try { renderIncidents(); } catch (err) { console.error('incident render failed', err); }
 }
 
 function initIncidentControls() {
@@ -579,8 +622,9 @@ function renderIncidentList() {
     const list = document.getElementById('incidentsList'); if (!list) return;
     let items = incidents.items;
     if (incidents.dayFilter) items = items.filter(it => dayKey(it.when) === incidents.dayFilter);
+    if (searchQuery) items = items.filter(it => it.netName?.toLowerCase().includes(searchQuery) || it.title?.toLowerCase().includes(searchQuery) || String(it.chainId).includes(searchQuery));
     document.getElementById('incidentsCount').textContent =
-        `${items.length} event${items.length === 1 ? '' : 's'}${incidents.dayFilter ? ` on ${incidents.dayFilter}` : ''}`;
+        `${items.length} event${items.length === 1 ? '' : 's'}${incidents.dayFilter ? ` on ${incidents.dayFilter}` : ''}${searchQuery ? ` · “${searchQuery}”` : ''}`;
     list.textContent = '';
     if (!items.length) { list.appendChild(el('div', { class: 'feed-empty', text: 'No incidents in this range.' })); return; }
 
@@ -636,7 +680,8 @@ function initDrawer() {
 }
 function closeDrawer(opts = {}) {
     document.getElementById('detailDrawer')?.classList.add('hidden');
-    if (!opts.fromUrl) setUrlChain(null);
+    openChainId = null;
+    if (!opts.fromUrl) updateUrl();
 }
 function chainLink(id) {
     const c = state.byId.get(id);
@@ -647,7 +692,8 @@ function detailRow(label, valueNode) {
 }
 function openChainDetail(chainId, opts = {}) {
     const c = state.byId.get(chainId); if (!c) return;
-    if (!opts.fromUrl) setUrlChain(chainId);
+    openChainId = chainId;
+    if (!opts.fromUrl) updateUrl();
     const body = document.getElementById('drawerBody');
     const type = classify(c);
     const e = state.rel.get(chainId) || {};
