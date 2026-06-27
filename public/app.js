@@ -17,7 +17,7 @@ const ALL_SOURCES = ['chains', 'chainlist', 'theGraph', 'slip44', 'l2beat'];
 
 const state = {
     chains: [], byId: new Map(), rel: new Map(),
-    l2beat: new Map(), l2beatMeta: null,
+    l2beat: new Map(), l2beatProjects: [], l2beatMeta: null,
     statusPagesByChain: new Map(),
     lastUpdated: null
 };
@@ -121,7 +121,8 @@ async function loadBulk() {
     state.lastUpdated = data.lastUpdated ?? null;
     state.byId = new Map(state.chains.map(c => [c.chainId, c]));
     state.l2beatMeta = data.l2beat ? { source: data.l2beat.source, count: (data.l2beat.projects || []).length } : null;
-    for (const p of data.l2beat?.projects ?? []) if (p.chainId != null) state.l2beat.set(p.chainId, p);
+    state.l2beatProjects = data.l2beat?.projects ?? [];
+    for (const p of state.l2beatProjects) if (p.chainId != null) state.l2beat.set(p.chainId, p);
 
     buildRelations();
     buildGraph();
@@ -443,14 +444,14 @@ function initScalingHeader() {
 }
 function renderScalingChart() {
     const wrap = document.getElementById('scalingChart'); if (!wrap) return;
-    const top = [...state.l2beat.values()].filter(p => p.tvs > 0).sort((a, b) => b.tvs - a.tvs).slice(0, 15);
+    const top = state.l2beatProjects.filter(p => p.tvs > 0).sort((a, b) => b.tvs - a.tvs).slice(0, 15);
     if (state.l2beatMeta) document.getElementById('scalingMeta').textContent = `${state.l2beatMeta.count} projects · ${state.l2beatMeta.source}`;
     wrap.textContent = '';
     if (!top.length) { wrap.appendChild(el('div', { class: 'feed-empty', text: 'No scaling data.' })); return; }
     const max = top[0].tvs;
     for (const p of top) {
         const pct = Math.max(2, (p.tvs / max) * 100);
-        const row = el('div', { class: 'bar-row', onclick: () => openChainDetail(p.chainId) }, [
+        const row = el('div', { class: 'bar-row', onclick: p.chainId != null ? () => openChainDetail(p.chainId) : null }, [
             el('div', { class: 'bar-label', text: p.displayName || p.slug }),
             el('div', { class: 'bar-track' }, [el('div', { class: 'bar-fill' })]),
             el('div', { class: 'bar-value mono', text: fmtUsd(p.tvs) })
@@ -463,23 +464,26 @@ function renderScalingChart() {
 }
 function renderScalingView() {
     const body = document.getElementById('scalingTableBody'); if (!body) return;
-    const rows = [...state.l2beat.values()].map(p => ({
-        tvs: p.tvs ?? null, name: p.displayName || p.slug, chainId: p.chainId,
+    const rows = state.l2beatProjects.map(p => ({
+        tvs: p.tvs ?? null, name: p.displayName || p.slug, chainId: p.chainId ?? null,
         stage: p.stage || '', category: p.category || '', da: p.daLayer || '', stack: p.stack || ''
     }));
     const { key, dir } = scalingSort;
     rows.sort((a, b) => {
         let av = a[key], bv = b[key];
         if (key === 'tvs') { av = av ?? -1; bv = bv ?? -1; }
+        if (key === 'chainId') { av = av ?? Infinity; bv = bv ?? Infinity; }
         if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
         return String(av).localeCompare(String(bv)) * dir;
     });
     body.textContent = '';
+    document.getElementById('scalingMeta').textContent = `${rows.length} projects${state.l2beatMeta ? ` · ${state.l2beatMeta.source}` : ''}`;
     for (const r of rows) {
-        body.appendChild(el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
+        const linkable = r.chainId != null;
+        body.appendChild(el('tr', { class: linkable ? '' : 'norow', onclick: linkable ? () => openChainDetail(r.chainId) : null }, [
             el('td', { class: 'num strong', text: fmtUsd(r.tvs) }),
             el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
-            el('td', { class: 'num mono', text: String(r.chainId) }),
+            el('td', { class: 'num mono', text: linkable ? String(r.chainId) : '—' }),
             el('td', {}, [el('span', { class: 'pill pill-stage', text: r.stage || '—' })]),
             el('td', { class: 'muted', text: r.category || '—' }),
             el('td', { class: 'muted', text: r.da || '—' }),

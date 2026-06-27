@@ -151,6 +151,8 @@ a:hover { text-decoration: underline; }
 .data-table th.num, .data-table td.num { text-align: right; }
 .data-table tbody tr { border-bottom: 1px solid rgba(255, 255, 255, 0.03); cursor: pointer; }
 .data-table tbody tr:hover { background: rgba(59, 130, 246, 0.08); }
+.data-table tbody tr.norow { cursor: default; }
+.data-table tbody tr.norow:hover { background: transparent; }
 .data-table td { padding: 10px 14px; white-space: nowrap; }
 .cell-name { font-weight: 600; }
 .table-more { padding: 14px; text-align: center; }
