@@ -4,170 +4,180 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blockchain Networks Relationships</title>
-    <meta name="description" content="Interactive 3D visualization of blockchain network relationships, L2s, testnets, and beacon chains.">
+    <title>Chains — Blockchain Networks Dashboard</title>
+    <meta name="description" content="Explore blockchain networks: relationships, chain info, RPC endpoints and health, operator status, and L2 scaling data — aggregated from five sources.">
 
-    <!-- 3D Force Graph Library (served locally) -->
     <script src="3d-force-graph.min.js"></script>
-
-    <!-- Inter font (served locally) -->
     <link rel="stylesheet" href="fonts/inter.css">
-
     <link rel="stylesheet" href="style.css">
 </head>
 
-<body>
-
-    <!-- Main UI Overlay -->
-    <div id="ui-container">
-        <!-- Header & Search -->
-        <header class="glass-panel">
-            <div class="header-top">
-                <h1>Blockchain Networks</h1>
-                <span class="subtitle" id="statsLine">Loading...</span>
-            </div>
-            <div class="search-box">
-                <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <input type="text" id="searchInput" placeholder="Search by chain ID or name..." autocomplete="off">
-                <kbd class="search-hint">/</kbd>
-                <div id="searchDropdown" class="search-dropdown hidden"></div>
-            </div>
-
-            <!-- Filters -->
-            <div class="filters">
-                <button class="filter-btn active" data-filter="all">
-                    <span class="filter-dot dot-all"></span>All
-                </button>
-                <button class="filter-btn" data-filter="Mainnet">
-                    <span class="filter-dot dot-mainnet"></span>Mainnets
-                </button>
-                <button class="filter-btn" data-filter="Testnet">
-                    <span class="filter-dot dot-testnet"></span>Testnets
-                </button>
-                <button class="filter-btn" data-filter="L2">
-                    <span class="filter-dot dot-l2"></span>L2s
-                </button>
-                <button class="filter-btn" data-filter="Beacon">
-                    <span class="filter-dot dot-beacon"></span>Beacons
-                </button>
-            </div>
-        </header>
-
-        <!-- Data Sources Toggle -->
-        <div id="sourcesPanel" class="glass-panel sources-panel">
-            <button id="sourcesToggle" class="sources-toggle" aria-label="Toggle data sources">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-                <span>Sources</span>
-            </button>
-            <div id="sourcesDropdown" class="sources-dropdown hidden">
-                <label class="source-toggle">
-                    <input type="checkbox" data-source="chains" checked>
-                    <span class="source-dot" style="background: #3b82f6"></span>
-                    Chain ID Network
-                </label>
-                <label class="source-toggle">
-                    <input type="checkbox" data-source="chainlist" checked>
-                    <span class="source-dot" style="background: #10b981"></span>
-                    Chainlist
-                </label>
-                <label class="source-toggle">
-                    <input type="checkbox" data-source="theGraph" checked>
-                    <span class="source-dot" style="background: #8b5cf6"></span>
-                    The Graph
-                </label>
-                <label class="source-toggle">
-                    <input type="checkbox" data-source="slip44" checked>
-                    <span class="source-dot" style="background: #f59e0b"></span>
-                    SLIP-0044
-                </label>
-                <label class="source-toggle">
-                    <input type="checkbox" data-source="l2beat" checked>
-                    <span class="source-dot" style="background: #06b6d4"></span>
-                    L2BEAT
-                </label>
+<body class="graph-active">
+    <!-- ─── Top App Bar ─── -->
+    <header id="appbar">
+        <div class="appbar-brand">
+            <span class="brand-mark">⬡</span>
+            <div class="brand-text">
+                <h1>Chains</h1>
+                <span class="subtitle" id="statsLine">Loading…</span>
             </div>
         </div>
 
-        <!-- Legend -->
-        <div id="legend" class="glass-panel legend">
-            <div class="legend-item"><span class="legend-dot" style="background:var(--color-mainnet)"></span>Mainnet</div>
-            <div class="legend-item"><span class="legend-dot" style="background:var(--color-l2)"></span>L2</div>
-            <div class="legend-item"><span class="legend-dot" style="background:var(--color-testnet)"></span>Testnet</div>
-            <div class="legend-item"><span class="legend-dot" style="background:var(--color-beacon)"></span>Beacon</div>
-            <div class="legend-sep"></div>
-            <div class="legend-item"><span class="legend-line" style="background:rgba(139,92,246,0.7)"></span>L2 link</div>
-            <div class="legend-item"><span class="legend-line" style="background:rgba(245,158,11,0.7)"></span>Testnet link</div>
+        <div class="search-box">
+            <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Search by chain ID or name…" autocomplete="off">
+            <kbd class="search-hint">/</kbd>
+            <div id="searchDropdown" class="search-dropdown hidden"></div>
         </div>
 
-        <!-- Selected Node Details Panel -->
-        <aside id="detailsPanel" class="glass-panel hidden">
-            <button id="closeDetails" class="close-btn" aria-label="Close details">&times;</button>
-            <div class="details-header">
-                <div id="chainIcon" class="chain-icon"></div>
-                <div class="details-title">
-                    <h2 id="chainName">Chain Name</h2>
-                    <div class="chain-meta">
-                        <span class="badge" id="chainIdBadge">ID: --</span>
-                        <span class="badge tag-badge" id="chainStatusBadge"></span>
-                        <span class="badge tag-badge" id="chainTags">Tags: --</span>
-                    </div>
+        <nav class="tabs" id="tabs">
+            <button class="tab active" data-view="graph">Relationships</button>
+            <button class="tab" data-view="chains">Chains</button>
+            <button class="tab" data-view="status">RPC &amp; Status</button>
+            <button class="tab" data-view="scaling">Scaling</button>
+        </nav>
+    </header>
+
+    <!-- ─── View: Relationships (3D graph) ─── -->
+    <section id="view-graph" class="view active">
+        <div id="3d-graph"></div>
+
+        <div class="graph-overlay">
+            <div class="filters glass-panel">
+                <button class="filter-btn active" data-filter="all"><span class="filter-dot dot-all"></span>All</button>
+                <button class="filter-btn" data-filter="Mainnet"><span class="filter-dot dot-mainnet"></span>Mainnets</button>
+                <button class="filter-btn" data-filter="Testnet"><span class="filter-dot dot-testnet"></span>Testnets</button>
+                <button class="filter-btn" data-filter="L2"><span class="filter-dot dot-l2"></span>L2s</button>
+                <button class="filter-btn" data-filter="Beacon"><span class="filter-dot dot-beacon"></span>Beacons</button>
+            </div>
+
+            <div id="sourcesPanel" class="glass-panel sources-panel">
+                <button id="sourcesToggle" class="sources-toggle" aria-label="Toggle data sources">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <span>Sources</span>
+                </button>
+                <div id="sourcesDropdown" class="sources-dropdown hidden">
+                    <label class="source-toggle"><input type="checkbox" data-source="chains" checked><span class="source-dot" style="background:#3b82f6"></span>Chain ID Network</label>
+                    <label class="source-toggle"><input type="checkbox" data-source="chainlist" checked><span class="source-dot" style="background:#10b981"></span>Chainlist</label>
+                    <label class="source-toggle"><input type="checkbox" data-source="theGraph" checked><span class="source-dot" style="background:#8b5cf6"></span>The Graph</label>
+                    <label class="source-toggle"><input type="checkbox" data-source="slip44" checked><span class="source-dot" style="background:#f59e0b"></span>SLIP-0044</label>
+                    <label class="source-toggle"><input type="checkbox" data-source="l2beat" checked><span class="source-dot" style="background:#06b6d4"></span>L2BEAT</label>
                 </div>
             </div>
 
-            <div class="details-content">
-                <div class="detail-row">
-                    <span class="label">Native Currency</span>
-                    <span class="value" id="chainCurrency">--</span>
+            <div class="legend glass-panel">
+                <div class="legend-item"><span class="legend-dot" style="background:var(--color-mainnet)"></span>Mainnet</div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--color-l2)"></span>L2</div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--color-testnet)"></span>Testnet</div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--color-beacon)"></span>Beacon</div>
+            </div>
+
+            <div id="loadingOverlay" class="glass-panel loading-overlay">
+                <div class="spinner"></div>
+                <p>Loading networks…</p>
+                <p class="loading-sub">Fetching chain data and building graph</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── View: Chains ─── -->
+    <section id="view-chains" class="view scroll-view">
+        <div class="view-inner">
+            <div class="toolbar">
+                <div class="chip-row" id="chainTagChips">
+                    <button class="chip active" data-tag="all">All</button>
+                    <button class="chip" data-tag="Mainnet">Mainnet</button>
+                    <button class="chip" data-tag="L2">L2</button>
+                    <button class="chip" data-tag="Testnet">Testnet</button>
+                    <button class="chip" data-tag="Beacon">Beacon</button>
+                    <button class="chip" data-tag="ZK">ZK</button>
                 </div>
-                <div class="detail-row" id="rowL1Parent" style="display: none;">
-                    <span class="label">L1 Parent</span>
-                    <span class="value" id="chainL1Parent">--</span>
+                <span class="toolbar-count" id="chainsCount"></span>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table" id="chainsTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="chainId" class="num">ID</th>
+                            <th data-sort="name">Name</th>
+                            <th data-sort="tags">Tags</th>
+                            <th data-sort="native">Native</th>
+                            <th data-sort="rpcs" class="num">RPCs</th>
+                            <th data-sort="tvs" class="num">TVS</th>
+                            <th data-sort="status">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chainsTableBody"></tbody>
+                </table>
+                <div class="table-more" id="chainsTableMore"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── View: RPC & Status ─── -->
+    <section id="view-status" class="view scroll-view">
+        <div class="view-inner">
+            <h2 class="section-title">RPC health</h2>
+            <div class="stat-cards" id="rpcStatCards"></div>
+
+            <div class="status-columns">
+                <div class="status-col">
+                    <h2 class="section-title">Live status &amp; incidents
+                        <span class="src-pill">chains-status-news</span>
+                    </h2>
+                    <div class="feed" id="statusFeed"><div class="feed-empty">Loading status feed…</div></div>
                 </div>
-                <div class="detail-row" id="rowMainnet" style="display: none;">
-                    <span class="label">Mainnet</span>
-                    <span class="value" id="chainMainnet">--</span>
-                </div>
-                <div class="detail-row">
-                    <span class="label" id="labelL2Children">L2 / L3</span>
-                    <div class="value links-list" id="chainL2Children">--</div>
-                </div>
-                <div class="detail-row" id="rowTestnetChildren">
-                    <span class="label" id="labelTestnetChildren">Testnets</span>
-                    <div class="value links-list" id="chainTestnetChildren">--</div>
-                </div>
-                <div class="detail-row">
-                    <span class="label">RPC Endpoints</span>
-                    <div class="value links-list" id="chainRPCs">--</div>
-                </div>
-                <div class="detail-row">
-                    <span class="label">Explorers</span>
-                    <div class="value links-list" id="chainExplorers">--</div>
-                </div>
-                <div class="detail-row">
-                    <span class="label">Website</span>
-                    <span class="value" id="chainWebsite">--</span>
+                <div class="status-col">
+                    <h2 class="section-title">Operator status pages
+                        <input type="text" id="statusPageSearch" class="mini-search" placeholder="Filter…">
+                    </h2>
+                    <div class="status-page-list" id="statusPageList"></div>
                 </div>
             </div>
-        </aside>
-
-        <!-- Loading state -->
-        <div id="loadingOverlay" class="glass-panel loading-overlay">
-            <div class="spinner"></div>
-            <p>Loading networks...</p>
-            <p class="loading-sub">Fetching chain data and building graph</p>
         </div>
-    </div>
+    </section>
 
-    <!-- The 3D Graph Container -->
-    <div id="3d-graph"></div>
+    <!-- ─── View: Scaling ─── -->
+    <section id="view-scaling" class="view scroll-view">
+        <div class="view-inner">
+            <h2 class="section-title">L2BEAT scaling projects
+                <span class="src-pill" id="scalingMeta"></span>
+            </h2>
+            <div class="table-wrap">
+                <table class="data-table" id="scalingTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="tvs" class="num">TVS</th>
+                            <th data-sort="name">Project</th>
+                            <th data-sort="chainId" class="num">Chain ID</th>
+                            <th data-sort="stage">Stage</th>
+                            <th data-sort="category">Type</th>
+                            <th data-sort="da">DA</th>
+                            <th data-sort="stack">Stack</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scalingTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── Unified Chain Detail Drawer ─── -->
+    <aside id="detailDrawer" class="detail-drawer hidden">
+        <div class="drawer-scrim" id="drawerScrim"></div>
+        <div class="drawer-panel glass-panel">
+            <button id="closeDrawer" class="close-btn" aria-label="Close">&times;</button>
+            <div id="drawerBody"></div>
+        </div>
+    </aside>
 
     <script src="app.js"></script>
 </body>

@@ -1,735 +1,729 @@
-// Constants for Node Colors
+// ─────────────────────────────────────────────────────────────────────────
+// Chains dashboard — relationships, chains, RPC & status, scaling.
+// Data: live chains-api (/export bulk + per-chain endpoints) and
+// chains-status-news (/events). Forum data is intentionally excluded for now.
+// ─────────────────────────────────────────────────────────────────────────
+
+const SAME_ORIGIN_API =
+    location.port === '3000' || location.hostname === 'chains-api.johnaverse.cc';
+const API_BASE = SAME_ORIGIN_API ? '' : 'https://chains-api.johnaverse.cc';
+const STATUS_NEWS_BASE = 'https://chains-status-news.johnaverse.cc';
+
 const COLORS = {
-    MAINNET: '#10b981',
-    L2: '#8b5cf6',
-    TESTNET: '#f59e0b',
-    BEACON: '#ec4899',
-    DEFAULT: '#6b7280'
+    Mainnet: '#10b981', L2: '#8b5cf6', Testnet: '#f59e0b', Beacon: '#ec4899', Default: '#6b7280'
+};
+const ALL_SOURCES = ['chains', 'chainlist', 'theGraph', 'slip44', 'l2beat'];
+
+const state = {
+    chains: [],
+    byId: new Map(),
+    rel: new Map(),                 // chainId -> {l1Parent, mainnet, l2Children[], testnetChildren[]}
+    l2beat: new Map(),              // chainId -> l2beat project
+    l2beatMeta: null,
+    statusPagesByChain: new Map(),  // chainId -> {id,name,url}
+    statusPages: [],
+    lastUpdated: null
 };
 
-// Global State
-const ALL_SOURCES = ['chains', 'chainlist', 'theGraph', 'slip44', 'l2beat'];
-let allChains = [];
+// graph state
 let graphData = { nodes: [], links: [] };
 let filteredData = { nodes: [], links: [] };
 let currentFilter = 'all';
 let enabledSources = new Set(ALL_SOURCES);
 let myGraph = null;
+let graphBuilt = false;
 
-// ─── Utility: Debounce ───
+// ─── tiny DOM helper ───
+function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+        if (k === 'class') node.className = v;
+        else if (k === 'text') node.textContent = v;
+        else if (k === 'html') node.innerHTML = v;
+        else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+        else if (v !== null && v !== undefined) node.setAttribute(k, v);
+    }
+    for (const c of [].concat(children)) {
+        if (c == null) continue;
+        node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return node;
+}
+
+function classify(c) {
+    if (c.tags?.includes('Beacon')) return 'Beacon';
+    if (c.tags?.includes('L2')) return 'L2';
+    if (c.tags?.includes('Testnet')) return 'Testnet';
+    return 'Mainnet';
+}
+
 function debounce(fn, ms) {
-    let timer;
-    return (...args) => {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn(...args), ms);
-    };
+    let t;
+    return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-// ─── Utility: Highlight matching text safely using DOM (no innerHTML) ───
-function highlightText(container, text, query) {
-    const lowerText = text.toLowerCase();
-    const lowerQuery = query.toLowerCase();
-    const idx = lowerText.indexOf(lowerQuery);
-
-    if (idx === -1 || !query) {
-        container.textContent = text;
-        return;
-    }
-
-    // Before match
-    if (idx > 0) {
-        container.appendChild(document.createTextNode(text.slice(0, idx)));
-    }
-    // Match (bold)
-    const strong = document.createElement('strong');
-    strong.textContent = text.slice(idx, idx + query.length);
-    container.appendChild(strong);
-    // After match
-    if (idx + query.length < text.length) {
-        container.appendChild(document.createTextNode(text.slice(idx + query.length)));
-    }
+function fmtUsd(n) {
+    if (n == null || !Number.isFinite(n)) return '—';
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+    return `$${n.toFixed(0)}`;
 }
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    initUI();
-    fetchData();
-});
-
-function initUI() {
-    // Filter Buttons
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const target = e.currentTarget;
-            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            target.classList.add('active');
-            currentFilter = target.dataset.filter;
-            applyFilters();
-        });
-    });
-
-    // Search Logic
-    const searchInput = document.getElementById('searchInput');
-    const searchDropdown = document.getElementById('searchDropdown');
-    let activeDropdownIndex = -1;
-
-    globalThis.searchAndFocus = (query) => {
-        const q = String(query).toLowerCase().trim();
-        if (!q) return;
-
-        const node = graphData.nodes.find(n =>
-            n.id.toString() === q ||
-            n.name.toLowerCase() === q ||
-            (n.data.shortName?.toLowerCase() === q) ||
-            (n.data.chain?.toLowerCase() === q) ||
-            n.name.toLowerCase().includes(q)
-        );
-
-        if (node) {
-            searchInput.value = node.name;
-            searchDropdown.classList.add('hidden');
-            focusNode(node);
-        }
-    };
-
-    // Close dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.search-box')) {
-            searchDropdown.classList.add('hidden');
-        }
-    });
-
-    // Keyboard shortcut: "/" to focus search
-    document.addEventListener('keydown', (e) => {
-        if (e.key === '/' && document.activeElement !== searchInput) {
-            e.preventDefault();
-            searchInput.focus();
-        }
-        if (e.key === 'Escape') {
-            searchDropdown.classList.add('hidden');
-            searchInput.blur();
-        }
-    });
-
-    // Debounced search to avoid excessive DOM rebuilds
-    const handleSearch = debounce((query) => {
-        if (!query) {
-            searchDropdown.classList.add('hidden');
-            return;
-        }
-
-        const matches = graphData.nodes.filter(n =>
-            n.name.toLowerCase().includes(query) ||
-            n.id.toString().includes(query) ||
-            (n.data.shortName?.toLowerCase().includes(query)) ||
-            (n.data.chain?.toLowerCase().includes(query)) ||
-            (n.data.tags?.some(t => t.toLowerCase().includes(query)))
-        );
-
-        // Sort: exact/prefix matches first
-        matches.sort((a, b) => {
-            const aName = a.name.toLowerCase();
-            const bName = b.name.toLowerCase();
-            const aStarts = aName.startsWith(query);
-            const bStarts = bName.startsWith(query);
-            if (aStarts !== bStarts) return aStarts ? -1 : 1;
-            const aInName = aName.includes(query);
-            const bInName = bName.includes(query);
-            if (aInName !== bInName) return aInName ? -1 : 1;
-            return aName.localeCompare(bName);
-        });
-
-        const topMatches = matches.slice(0, 50);
-        activeDropdownIndex = -1;
-
-        // Build dropdown using DocumentFragment for performance
-        const fragment = document.createDocumentFragment();
-
-        if (topMatches.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'dropdown-empty';
-            empty.textContent = 'No chains found.';
-            fragment.appendChild(empty);
-        } else {
-            for (const node of topMatches) {
-                const item = document.createElement('div');
-                item.className = 'dropdown-item';
-                item.dataset.nodeId = node.id;
-
-                const icon = document.createElement('div');
-                icon.className = 'dropdown-icon';
-                icon.style.background = `linear-gradient(135deg, ${node.color}, ${node.color}44)`;
-                icon.textContent = node.name ? node.name.charAt(0).toUpperCase() : '?';
-
-                const info = document.createElement('div');
-                info.className = 'dropdown-info';
-
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'dropdown-name';
-                highlightText(nameSpan, node.name, query);
-
-                const meta = document.createElement('div');
-                meta.className = 'dropdown-meta';
-                const tagsList = node.data.tags?.length > 0 ? node.data.tags.join(', ') : node.type;
-                meta.textContent = `ID: ${node.id}  \u00b7  ${tagsList}`;
-
-                info.appendChild(nameSpan);
-                info.appendChild(meta);
-                item.appendChild(icon);
-                item.appendChild(info);
-
-                item.addEventListener('click', () => searchAndFocus(node.id));
-                fragment.appendChild(item);
-            }
-        }
-
-        searchDropdown.textContent = '';
-        searchDropdown.appendChild(fragment);
-        searchDropdown.classList.remove('hidden');
-    }, 150);
-
-    searchInput.addEventListener('input', (e) => {
-        handleSearch(e.target.value.toLowerCase().trim());
-    });
-
-    // Keyboard navigation in dropdown
-    searchInput.addEventListener('keydown', (e) => {
-        const items = searchDropdown.querySelectorAll('.dropdown-item');
-        if (!items.length) return;
-
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            activeDropdownIndex = Math.min(activeDropdownIndex + 1, items.length - 1);
-            updateActiveItem(items);
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            activeDropdownIndex = Math.max(activeDropdownIndex - 1, 0);
-            updateActiveItem(items);
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (activeDropdownIndex >= 0 && items[activeDropdownIndex]) {
-                const nodeId = items[activeDropdownIndex].dataset.nodeId;
-                searchAndFocus(nodeId);
-            } else {
-                searchAndFocus(searchInput.value);
-            }
-        }
-    });
-
-    function updateActiveItem(items) {
-        items.forEach((item, i) => {
-            item.classList.toggle('active', i === activeDropdownIndex);
-        });
-        if (items[activeDropdownIndex]) {
-            items[activeDropdownIndex].scrollIntoView({ block: 'nearest' });
-        }
-    }
-
-    // Close Details Panel
-    const closeBtn = document.getElementById('closeDetails');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            document.getElementById('detailsPanel')?.classList.add('hidden');
-        });
-    }
-
-    // Sources Toggle
-    const sourcesToggle = document.getElementById('sourcesToggle');
-    const sourcesDropdown = document.getElementById('sourcesDropdown');
-    if (sourcesToggle && sourcesDropdown) {
-        sourcesToggle.addEventListener('click', () => {
-            sourcesDropdown.classList.toggle('hidden');
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('#sourcesPanel')) {
-                sourcesDropdown.classList.add('hidden');
-            }
-        });
-
-        sourcesDropdown.querySelectorAll('input[data-source]').forEach(checkbox => {
-            checkbox.addEventListener('change', () => {
-                const source = checkbox.dataset.source;
-                if (checkbox.checked) {
-                    enabledSources.add(source);
-                } else {
-                    enabledSources.delete(source);
-                }
-                rebuildGraphFromSources();
-            });
-        });
-    }
-}
-
-async function fetchExportData() {
-    let res;
+function safeHost(url) {
     try {
-        res = await fetch('/export');
-        if (!res.ok) throw new Error('Local export unavailable');
-    } catch {
-        res = await fetch('export.json');
-    }
+        const u = new URL(url);
+        return (u.protocol === 'http:' || u.protocol === 'https:') ? u.host : null;
+    } catch { return null; }
+}
+
+async function api(path) {
+    const res = await fetch(`${API_BASE}${path}`, { headers: { accept: 'application/json' } });
+    if (!res.ok) throw new Error(`${path} → ${res.status}`);
     return res.json();
 }
 
-function buildRelationsMap(chains) {
-    const relations = {};
-    for (const chain of chains) {
-        if (!chain.relations) continue;
-        for (const rel of chain.relations) {
-            addRelation(relations, rel, chain);
-        }
-    }
-    return relations;
-}
+// ─────────────────────────────── bootstrap ───────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    initTabs();
+    initSearch();
+    initGraphControls();
+    initDrawer();
+    loadBulk();
+    loadStatsLine();
+});
 
-function addRelation(relations, rel, chain) {
-    if (rel.kind === 'l2Of') {
-        if (!relations[rel.chainId]) relations[rel.chainId] = {};
-        relations[rel.chainId][chain.chainId] = { kind: 'l2Of' };
-    } else if (rel.kind === 'testnetOf') {
-        if (!relations[rel.chainId]) relations[rel.chainId] = {};
-        relations[rel.chainId][chain.chainId] = { kind: 'testnetOf' };
-    } else if (rel.kind === 'mainnetOf') {
-        if (!relations[chain.chainId]) relations[chain.chainId] = {};
-        relations[chain.chainId][rel.chainId] = { kind: 'testnetOf' };
-    }
-}
-
-async function fetchData() {
+async function loadStatsLine() {
     try {
-        const exportData = await fetchExportData();
-        allChains = exportData.data.indexed.all;
+        const s = await api('/stats');
+        document.getElementById('statsLine').textContent =
+            `${s.totalChains} chains · ${s.totalMainnets} mainnets · ${s.totalL2s} L2s · ${s.totalTestnets} testnets`;
+        renderRpcStatCards(s);
+    } catch { /* stats line stays as loaded count later */ }
+}
 
-        const visibleChains = filterChainsBySources(allChains);
-        const visibleRelations = buildRelationsMap(visibleChains);
-
-        processGraphData(visibleChains, visibleRelations);
-        updateStats();
-        document.getElementById('loadingOverlay').classList.add('hidden');
-        renderGraph();
-    } catch (error) {
-        console.error('Error fetching data:', error);
-        const overlay = document.getElementById('loadingOverlay');
-        overlay.querySelector('.spinner').style.display = 'none';
-        overlay.querySelector('p').textContent = 'Failed to load data.';
-        overlay.querySelector('.loading-sub').textContent = 'Check your connection or ensure the API is running.';
+async function loadBulk() {
+    let payload;
+    try {
+        payload = await api('/export');
+    } catch {
+        try { payload = await (await fetch('export.json')).json(); }
+        catch (e) { return graphLoadError(); }
     }
-}
+    const data = payload.data ?? payload;
+    state.chains = data.indexed?.all ?? [];
+    state.lastUpdated = data.lastUpdated ?? null;
+    state.byId = new Map(state.chains.map(c => [c.chainId, c]));
 
-function filterChainsBySources(chains) {
-    if (enabledSources.size === ALL_SOURCES.length) return chains;
-    return chains.filter(c =>
-        c.sources && c.sources.some(s => enabledSources.has(s))
-    );
-}
-
-function rebuildGraphFromSources() {
-    if (!allChains.length) return;
-
-    const visibleChains = filterChainsBySources(allChains);
-    const visibleRelations = buildRelationsMap(visibleChains);
-
-    processGraphData(visibleChains, visibleRelations);
-    applyFilters();
-    updateStats();
-
-    if (myGraph) {
-        myGraph.graphData(filteredData);
-    }
-}
-
-function updateStats() {
-    const total = graphData.nodes.length;
-    const mainnets = graphData.nodes.filter(n => n.type === 'Mainnet').length;
-    const l2s = graphData.nodes.filter(n => n.type === 'L2').length;
-    const testnets = graphData.nodes.filter(n => n.type === 'Testnet').length;
-
-    const statsEl = document.getElementById('statsLine');
-    statsEl.textContent = `${total} chains \u00b7 ${mainnets} mainnets \u00b7 ${l2s} L2s \u00b7 ${testnets} testnets`;
-}
-
-function classifyChain(c) {
-    if (c.tags?.includes('Beacon')) return { type: 'Beacon', color: COLORS.BEACON, val: 1.5 };
-    if (c.tags?.includes('L2')) return { type: 'L2', color: COLORS.L2, val: 1.8 };
-    if (c.tags?.includes('Testnet')) return { type: 'Testnet', color: COLORS.TESTNET, val: 1 };
-    return { type: 'Mainnet', color: COLORS.MAINNET, val: c.chainId === 1 ? 8 : 3 };
-}
-
-function createGraphNode(c) {
-    const { type, color, val } = classifyChain(c);
-    let displayName = c.name || `Chain ${c.chainId}`;
-    if (c.tags?.includes('Testnet') && !displayName.toLowerCase().includes('testnet')) {
-        displayName += ' Testnet';
-    }
-    return {
-        id: c.chainId, name: displayName, val, color, type, data: c,
-        parent: null, l2Parent: null, mainnetParent: null,
-        children: [], l2Children: [], testnetChildren: []
-    };
-}
-
-function linkRelation(parentNode, childNode, relationInfo, links) {
-    links.push({ source: childNode.id, target: parentNode.id, kind: relationInfo.kind });
-
-    if (relationInfo.kind === 'l2Of' || relationInfo.kind === 'l1Of') {
-        childNode.l2Parent = parentNode;
-        parentNode.l2Children.push(childNode);
-    } else if (relationInfo.kind === 'testnetOf' || relationInfo.kind === 'mainnetOf') {
-        childNode.mainnetParent = parentNode;
-        parentNode.testnetChildren.push(childNode);
+    // L2BEAT projects keyed by chainId
+    state.l2beatMeta = data.l2beat ? { source: data.l2beat.source, fetchedAt: data.l2beat.fetchedAt, count: (data.l2beat.projects || []).length } : null;
+    for (const p of data.l2beat?.projects ?? []) {
+        if (p.chainId != null) state.l2beat.set(p.chainId, p);
     }
 
-    childNode.parent = parentNode;
-    parentNode.children.push(childNode);
+    buildRelations();
+    buildGraph();
+    renderChainsView();
+    renderScalingView();
+    if (!document.getElementById('statsLine').textContent.includes('chains')) {
+        document.getElementById('statsLine').textContent = `${state.chains.length} chains loaded`;
+    }
+    // status data (independent of bulk)
+    loadStatusPages();
+    connectStatusFeed();
 }
 
-function processGraphData(chains, relations) {
-    const nodes = [];
-    const links = [];
-    const nodeMap = new Map();
+function graphLoadError() {
+    const o = document.getElementById('loadingOverlay');
+    if (!o) return;
+    o.querySelector('.spinner').style.display = 'none';
+    o.querySelector('p').textContent = 'Failed to load data.';
+    o.querySelector('.loading-sub').textContent = 'Check your connection or that the API is reachable.';
+}
 
-    for (const c of chains) {
-        const node = createGraphNode(c);
-        nodes.push(node);
-        nodeMap.set(c.chainId, node);
-    }
+// ─── relations: derive parents/children per chain from chain.relations ───
+function relEntry(id) {
+    if (!state.rel.has(id)) state.rel.set(id, { l1Parent: null, mainnet: null, l2Children: [], testnetChildren: [] });
+    return state.rel.get(id);
+}
 
-    for (const parentIdStr of Object.keys(relations)) {
-        const parentId = Number.parseInt(parentIdStr);
-        const childrenObj = relations[parentIdStr];
-
-        for (const childIdStr of Object.keys(childrenObj)) {
-            const childId = Number.parseInt(childIdStr);
-            const parentNode = nodeMap.get(parentId);
-            const childNode = nodeMap.get(childId);
-
-            if (parentNode && childNode) {
-                linkRelation(parentNode, childNode, childrenObj[childIdStr], links);
-            }
+function buildRelations() {
+    for (const c of state.chains) {
+        for (const r of c.relations ?? []) {
+            if (r.chainId == null) continue;
+            if (r.kind === 'l2Of') { relEntry(c.chainId).l1Parent = r.chainId; relEntry(r.chainId).l2Children.push(c.chainId); }
+            else if (r.kind === 'parentOf') { relEntry(r.chainId).l1Parent = c.chainId; relEntry(c.chainId).l2Children.push(r.chainId); }
+            else if (r.kind === 'testnetOf') { relEntry(c.chainId).mainnet = r.chainId; relEntry(r.chainId).testnetChildren.push(c.chainId); }
+            else if (r.kind === 'mainnetOf') { relEntry(r.chainId).mainnet = c.chainId; relEntry(c.chainId).testnetChildren.push(r.chainId); }
         }
     }
-
-    graphData = { nodes, links };
-    filteredData = { nodes: [...nodes], links: [...links] };
+    // de-dup children
+    for (const e of state.rel.values()) {
+        e.l2Children = [...new Set(e.l2Children)];
+        e.testnetChildren = [...new Set(e.testnetChildren)];
+    }
 }
 
-function filterLinksForNodes(nodeIds, excludeKind) {
-    return graphData.links.filter(l => {
-        const sourceId = l.source.id ?? l.source;
-        const targetId = l.target.id ?? l.target;
-        return nodeIds.has(sourceId) && nodeIds.has(targetId) && (!excludeKind || l.kind !== excludeKind);
+// ─────────────────────────────── tabs ───────────────────────────────
+function initTabs() {
+    document.querySelectorAll('#tabs .tab').forEach(btn => {
+        btn.addEventListener('click', () => switchView(btn.dataset.view));
     });
 }
 
-function collectL2Tree(node, visibleNodesSet) {
-    if (!node.l2Children) return;
-    for (const child of node.l2Children) {
-        if (visibleNodesSet.has(child) || child.data.tags?.includes('Testnet')) continue;
-        visibleNodesSet.add(child);
-        collectL2Tree(child, visibleNodesSet);
-    }
+function switchView(view) {
+    document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(`view-${view}`).classList.add('active');
+    document.body.classList.toggle('graph-active', view === 'graph');
+    if (view === 'graph' && myGraph) { setTimeout(() => myGraph.width(window.innerWidth).height(window.innerHeight), 0); }
 }
 
-function filterMainnetNodes() {
-    const visibleNodesSet = new Set();
-    for (const n of graphData.nodes) {
-        if ((n.type === 'Mainnet' || n.type === 'Beacon') && !n.mainnetParent) {
-            visibleNodesSet.add(n);
-            collectL2Tree(n, visibleNodesSet);
+// ─────────────────────────────── search ───────────────────────────────
+function initSearch() {
+    const input = document.getElementById('searchInput');
+    const dd = document.getElementById('searchDropdown');
+    let activeIdx = -1;
+
+    const render = debounce(q => {
+        if (!q) { dd.classList.add('hidden'); return; }
+        const matches = state.chains.filter(c =>
+            String(c.chainId).includes(q) ||
+            c.name?.toLowerCase().includes(q) ||
+            c.shortName?.toLowerCase().includes(q)
+        ).sort((a, b) => {
+            const an = (a.name || '').toLowerCase(), bn = (b.name || '').toLowerCase();
+            const as = an.startsWith(q), bs = bn.startsWith(q);
+            if (as !== bs) return as ? -1 : 1;
+            return an.localeCompare(bn);
+        }).slice(0, 40);
+
+        dd.textContent = '';
+        activeIdx = -1;
+        if (!matches.length) { dd.appendChild(el('div', { class: 'dropdown-empty', text: 'No chains found.' })); }
+        for (const c of matches) {
+            const color = COLORS[classify(c)];
+            const item = el('div', { class: 'dropdown-item', 'data-id': c.chainId, onclick: () => pick(c.chainId) }, [
+                el('div', { class: 'dropdown-icon', text: (c.name || '?').charAt(0).toUpperCase() }),
+                el('div', { class: 'dropdown-info' }, [
+                    el('span', { class: 'dropdown-name', text: c.name || `Chain ${c.chainId}` }),
+                    el('div', { class: 'dropdown-meta', text: `ID: ${c.chainId} · ${(c.tags || []).join(', ') || classify(c)}` })
+                ])
+            ]);
+            item.querySelector('.dropdown-icon').style.background = `linear-gradient(135deg, ${color}, ${color}44)`;
+            dd.appendChild(item);
         }
+        dd.classList.remove('hidden');
+    }, 140);
+
+    function pick(id) {
+        input.value = state.byId.get(id)?.name || String(id);
+        dd.classList.add('hidden');
+        openChainDetail(id);
+        if (document.body.classList.contains('graph-active')) focusNodeById(id);
     }
-    const visibleNodes = Array.from(visibleNodesSet);
-    const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
-    return { nodes: visibleNodes, links: filterLinksForNodes(visibleNodeIds, 'testnetOf') };
+    globalThis.pickChain = pick;
+
+    input.addEventListener('input', e => render(e.target.value.toLowerCase().trim()));
+    input.addEventListener('keydown', e => {
+        const items = dd.querySelectorAll('.dropdown-item');
+        if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); markActive(items); }
+        else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); markActive(items); }
+        else if (e.key === 'Enter') { e.preventDefault(); const t = items[activeIdx] || items[0]; if (t) pick(Number(t.dataset.id)); }
+        else if (e.key === 'Escape') { dd.classList.add('hidden'); input.blur(); }
+    });
+    function markActive(items) { items.forEach((it, i) => it.classList.toggle('active', i === activeIdx)); items[activeIdx]?.scrollIntoView({ block: 'nearest' }); }
+
+    document.addEventListener('click', e => { if (!e.target.closest('.search-box')) dd.classList.add('hidden'); });
+    document.addEventListener('keydown', e => {
+        if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); }
+    });
 }
 
-function filterByType(type) {
-    const visibleNodesSet = new Set();
-    for (const n of graphData.nodes) {
-        if (n.type === type) {
-            visibleNodesSet.add(n);
-            if (n.parent) visibleNodesSet.add(n.parent);
-        }
-    }
-    const visibleNodes = Array.from(visibleNodesSet);
-    const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
-    return { nodes: visibleNodes, links: filterLinksForNodes(visibleNodeIds) };
+// ─────────────────────────────── graph ───────────────────────────────
+function initGraphControls() {
+    document.querySelectorAll('.filter-btn').forEach(btn => btn.addEventListener('click', e => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        currentFilter = e.currentTarget.dataset.filter;
+        applyGraphFilter();
+    }));
+
+    const toggle = document.getElementById('sourcesToggle');
+    const ddrop = document.getElementById('sourcesDropdown');
+    toggle?.addEventListener('click', () => ddrop.classList.toggle('hidden'));
+    document.addEventListener('click', e => { if (!e.target.closest('#sourcesPanel')) ddrop?.classList.add('hidden'); });
+    ddrop?.querySelectorAll('input[data-source]').forEach(cb => cb.addEventListener('change', () => {
+        cb.checked ? enabledSources.add(cb.dataset.source) : enabledSources.delete(cb.dataset.source);
+        buildGraph(); applyGraphFilter();
+    }));
 }
 
-function applyFilters() {
+function visibleChains() {
+    if (enabledSources.size === ALL_SOURCES.length) return state.chains;
+    return state.chains.filter(c => c.sources?.some(s => enabledSources.has(s)));
+}
+
+function buildGraph() {
+    const chains = visibleChains();
+    const ids = new Set(chains.map(c => c.chainId));
+    const nodes = [];
+    const nodeMap = new Map();
+    for (const c of chains) {
+        const type = classify(c);
+        let name = c.name || `Chain ${c.chainId}`;
+        if (type === 'Testnet' && !name.toLowerCase().includes('testnet')) name += ' Testnet';
+        const val = type === 'Mainnet' ? (c.chainId === 1 ? 8 : 3) : type === 'L2' ? 1.8 : type === 'Beacon' ? 1.5 : 1;
+        const node = { id: c.chainId, name, val, color: COLORS[type], type };
+        nodes.push(node); nodeMap.set(c.chainId, node);
+    }
+    const links = [];
+    for (const c of chains) {
+        const e = state.rel.get(c.chainId);
+        if (!e) continue;
+        if (e.l1Parent != null && ids.has(e.l1Parent) && nodeMap.has(c.chainId)) links.push({ source: c.chainId, target: e.l1Parent, kind: 'l2Of' });
+        if (e.mainnet != null && ids.has(e.mainnet) && nodeMap.has(c.chainId)) links.push({ source: c.chainId, target: e.mainnet, kind: 'testnetOf' });
+    }
+    graphData = { nodes, links };
+    filteredData = { nodes: [...nodes], links: [...links] };
+
+    if (!graphBuilt) { renderGraph(); graphBuilt = true; document.getElementById('loadingOverlay')?.classList.add('hidden'); }
+}
+
+function linksFor(idSet, exclude) {
+    return graphData.links.filter(l => {
+        const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
+        return idSet.has(s) && idSet.has(t) && (!exclude || l.kind !== exclude);
+    });
+}
+
+function applyGraphFilter() {
     if (currentFilter === 'all') {
         filteredData = { nodes: [...graphData.nodes], links: [...graphData.links] };
-    } else if (currentFilter === 'Mainnet') {
-        filteredData = filterMainnetNodes();
     } else {
-        filteredData = filterByType(currentFilter);
+        const set = new Set();
+        for (const n of graphData.nodes) {
+            if (n.type === currentFilter) {
+                set.add(n.id);
+                const e = state.rel.get(n.id);
+                if (e?.l1Parent != null) set.add(e.l1Parent);
+                if (e?.mainnet != null) set.add(e.mainnet);
+            }
+        }
+        const nodes = graphData.nodes.filter(n => set.has(n.id));
+        filteredData = { nodes, links: linksFor(set) };
     }
-
-    if (currentFilter === 'all') {
-        updateStats();
-    } else {
-        document.getElementById('statsLine').textContent = `Showing ${filteredData.nodes.length} of ${graphData.nodes.length} chains`;
-    }
-
-    if (myGraph) {
-        myGraph.graphData(filteredData);
-    }
+    if (myGraph) myGraph.graphData(filteredData);
 }
 
 function renderGraph() {
-    const elem = document.getElementById('3d-graph');
-
-    myGraph = ForceGraph3D()(elem)
+    myGraph = ForceGraph3D()(document.getElementById('3d-graph'))
         .graphData(filteredData)
-        .nodeLabel('name')
-        .nodeColor('color')
-        .nodeVal('val')
-        .nodeResolution(12)
-        .nodeOpacity(0.9)
-        .linkColor(link => {
-            if (link.kind === 'l2Of' || link.kind === 'l1Of') return 'rgba(139, 92, 246, 0.4)';
-            if (link.kind === 'testnetOf') return 'rgba(245, 158, 11, 0.4)';
-            return 'rgba(255, 255, 255, 0.1)';
-        })
+        .nodeLabel('name').nodeColor('color').nodeVal('val').nodeResolution(12).nodeOpacity(0.9)
+        .linkColor(l => l.kind === 'l2Of' ? 'rgba(139,92,246,0.4)' : l.kind === 'testnetOf' ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.1)')
         .linkWidth(0.8)
-        .linkDirectionalParticles(link => {
-            if (link.kind === 'l2Of' || link.kind === 'l1Of' || link.kind === 'testnetOf') return 2;
-            return 0;
-        })
-        .linkDirectionalParticleSpeed(0.004)
-        .linkDirectionalParticleWidth(1.5)
-        .linkDirectionalParticleColor(link => {
-            if (link.kind === 'l2Of' || link.kind === 'l1Of') return 'rgba(139, 92, 246, 0.7)';
-            if (link.kind === 'testnetOf') return 'rgba(245, 158, 11, 0.7)';
-            return '#ffffff';
-        })
-        .backgroundColor('#060608')
-        .warmupTicks(80)
-        .cooldownTicks(60)
-        .onNodeClick(node => focusNode(node))
-        .onBackgroundClick(() => {
-            document.getElementById('detailsPanel').classList.add('hidden');
-        });
+        .linkDirectionalParticles(l => (l.kind === 'l2Of' || l.kind === 'testnetOf') ? 2 : 0)
+        .linkDirectionalParticleSpeed(0.004).linkDirectionalParticleWidth(1.5)
+        .linkDirectionalParticleColor(l => l.kind === 'l2Of' ? 'rgba(139,92,246,0.7)' : 'rgba(245,158,11,0.7)')
+        .backgroundColor('#060608').warmupTicks(80).cooldownTicks(60)
+        .onNodeClick(n => { focusNode(n); openChainDetail(n.id); });
+    window.addEventListener('resize', () => myGraph && myGraph.width(window.innerWidth).height(window.innerHeight));
 }
 
 function focusNode(node) {
-    if (!myGraph) return;
-
-    const distance = 150;
-    const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
-
-    const newPos = node.x || node.y || node.z
-        ? { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }
-        : { x: 0, y: 0, z: distance };
-
-    myGraph.cameraPosition(newPos, node, 1200);
-    showNodeDetails(node);
+    if (!myGraph || node.x == null) return;
+    const dist = 150;
+    const r = 1 + dist / Math.hypot(node.x, node.y, node.z);
+    myGraph.cameraPosition({ x: node.x * r, y: node.y * r, z: node.z * r }, node, 1200);
+}
+function focusNodeById(id) {
+    const n = filteredData.nodes.find(x => x.id === id) || graphData.nodes.find(x => x.id === id);
+    if (n) focusNode(n);
 }
 
-function showParentRow(rowId, elemId, parentNode) {
-    const row = document.getElementById(rowId);
-    const elem = document.getElementById(elemId);
-    if (!row || !elem) return { row, elem };
-    if (parentNode) {
-        row.style.display = 'flex';
-        const a = document.createElement('a');
-        a.href = "#";
-        a.textContent = parentNode.name;
-        a.onclick = (e) => { e.preventDefault(); searchAndFocus(parentNode.id); };
-        elem.textContent = '';
-        elem.appendChild(a);
-    } else {
-        row.style.display = 'none';
-        elem.textContent = '--';
-    }
-    return { row, elem };
+// ─────────────────────────────── Chains view ───────────────────────────────
+let chainSort = { key: 'chainId', dir: 1 };
+let chainTagFilter = 'all';
+const CHAIN_PAGE = 200;
+let chainShown = CHAIN_PAGE;
+
+function initChainsTableHeader() {
+    document.querySelectorAll('#chainsTable thead th[data-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+            const k = th.dataset.sort;
+            chainSort.dir = chainSort.key === k ? -chainSort.dir : 1;
+            chainSort.key = k;
+            renderChainsView();
+        });
+    });
+    document.querySelectorAll('#chainTagChips .chip').forEach(chip => chip.addEventListener('click', () => {
+        document.querySelectorAll('#chainTagChips .chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        chainTagFilter = chip.dataset.tag;
+        chainShown = CHAIN_PAGE;
+        renderChainsView();
+    }));
 }
 
-function populateChildLinks(container, children) {
-    for (const child of children) {
-        const a = document.createElement('a');
-        a.href = "#";
-        a.textContent = child.name;
-        a.onclick = (e) => { e.preventDefault(); searchAndFocus(child.id); };
-        container.appendChild(a);
-    }
+function chainRowData(c) {
+    const e = state.rel.get(c.chainId);
+    const rpcCount = (c.rpc || []).filter(u => { const url = typeof u === 'string' ? u : u?.url; return url && url.startsWith('http') && !url.includes('${'); }).length;
+    return {
+        chainId: c.chainId,
+        name: c.name || `Chain ${c.chainId}`,
+        tags: (c.tags || []).join(', '),
+        native: c.nativeCurrency?.symbol || '',
+        rpcs: rpcCount,
+        tvs: state.l2beat.get(c.chainId)?.tvs ?? null,
+        status: c.status || '',
+        _l2: e?.l2Children.length || 0
+    };
 }
 
-function showChildrenSection(containerId, labelId, children, label) {
-    const container = document.getElementById(containerId);
-    const labelElem = document.getElementById(labelId);
-    if (!container || !labelElem) return;
-    container.textContent = '';
-    if (children && children.length > 0) {
-        labelElem.textContent = `${label} (${children.length})`;
-        populateChildLinks(container, children);
-    } else {
-        labelElem.textContent = label;
-        container.textContent = 'None';
-    }
-}
+function renderChainsView() {
+    const body = document.getElementById('chainsTableBody');
+    if (!body) return;
+    let rows = state.chains.filter(c => {
+        if (chainTagFilter === 'all') return true;
+        if (chainTagFilter === 'Mainnet') return classify(c) === 'Mainnet';
+        return c.tags?.includes(chainTagFilter);
+    }).map(chainRowData);
 
-function showRpcEndpoints(data) {
-    const rpcContainer = document.getElementById('chainRPCs');
-    if (!rpcContainer) return;
-    rpcContainer.textContent = '';
-    if (!data.rpc || data.rpc.length === 0) {
-        rpcContainer.textContent = 'None available';
-        return;
-    }
-    let shown = 0;
-    for (const entry of data.rpc) {
-        if (shown >= 5) break;
-        const url = typeof entry === 'string' ? entry : entry?.url;
-        if (!url || url.includes('${')) continue;
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.textContent = url.replace(/^https?:\/\//, '');
-        rpcContainer.appendChild(a);
-        shown++;
-    }
-    if (shown === 0) rpcContainer.textContent = 'None available';
-}
+    const { key, dir } = chainSort;
+    rows.sort((a, b) => {
+        let av = a[key], bv = b[key];
+        if (key === 'tvs') { av = av ?? -1; bv = bv ?? -1; }
+        if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+    });
 
-function showExplorers(data) {
-    const expContainer = document.getElementById('chainExplorers');
-    if (!expContainer) return;
-    expContainer.textContent = '';
-    if (data.explorers && data.explorers.length > 0) {
-        for (const e of data.explorers) {
-            const a = document.createElement('a');
-            a.href = e.url;
-            a.target = "_blank";
-            a.rel = "noopener";
-            a.textContent = e.name;
-            expContainer.appendChild(a);
-        }
-    } else {
-        expContainer.textContent = 'None available';
+    document.getElementById('chainsCount').textContent = `${rows.length.toLocaleString()} chains`;
+    const slice = rows.slice(0, chainShown);
+    body.textContent = '';
+    for (const r of slice) {
+        const tr = el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
+            el('td', { class: 'num mono', text: String(r.chainId) }),
+            el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
+            el('td', {}, tagBadges(r.tags)),
+            el('td', { class: 'mono muted', text: r.native || '—' }),
+            el('td', { class: 'num', text: r.rpcs ? String(r.rpcs) : '—' }),
+            el('td', { class: 'num', text: r.tvs != null ? fmtUsd(r.tvs) : '—' }),
+            el('td', {}, [statusBadge(r.status)])
+        ]);
+        body.appendChild(tr);
+    }
+    const more = document.getElementById('chainsTableMore');
+    more.textContent = '';
+    if (rows.length > chainShown) {
+        more.appendChild(el('button', { class: 'load-more', text: `Show more (${(rows.length - chainShown).toLocaleString()} remaining)`, onclick: () => { chainShown += CHAIN_PAGE * 2; renderChainsView(); } }));
     }
 }
 
-function getStatusClass(status) {
-    if (!status) return '';
-    const s = status.toLowerCase();
-    if (s === 'active') return 'status-active';
-    if (s === 'deprecated') return 'status-deprecated';
-    if (s === 'incubating') return 'status-incubating';
-    return '';
+function tagBadges(tagStr) {
+    if (!tagStr) return [el('span', { class: 'muted', text: '—' })];
+    return tagStr.split(', ').map(t => el('span', { class: `tag tag-${t.toLowerCase()}`, text: t }));
+}
+function statusBadge(status) {
+    if (!status) return el('span', { class: 'muted', text: '—' });
+    return el('span', { class: `pill pill-${status.toLowerCase()}`, text: status });
 }
 
-function showNodeHeader(node, data) {
-    const iconElem = document.getElementById('chainIcon');
-    if (iconElem) {
-        iconElem.textContent = node.name ? node.name.charAt(0).toUpperCase() : '?';
-        iconElem.style.background = `linear-gradient(135deg, ${node.color}, ${node.color}33)`;
-    }
-
-    const nameElem = document.getElementById('chainName');
-    if (nameElem) nameElem.textContent = node.name || 'Unknown Chain';
-    const idBadge = document.getElementById('chainIdBadge');
-    if (idBadge) idBadge.textContent = `ID: ${data.chainId}`;
-
-    const curElem = document.getElementById('chainCurrency');
-    if (curElem) {
-        curElem.textContent = data.nativeCurrency
-            ? `${data.nativeCurrency.name} (${data.nativeCurrency.symbol})`
-            : 'None';
-    }
-
-    const statusBadge = document.getElementById('chainStatusBadge');
-    if (statusBadge) {
-        if (data.status) {
-            statusBadge.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-            statusBadge.className = `badge tag-badge ${getStatusClass(data.status)}`;
-            statusBadge.style.display = 'inline-block';
-        } else {
-            statusBadge.style.display = 'none';
-        }
-    }
-
-    showTagsBadge(data);
+// ─────────────────────────────── Scaling view ───────────────────────────────
+let scalingSort = { key: 'tvs', dir: -1 };
+function initScalingHeader() {
+    document.querySelectorAll('#scalingTable thead th[data-sort]').forEach(th => th.addEventListener('click', () => {
+        const k = th.dataset.sort;
+        scalingSort.dir = scalingSort.key === k ? -scalingSort.dir : 1;
+        scalingSort.key = k;
+        renderScalingView();
+    }));
 }
+function renderScalingView() {
+    const body = document.getElementById('scalingTableBody');
+    if (!body) return;
+    const meta = document.getElementById('scalingMeta');
+    if (state.l2beatMeta) meta.textContent = `${state.l2beatMeta.count} projects · ${state.l2beatMeta.source}`;
 
-function showNodeParents(node) {
-    const { row: rowL1, elem: l1Elem } = showParentRow('rowL1Parent', 'chainL1Parent', node.l2Parent);
-    showParentRow('rowMainnet', 'chainMainnet', node.mainnetParent);
-
-    if (!node.l2Parent && !node.mainnetParent && rowL1 && l1Elem) {
-        rowL1.style.display = 'flex';
-        l1Elem.textContent = 'None';
-    }
-}
-
-function showNodeTestnets(node) {
-    const rowTestnetChildren = document.getElementById('rowTestnetChildren');
-    if (rowTestnetChildren) {
-        if (node.data.tags?.includes('Testnet')) {
-            rowTestnetChildren.style.display = 'none';
-        } else {
-            rowTestnetChildren.style.display = 'flex';
-            showChildrenSection('chainTestnetChildren', 'labelTestnetChildren', node.testnetChildren, 'Testnets');
-        }
+    const rows = [...state.l2beat.values()].map(p => ({
+        tvs: p.tvs ?? null, name: p.displayName || p.slug, chainId: p.chainId,
+        stage: p.stage || '', category: p.category || '', da: p.daLayer || '', stack: p.stack || ''
+    }));
+    const { key, dir } = scalingSort;
+    rows.sort((a, b) => {
+        let av = a[key], bv = b[key];
+        if (key === 'tvs') { av = av ?? -1; bv = bv ?? -1; }
+        if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+    });
+    body.textContent = '';
+    for (const r of rows) {
+        const tr = el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
+            el('td', { class: 'num strong', text: fmtUsd(r.tvs) }),
+            el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
+            el('td', { class: 'num mono', text: String(r.chainId) }),
+            el('td', {}, [el('span', { class: 'pill pill-stage', text: r.stage || '—' })]),
+            el('td', { class: 'muted', text: r.category || '—' }),
+            el('td', { class: 'muted', text: r.da || '—' }),
+            el('td', { class: 'muted', text: r.stack || '—' })
+        ]);
+        body.appendChild(tr);
     }
 }
 
-function showNodeDetails(node) {
-    const panel = document.getElementById('detailsPanel');
-    if (!panel) return;
-    const data = node.data;
-
-    showNodeHeader(node, data);
-    showNodeParents(node);
-    showChildrenSection('chainL2Children', 'labelL2Children', node.l2Children, 'L2 / L3');
-    showNodeTestnets(node);
-    showRpcEndpoints(data);
-    showExplorers(data);
-    showWebsite(data);
-
-    panel.classList.remove('hidden');
-}
-
-function showTagsBadge(data) {
-    const tagsElem = document.getElementById('chainTags');
-    if (tagsElem) {
-        if (data.tags?.length > 0) {
-            tagsElem.textContent = data.tags.join(', ');
-            tagsElem.style.display = 'inline-block';
-        } else {
-            tagsElem.style.display = 'none';
-        }
+// ─────────────────────────────── RPC & Status view ───────────────────────────────
+function renderRpcStatCards(s) {
+    const wrap = document.getElementById('rpcStatCards');
+    if (!wrap || !s?.rpc) return;
+    const cards = [
+        { label: 'Endpoints tested', value: s.rpc.tested?.toLocaleString() ?? '—' },
+        { label: 'Working', value: s.rpc.working?.toLocaleString() ?? '—', tone: 'good' },
+        { label: 'Failed', value: s.rpc.failed?.toLocaleString() ?? '—', tone: 'bad' },
+        { label: 'Health', value: s.rpc.healthPercent != null ? `${s.rpc.healthPercent}%` : '—' }
+    ];
+    wrap.textContent = '';
+    for (const c of cards) {
+        wrap.appendChild(el('div', { class: `stat-card ${c.tone || ''}` }, [
+            el('div', { class: 'stat-value', text: c.value }),
+            el('div', { class: 'stat-label', text: c.label })
+        ]));
     }
 }
 
-function showWebsite(data) {
-    const webElem = document.getElementById('chainWebsite');
-    if (!webElem) return;
-    if (!data.infoURL) {
-        webElem.textContent = 'None available';
-        return;
-    }
+async function loadStatusPages() {
     try {
-        const url = new URL(data.infoURL);
-        const protocol = url.protocol.toLowerCase();
+        const d = await api('/status-pages');
+        state.statusPages = d.statusPages || [];
+        for (const sp of state.statusPages) for (const id of sp.chainIds || []) state.statusPagesByChain.set(id, { id: sp.id, name: sp.name, url: sp.url });
+        renderStatusPageList('');
+        const search = document.getElementById('statusPageSearch');
+        search?.addEventListener('input', e => renderStatusPageList(e.target.value.toLowerCase().trim()));
+    } catch { document.getElementById('statusPageList').textContent = 'Status pages unavailable.'; }
+}
 
-        if (protocol === 'http:' || protocol === 'https:') {
-            const a = document.createElement('a');
-            a.href = url.toString();
-            a.target = "_blank";
-            a.rel = "noopener";
-            a.textContent = url.hostname;
-            webElem.textContent = '';
-            webElem.appendChild(a);
-        } else {
-            // Unsafe or unsupported protocol: show as plain text without a link
-            webElem.textContent = data.infoURL;
+function renderStatusPageList(q) {
+    const list = document.getElementById('statusPageList');
+    if (!list) return;
+    const items = state.statusPages.filter(sp => !q || sp.name.toLowerCase().includes(q) || sp.id.includes(q));
+    list.textContent = '';
+    for (const sp of items) {
+        const host = safeHost(sp.url);
+        list.appendChild(el('a', { class: 'status-page-row', href: sp.url, target: '_blank', rel: 'noopener' }, [
+            el('span', { class: 'status-page-name', text: sp.name }),
+            el('span', { class: 'status-page-host', text: host || sp.url })
+        ]));
+    }
+    if (!items.length) list.appendChild(el('div', { class: 'feed-empty', text: 'No matching status pages.' }));
+}
+
+// Live status feed over WebSocket: chains-status-news streams `status.item`
+// events and backfills recent ones via ?replay=N on connect. We dedupe by id
+// and fall back to the REST /events endpoint only if the socket can't open.
+const statusFeed = { items: [], seen: new Set(), ws: null, retries: 0, connected: false, restTried: false };
+
+function feedItemNode(it) {
+    const host = safeHost(it.url);
+    const when = it.publishedAt || it.updatedAt || it.emittedAt;
+    return el('a', { class: 'feed-item', href: it.url || '#', target: '_blank', rel: 'noopener' }, [
+        el('div', { class: 'feed-title', text: it.title || '(untitled)' }),
+        el('div', { class: 'feed-meta', text: [it.statusPage?.id || it.statusPage?.name, when ? new Date(when).toLocaleString() : null, host].filter(Boolean).join(' · ') })
+    ]);
+}
+
+function renderStatusFeed() {
+    const feed = document.getElementById('statusFeed');
+    if (!feed) return;
+    feed.textContent = '';
+    if (!statusFeed.items.length) { feed.appendChild(el('div', { class: 'feed-empty', text: 'No recent status updates.' })); return; }
+    for (const it of statusFeed.items.slice(0, 60)) feed.appendChild(feedItemNode(it));
+}
+
+function addStatusItems(items) {
+    let added = false;
+    for (const it of items) {
+        const key = it.id || it.url || it.title;
+        if (!key || statusFeed.seen.has(key)) continue;
+        statusFeed.seen.add(key);
+        statusFeed.items.push(it);
+        added = true;
+    }
+    if (!added) return;
+    statusFeed.items.sort((a, b) => new Date(b.publishedAt || b.updatedAt || b.emittedAt || 0) - new Date(a.publishedAt || a.updatedAt || a.emittedAt || 0));
+    if (statusFeed.items.length > 200) statusFeed.items.length = 200;
+    renderStatusFeed();
+}
+
+function connectStatusFeed() {
+    const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=40`;
+    let ws;
+    try { ws = new WebSocket(wsUrl); } catch { return statusFeedRestFallback(); }
+    statusFeed.ws = ws;
+
+    ws.onopen = () => { statusFeed.connected = true; statusFeed.retries = 0; };
+    ws.onmessage = ev => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === 'status.item' && m.item) addStatusItems([m.item]);
+    };
+    ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
+    ws.onclose = () => {
+        statusFeed.ws = null;
+        // If we never got anything over WS, show REST results once so the panel isn't empty.
+        if (!statusFeed.items.length && !statusFeed.restTried) statusFeedRestFallback();
+        if (statusFeed.retries < 6) {
+            const delay = Math.min(1000 * 2 ** statusFeed.retries, 20000);
+            statusFeed.retries++;
+            setTimeout(connectStatusFeed, delay);
         }
+    };
+}
+
+async function statusFeedRestFallback() {
+    statusFeed.restTried = true;
+    try {
+        const res = await fetch(`${STATUS_NEWS_BASE}/events?limit=40`, { headers: { accept: 'application/json' } });
+        if (!res.ok) throw new Error(res.status);
+        const d = await res.json();
+        addStatusItems(d.events || d.items || []);
     } catch {
-        // Invalid URL: show as plain text without a link
-        webElem.textContent = data.infoURL;
+        if (!statusFeed.items.length) {
+            const feed = document.getElementById('statusFeed');
+            if (feed) { feed.textContent = ''; feed.appendChild(el('div', { class: 'feed-empty', text: 'Live status feed unavailable (chains-status-news).' })); }
+        }
     }
 }
 
+// ─────────────────────────────── Detail drawer ───────────────────────────────
+function initDrawer() {
+    document.getElementById('closeDrawer')?.addEventListener('click', closeDrawer);
+    document.getElementById('drawerScrim')?.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+}
+function closeDrawer() { document.getElementById('detailDrawer')?.classList.add('hidden'); }
+
+function chainLink(id) {
+    const c = state.byId.get(id);
+    return el('a', { class: 'chip-link', href: '#', text: c?.name || `Chain ${id}`, onclick: e => { e.preventDefault(); openChainDetail(id); } });
+}
+
+function detailRow(label, valueNode) {
+    return el('div', { class: 'd-row' }, [el('span', { class: 'd-label', text: label }), el('div', { class: 'd-value' }, [].concat(valueNode))]);
+}
+
+function openChainDetail(chainId) {
+    const c = state.byId.get(chainId);
+    if (!c) return;
+    const drawer = document.getElementById('detailDrawer');
+    const body = document.getElementById('drawerBody');
+    const type = classify(c);
+    const e = state.rel.get(chainId) || {};
+    const l2b = state.l2beat.get(chainId);
+    const sp = state.statusPagesByChain.get(chainId);
+    body.textContent = '';
+
+    // header
+    const icon = el('div', { class: 'd-icon', text: (c.name || '?').charAt(0).toUpperCase() });
+    icon.style.background = `linear-gradient(135deg, ${COLORS[type]}, ${COLORS[type]}33)`;
+    const badges = [el('span', { class: 'badge', text: `ID: ${c.chainId}` })];
+    if (c.status) badges.push(statusBadge(c.status));
+    (c.tags || []).forEach(t => badges.push(el('span', { class: `tag tag-${t.toLowerCase()}`, text: t })));
+    body.appendChild(el('div', { class: 'd-header' }, [icon, el('div', {}, [
+        el('h2', { text: c.name || `Chain ${c.chainId}` }),
+        el('div', { class: 'd-badges' }, badges)
+    ])]));
+
+    const content = el('div', { class: 'd-content' });
+    content.appendChild(detailRow('Native currency', el('span', { text: c.nativeCurrency ? `${c.nativeCurrency.name} (${c.nativeCurrency.symbol})` : '—' })));
+
+    // relations
+    if (e.l1Parent != null) content.appendChild(detailRow('L1 / parent', chainLink(e.l1Parent)));
+    if (e.mainnet != null) content.appendChild(detailRow('Mainnet', chainLink(e.mainnet)));
+    if (e.l2Children?.length) content.appendChild(detailRow(`L2 / L3 (${e.l2Children.length})`, e.l2Children.slice(0, 30).map(chainLink)));
+    if (e.testnetChildren?.length) content.appendChild(detailRow(`Testnets (${e.testnetChildren.length})`, e.testnetChildren.slice(0, 30).map(chainLink)));
+
+    // L2BEAT
+    if (l2b) {
+        content.appendChild(detailRow('L2BEAT', el('div', { class: 'l2b-grid' }, [
+            el('span', { class: 'pill pill-stage', text: l2b.stage || '—' }),
+            el('span', { class: 'muted', text: l2b.category || '' }),
+            el('span', { class: 'strong', text: fmtUsd(l2b.tvs) }),
+            l2b.daLayer ? el('span', { class: 'muted', text: `DA: ${l2b.daLayer}` }) : null
+        ])));
+    }
+
+    // status page
+    if (sp) {
+        const host = safeHost(sp.url);
+        content.appendChild(detailRow('Status page', el('a', { href: sp.url, target: '_blank', rel: 'noopener', text: host || sp.name })));
+    }
+
+    // explorers
+    if (c.explorers?.length) {
+        content.appendChild(detailRow('Explorers', c.explorers.map(x => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name || safeHost(x.url) }))));
+    }
+    // website
+    if (c.infoURL) {
+        const host = safeHost(c.infoURL);
+        content.appendChild(detailRow('Website', host ? el('a', { href: c.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: c.infoURL })));
+    }
+    // slip44
+    if (c.slip44 != null) content.appendChild(detailRow('SLIP-44', el('span', { class: 'mono', text: String(c.slip44) })));
+
+    // RPC endpoints (static list) + live health placeholder
+    const rpcBox = el('div', { class: 'd-rpc' }, [el('div', { class: 'd-rpc-loading', text: 'Checking RPC health…' })]);
+    content.appendChild(detailRow('RPC endpoints', rpcBox));
+
+    // clients placeholder
+    const clientBox = el('div', { class: 'd-clients muted', text: '—' });
+    content.appendChild(detailRow('Clients (live)', clientBox));
+
+    body.appendChild(content);
+    drawer.classList.remove('hidden');
+
+    loadLiveRpc(chainId, rpcBox);
+    loadLiveClients(chainId, clientBox);
+}
+
+async function loadLiveRpc(chainId, box) {
+    const staticUrls = (state.byId.get(chainId)?.rpc || [])
+        .map(u => typeof u === 'string' ? u : u?.url)
+        .filter(u => u && u.startsWith('http') && !u.includes('${'));
+    let results = [];
+    try {
+        const d = await api(`/rpc-monitor/${chainId}`);
+        results = d.results || d.endpoints || (Array.isArray(d) ? d : []);
+    } catch { /* fall back to static list */ }
+
+    box.textContent = '';
+    if (results.length) {
+        for (const r of results.slice(0, 12)) {
+            const ok = r.status === 'working' || r.ok === true;
+            const host = safeHost(r.url) || r.url;
+            const meta = [r.blockNumber || r.blockHeight ? `#${r.blockNumber ?? r.blockHeight}` : null, r.clientVersion ? String(r.clientVersion).split('/')[0] : null].filter(Boolean).join(' · ');
+            box.appendChild(el('div', { class: 'rpc-row' }, [
+                el('span', { class: `dot ${ok ? 'dot-ok' : 'dot-bad'}` }),
+                el('span', { class: 'rpc-host mono', text: host }),
+                el('span', { class: 'rpc-meta muted', text: meta })
+            ]));
+        }
+    } else if (staticUrls.length) {
+        for (const u of staticUrls.slice(0, 12)) box.appendChild(el('div', { class: 'rpc-row' }, [el('span', { class: 'dot' }), el('span', { class: 'rpc-host mono', text: safeHost(u) || u })]));
+    } else {
+        box.appendChild(el('span', { class: 'muted', text: 'No public endpoints.' }));
+    }
+}
+
+async function loadLiveClients(chainId, box) {
+    try {
+        const d = await api(`/clients/${chainId}`);
+        const clients = d.clients || [];
+        if (!clients.length) { box.textContent = 'No client data yet.'; return; }
+        box.textContent = '';
+        box.classList.remove('muted');
+        for (const cl of clients) {
+            box.appendChild(el('span', { class: 'client-pill', text: `${cl.name}${cl.nodeCount ? ` ×${cl.nodeCount}` : ''}` }));
+        }
+    } catch { box.textContent = '—'; }
+}
+
+// init table headers once DOM is parsed (sections exist at load)
+initChainsTableHeader();
+initScalingHeader();
