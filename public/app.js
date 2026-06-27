@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Chains dashboard — relationships, chains, RPC & status, scaling.
+// Chains dashboard — Relationships (3D graph), Networks (chains + RPC + L2
+// scaling), and Incidents (live operator status, last 30 days).
 // Data: live chains-api (/export bulk + per-chain endpoints) and
-// chains-status-news (/events). Forum data is intentionally excluded for now.
+// chains-status-news (WebSocket /ws). Forum data is excluded for now.
 // ─────────────────────────────────────────────────────────────────────────
 
 const SAME_ORIGIN_API =
@@ -15,13 +16,9 @@ const COLORS = {
 const ALL_SOURCES = ['chains', 'chainlist', 'theGraph', 'slip44', 'l2beat'];
 
 const state = {
-    chains: [],
-    byId: new Map(),
-    rel: new Map(),                 // chainId -> {l1Parent, mainnet, l2Children[], testnetChildren[]}
-    l2beat: new Map(),              // chainId -> l2beat project
-    l2beatMeta: null,
-    statusPagesByChain: new Map(),  // chainId -> {id,name,url}
-    statusPages: [],
+    chains: [], byId: new Map(), rel: new Map(),
+    l2beat: new Map(), l2beatMeta: null,
+    statusPagesByChain: new Map(),
     lastUpdated: null
 };
 
@@ -33,13 +30,12 @@ let enabledSources = new Set(ALL_SOURCES);
 let myGraph = null;
 let graphBuilt = false;
 
-// ─── tiny DOM helper ───
+// ─── DOM helper ───
 function el(tag, props = {}, children = []) {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(props)) {
         if (k === 'class') node.className = v;
         else if (k === 'text') node.textContent = v;
-        else if (k === 'html') node.innerHTML = v;
         else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
         else if (v !== null && v !== undefined) node.setAttribute(k, v);
     }
@@ -56,12 +52,7 @@ function classify(c) {
     if (c.tags?.includes('Testnet')) return 'Testnet';
     return 'Mainnet';
 }
-
-function debounce(fn, ms) {
-    let t;
-    return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-}
-
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 function fmtUsd(n) {
     if (n == null || !Number.isFinite(n)) return '—';
     if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
@@ -69,12 +60,20 @@ function fmtUsd(n) {
     if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
     return `$${n.toFixed(0)}`;
 }
-
-function safeHost(url) {
-    try {
-        const u = new URL(url);
-        return (u.protocol === 'http:' || u.protocol === 'https:') ? u.host : null;
-    } catch { return null; }
+function fmtDuration(ms) {
+    if (!ms || ms < 0) return null;
+    const m = Math.round(ms / 60000);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ${m % 60}m`;
+    return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+function safeHost(url) { try { const u = new URL(url); return (u.protocol === 'http:' || u.protocol === 'https:') ? u.host : null; } catch { return null; } }
+function iconColorFor(chainId) { const c = state.byId.get(chainId); return c ? COLORS[classify(c)] : COLORS.Default; }
+function networkIcon(label, color, cls = 'net-icon') {
+    const n = el('span', { class: cls, text: (label || '?').charAt(0).toUpperCase() });
+    n.style.background = `linear-gradient(135deg, ${color}, ${color}44)`;
+    return n;
 }
 
 async function api(path) {
@@ -89,8 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initSearch();
     initGraphControls();
     initDrawer();
-    loadBulk();
+    initChainFilter();
+    initIncidentControls();
+    initChainsTableHeader();
+    initScalingHeader();
     loadStatsLine();
+    loadBulk();
+    window.addEventListener('popstate', applyUrlState);
 });
 
 async function loadStatsLine() {
@@ -99,38 +103,34 @@ async function loadStatsLine() {
         document.getElementById('statsLine').textContent =
             `${s.totalChains} chains · ${s.totalMainnets} mainnets · ${s.totalL2s} L2s · ${s.totalTestnets} testnets`;
         renderRpcStatCards(s);
-    } catch { /* stats line stays as loaded count later */ }
+    } catch { /* noop */ }
 }
 
 async function loadBulk() {
     let payload;
-    try {
-        payload = await api('/export');
-    } catch {
+    try { payload = await api('/export'); }
+    catch {
         try { payload = await (await fetch('export.json')).json(); }
-        catch (e) { return graphLoadError(); }
+        catch { return graphLoadError(); }
     }
     const data = payload.data ?? payload;
     state.chains = data.indexed?.all ?? [];
     state.lastUpdated = data.lastUpdated ?? null;
     state.byId = new Map(state.chains.map(c => [c.chainId, c]));
-
-    // L2BEAT projects keyed by chainId
-    state.l2beatMeta = data.l2beat ? { source: data.l2beat.source, fetchedAt: data.l2beat.fetchedAt, count: (data.l2beat.projects || []).length } : null;
-    for (const p of data.l2beat?.projects ?? []) {
-        if (p.chainId != null) state.l2beat.set(p.chainId, p);
-    }
+    state.l2beatMeta = data.l2beat ? { source: data.l2beat.source, count: (data.l2beat.projects || []).length } : null;
+    for (const p of data.l2beat?.projects ?? []) if (p.chainId != null) state.l2beat.set(p.chainId, p);
 
     buildRelations();
     buildGraph();
-    renderChainsView();
+    renderScalingChart();
     renderScalingView();
+    renderChainsView();
     if (!document.getElementById('statsLine').textContent.includes('chains')) {
         document.getElementById('statsLine').textContent = `${state.chains.length} chains loaded`;
     }
-    // status data (independent of bulk)
-    loadStatusPages();
-    connectStatusFeed();
+    loadStatusPages();      // populate drawer status-page links (no list UI)
+    connectStatusFeed();    // incidents
+    applyUrlState();        // deep-link ?chain=
 }
 
 function graphLoadError() {
@@ -141,12 +141,11 @@ function graphLoadError() {
     o.querySelector('.loading-sub').textContent = 'Check your connection or that the API is reachable.';
 }
 
-// ─── relations: derive parents/children per chain from chain.relations ───
+// ─── relations ───
 function relEntry(id) {
     if (!state.rel.has(id)) state.rel.set(id, { l1Parent: null, mainnet: null, l2Children: [], testnetChildren: [] });
     return state.rel.get(id);
 }
-
 function buildRelations() {
     for (const c of state.chains) {
         for (const r of c.relations ?? []) {
@@ -157,29 +156,35 @@ function buildRelations() {
             else if (r.kind === 'mainnetOf') { relEntry(r.chainId).mainnet = c.chainId; relEntry(c.chainId).testnetChildren.push(r.chainId); }
         }
     }
-    // de-dup children
-    for (const e of state.rel.values()) {
-        e.l2Children = [...new Set(e.l2Children)];
-        e.testnetChildren = [...new Set(e.testnetChildren)];
-    }
+    for (const e of state.rel.values()) { e.l2Children = [...new Set(e.l2Children)]; e.testnetChildren = [...new Set(e.testnetChildren)]; }
 }
 
 // ─────────────────────────────── tabs ───────────────────────────────
 function initTabs() {
-    document.querySelectorAll('#tabs .tab').forEach(btn => {
-        btn.addEventListener('click', () => switchView(btn.dataset.view));
-    });
+    document.querySelectorAll('#tabs .tab').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
 }
-
 function switchView(view) {
     document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(`view-${view}`).classList.add('active');
     document.body.classList.toggle('graph-active', view === 'graph');
-    if (view === 'graph' && myGraph) { setTimeout(() => myGraph.width(window.innerWidth).height(window.innerHeight), 0); }
+    if (view === 'graph' && myGraph) setTimeout(() => myGraph.width(window.innerWidth).height(window.innerHeight), 0);
 }
 
-// ─────────────────────────────── search ───────────────────────────────
+// ─────────────────────────────── URL deep-link ───────────────────────────────
+function applyUrlState() {
+    const params = new URLSearchParams(location.search);
+    const chain = params.get('chain');
+    if (chain && state.byId.has(Number(chain))) openChainDetail(Number(chain), { fromUrl: true });
+    else closeDrawer({ fromUrl: true });
+}
+function setUrlChain(id) {
+    const u = new URL(location.href);
+    if (id == null) u.searchParams.delete('chain'); else u.searchParams.set('chain', id);
+    history.replaceState(null, '', u);
+}
+
+// ─────────────────────────────── search (global) ───────────────────────────────
 function initSearch() {
     const input = document.getElementById('searchInput');
     const dd = document.getElementById('searchDropdown');
@@ -188,56 +193,42 @@ function initSearch() {
     const render = debounce(q => {
         if (!q) { dd.classList.add('hidden'); return; }
         const matches = state.chains.filter(c =>
-            String(c.chainId).includes(q) ||
-            c.name?.toLowerCase().includes(q) ||
-            c.shortName?.toLowerCase().includes(q)
+            String(c.chainId).includes(q) || c.name?.toLowerCase().includes(q) || c.shortName?.toLowerCase().includes(q)
         ).sort((a, b) => {
             const an = (a.name || '').toLowerCase(), bn = (b.name || '').toLowerCase();
             const as = an.startsWith(q), bs = bn.startsWith(q);
             if (as !== bs) return as ? -1 : 1;
             return an.localeCompare(bn);
         }).slice(0, 40);
-
-        dd.textContent = '';
-        activeIdx = -1;
-        if (!matches.length) { dd.appendChild(el('div', { class: 'dropdown-empty', text: 'No chains found.' })); }
+        dd.textContent = ''; activeIdx = -1;
+        if (!matches.length) dd.appendChild(el('div', { class: 'dropdown-empty', text: 'No networks found.' }));
         for (const c of matches) {
-            const color = COLORS[classify(c)];
             const item = el('div', { class: 'dropdown-item', 'data-id': c.chainId, onclick: () => pick(c.chainId) }, [
-                el('div', { class: 'dropdown-icon', text: (c.name || '?').charAt(0).toUpperCase() }),
+                networkIcon(c.name, COLORS[classify(c)], 'dropdown-icon'),
                 el('div', { class: 'dropdown-info' }, [
                     el('span', { class: 'dropdown-name', text: c.name || `Chain ${c.chainId}` }),
                     el('div', { class: 'dropdown-meta', text: `ID: ${c.chainId} · ${(c.tags || []).join(', ') || classify(c)}` })
                 ])
             ]);
-            item.querySelector('.dropdown-icon').style.background = `linear-gradient(135deg, ${color}, ${color}44)`;
             dd.appendChild(item);
         }
         dd.classList.remove('hidden');
     }, 140);
 
-    function pick(id) {
-        input.value = state.byId.get(id)?.name || String(id);
-        dd.classList.add('hidden');
-        openChainDetail(id);
-        if (document.body.classList.contains('graph-active')) focusNodeById(id);
-    }
+    function pick(id) { input.value = state.byId.get(id)?.name || String(id); dd.classList.add('hidden'); openChainDetail(id); if (document.body.classList.contains('graph-active')) focusNodeById(id); }
     globalThis.pickChain = pick;
 
     input.addEventListener('input', e => render(e.target.value.toLowerCase().trim()));
     input.addEventListener('keydown', e => {
         const items = dd.querySelectorAll('.dropdown-item');
-        if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); markActive(items); }
-        else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); markActive(items); }
+        if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); mark(items); }
+        else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); mark(items); }
         else if (e.key === 'Enter') { e.preventDefault(); const t = items[activeIdx] || items[0]; if (t) pick(Number(t.dataset.id)); }
         else if (e.key === 'Escape') { dd.classList.add('hidden'); input.blur(); }
     });
-    function markActive(items) { items.forEach((it, i) => it.classList.toggle('active', i === activeIdx)); items[activeIdx]?.scrollIntoView({ block: 'nearest' }); }
-
+    function mark(items) { items.forEach((it, i) => it.classList.toggle('active', i === activeIdx)); items[activeIdx]?.scrollIntoView({ block: 'nearest' }); }
     document.addEventListener('click', e => { if (!e.target.closest('.search-box')) dd.classList.add('hidden'); });
-    document.addEventListener('keydown', e => {
-        if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); }
-    });
+    document.addEventListener('keydown', e => { if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); } });
 }
 
 // ─────────────────────────────── graph ───────────────────────────────
@@ -245,10 +236,8 @@ function initGraphControls() {
     document.querySelectorAll('.filter-btn').forEach(btn => btn.addEventListener('click', e => {
         document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
         e.currentTarget.classList.add('active');
-        currentFilter = e.currentTarget.dataset.filter;
-        applyGraphFilter();
+        currentFilter = e.currentTarget.dataset.filter; applyGraphFilter();
     }));
-
     const toggle = document.getElementById('sourcesToggle');
     const ddrop = document.getElementById('sourcesDropdown');
     toggle?.addEventListener('click', () => ddrop.classList.toggle('hidden'));
@@ -258,17 +247,14 @@ function initGraphControls() {
         buildGraph(); applyGraphFilter();
     }));
 }
-
 function visibleChains() {
     if (enabledSources.size === ALL_SOURCES.length) return state.chains;
     return state.chains.filter(c => c.sources?.some(s => enabledSources.has(s)));
 }
-
 function buildGraph() {
     const chains = visibleChains();
     const ids = new Set(chains.map(c => c.chainId));
-    const nodes = [];
-    const nodeMap = new Map();
+    const nodes = []; const nodeMap = new Map();
     for (const c of chains) {
         const type = classify(c);
         let name = c.name || `Chain ${c.chainId}`;
@@ -279,43 +265,34 @@ function buildGraph() {
     }
     const links = [];
     for (const c of chains) {
-        const e = state.rel.get(c.chainId);
-        if (!e) continue;
-        if (e.l1Parent != null && ids.has(e.l1Parent) && nodeMap.has(c.chainId)) links.push({ source: c.chainId, target: e.l1Parent, kind: 'l2Of' });
-        if (e.mainnet != null && ids.has(e.mainnet) && nodeMap.has(c.chainId)) links.push({ source: c.chainId, target: e.mainnet, kind: 'testnetOf' });
+        const e = state.rel.get(c.chainId); if (!e) continue;
+        if (e.l1Parent != null && ids.has(e.l1Parent)) links.push({ source: c.chainId, target: e.l1Parent, kind: 'l2Of' });
+        if (e.mainnet != null && ids.has(e.mainnet)) links.push({ source: c.chainId, target: e.mainnet, kind: 'testnetOf' });
     }
     graphData = { nodes, links };
     filteredData = { nodes: [...nodes], links: [...links] };
-
     if (!graphBuilt) { renderGraph(); graphBuilt = true; document.getElementById('loadingOverlay')?.classList.add('hidden'); }
 }
-
 function linksFor(idSet, exclude) {
     return graphData.links.filter(l => {
         const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
         return idSet.has(s) && idSet.has(t) && (!exclude || l.kind !== exclude);
     });
 }
-
 function applyGraphFilter() {
-    if (currentFilter === 'all') {
-        filteredData = { nodes: [...graphData.nodes], links: [...graphData.links] };
-    } else {
+    if (currentFilter === 'all') filteredData = { nodes: [...graphData.nodes], links: [...graphData.links] };
+    else {
         const set = new Set();
-        for (const n of graphData.nodes) {
-            if (n.type === currentFilter) {
-                set.add(n.id);
-                const e = state.rel.get(n.id);
-                if (e?.l1Parent != null) set.add(e.l1Parent);
-                if (e?.mainnet != null) set.add(e.mainnet);
-            }
+        for (const n of graphData.nodes) if (n.type === currentFilter) {
+            set.add(n.id);
+            const e = state.rel.get(n.id);
+            if (e?.l1Parent != null) set.add(e.l1Parent);
+            if (e?.mainnet != null) set.add(e.mainnet);
         }
-        const nodes = graphData.nodes.filter(n => set.has(n.id));
-        filteredData = { nodes, links: linksFor(set) };
+        filteredData = { nodes: graphData.nodes.filter(n => set.has(n.id)), links: linksFor(set) };
     }
     if (myGraph) myGraph.graphData(filteredData);
 }
-
 function renderGraph() {
     myGraph = ForceGraph3D()(document.getElementById('3d-graph'))
         .graphData(filteredData)
@@ -329,64 +306,59 @@ function renderGraph() {
         .onNodeClick(n => { focusNode(n); openChainDetail(n.id); });
     window.addEventListener('resize', () => myGraph && myGraph.width(window.innerWidth).height(window.innerHeight));
 }
-
 function focusNode(node) {
     if (!myGraph || node.x == null) return;
-    const dist = 150;
-    const r = 1 + dist / Math.hypot(node.x, node.y, node.z);
+    const r = 1 + 150 / Math.hypot(node.x, node.y, node.z);
     myGraph.cameraPosition({ x: node.x * r, y: node.y * r, z: node.z * r }, node, 1200);
 }
-function focusNodeById(id) {
-    const n = filteredData.nodes.find(x => x.id === id) || graphData.nodes.find(x => x.id === id);
-    if (n) focusNode(n);
+function focusNodeById(id) { const n = filteredData.nodes.find(x => x.id === id) || graphData.nodes.find(x => x.id === id); if (n) focusNode(n); }
+
+// ─────────────────────────────── RPC health cards ───────────────────────────────
+function renderRpcStatCards(s) {
+    const wrap = document.getElementById('rpcStatCards');
+    if (!wrap || !s?.rpc) return;
+    wrap.textContent = '';
+    for (const c of [{ label: 'Endpoints tested', value: s.rpc.tested?.toLocaleString() ?? '—' },
+                     { label: 'Working', value: s.rpc.working?.toLocaleString() ?? '—', tone: 'good' }]) {
+        wrap.appendChild(el('div', { class: `stat-card ${c.tone || ''}` }, [
+            el('div', { class: 'stat-value', text: c.value }), el('div', { class: 'stat-label', text: c.label })
+        ]));
+    }
 }
 
-// ─────────────────────────────── Chains view ───────────────────────────────
+// ─────────────────────────────── Chains table ───────────────────────────────
 let chainSort = { key: 'chainId', dir: 1 };
 let chainTagFilter = 'all';
+let chainTextFilter = '';
 const CHAIN_PAGE = 200;
 let chainShown = CHAIN_PAGE;
 
 function initChainsTableHeader() {
-    document.querySelectorAll('#chainsTable thead th[data-sort]').forEach(th => {
-        th.addEventListener('click', () => {
-            const k = th.dataset.sort;
-            chainSort.dir = chainSort.key === k ? -chainSort.dir : 1;
-            chainSort.key = k;
-            renderChainsView();
-        });
-    });
+    document.querySelectorAll('#chainsTable thead th[data-sort]').forEach(th => th.addEventListener('click', () => {
+        const k = th.dataset.sort; chainSort.dir = chainSort.key === k ? -chainSort.dir : 1; chainSort.key = k; renderChainsView();
+    }));
     document.querySelectorAll('#chainTagChips .chip').forEach(chip => chip.addEventListener('click', () => {
         document.querySelectorAll('#chainTagChips .chip').forEach(c => c.classList.remove('active'));
-        chip.classList.add('active');
-        chainTagFilter = chip.dataset.tag;
-        chainShown = CHAIN_PAGE;
-        renderChainsView();
+        chip.classList.add('active'); chainTagFilter = chip.dataset.tag; chainShown = CHAIN_PAGE; renderChainsView();
     }));
 }
-
+function initChainFilter() {
+    const inp = document.getElementById('chainFilter');
+    inp?.addEventListener('input', debounce(e => { chainTextFilter = e.target.value.toLowerCase().trim(); chainShown = CHAIN_PAGE; renderChainsView(); }, 140));
+}
 function chainRowData(c) {
-    const e = state.rel.get(c.chainId);
     const rpcCount = (c.rpc || []).filter(u => { const url = typeof u === 'string' ? u : u?.url; return url && url.startsWith('http') && !url.includes('${'); }).length;
     return {
-        chainId: c.chainId,
-        name: c.name || `Chain ${c.chainId}`,
-        tags: (c.tags || []).join(', '),
-        native: c.nativeCurrency?.symbol || '',
-        rpcs: rpcCount,
-        tvs: state.l2beat.get(c.chainId)?.tvs ?? null,
-        status: c.status || '',
-        _l2: e?.l2Children.length || 0
+        chainId: c.chainId, name: c.name || `Chain ${c.chainId}`, tags: (c.tags || []).join(', '),
+        native: c.nativeCurrency?.symbol || '', rpcs: rpcCount, tvs: state.l2beat.get(c.chainId)?.tvs ?? null, status: c.status || ''
     };
 }
-
 function renderChainsView() {
-    const body = document.getElementById('chainsTableBody');
-    if (!body) return;
+    const body = document.getElementById('chainsTableBody'); if (!body) return;
     let rows = state.chains.filter(c => {
-        if (chainTagFilter === 'all') return true;
-        if (chainTagFilter === 'Mainnet') return classify(c) === 'Mainnet';
-        return c.tags?.includes(chainTagFilter);
+        if (chainTagFilter === 'Mainnet' ? classify(c) !== 'Mainnet' : (chainTagFilter !== 'all' && !c.tags?.includes(chainTagFilter))) return false;
+        if (chainTextFilter && !(`${c.chainId}`.includes(chainTextFilter) || c.name?.toLowerCase().includes(chainTextFilter) || c.shortName?.toLowerCase().includes(chainTextFilter))) return false;
+        return true;
     }).map(chainRowData);
 
     const { key, dir } = chainSort;
@@ -397,11 +369,10 @@ function renderChainsView() {
         return String(av).localeCompare(String(bv)) * dir;
     });
 
-    document.getElementById('chainsCount').textContent = `${rows.length.toLocaleString()} chains`;
-    const slice = rows.slice(0, chainShown);
+    document.getElementById('chainsCount').textContent = `${rows.length.toLocaleString()} shown`;
     body.textContent = '';
-    for (const r of slice) {
-        const tr = el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
+    for (const r of rows.slice(0, chainShown)) {
+        body.appendChild(el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
             el('td', { class: 'num mono', text: String(r.chainId) }),
             el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
             el('td', {}, tagBadges(r.tags)),
@@ -409,16 +380,11 @@ function renderChainsView() {
             el('td', { class: 'num', text: r.rpcs ? String(r.rpcs) : '—' }),
             el('td', { class: 'num', text: r.tvs != null ? fmtUsd(r.tvs) : '—' }),
             el('td', {}, [statusBadge(r.status)])
-        ]);
-        body.appendChild(tr);
+        ]));
     }
-    const more = document.getElementById('chainsTableMore');
-    more.textContent = '';
-    if (rows.length > chainShown) {
-        more.appendChild(el('button', { class: 'load-more', text: `Show more (${(rows.length - chainShown).toLocaleString()} remaining)`, onclick: () => { chainShown += CHAIN_PAGE * 2; renderChainsView(); } }));
-    }
+    const more = document.getElementById('chainsTableMore'); more.textContent = '';
+    if (rows.length > chainShown) more.appendChild(el('button', { class: 'load-more', text: `Show more (${(rows.length - chainShown).toLocaleString()} remaining)`, onclick: () => { chainShown += CHAIN_PAGE * 2; renderChainsView(); } }));
 }
-
 function tagBadges(tagStr) {
     if (!tagStr) return [el('span', { class: 'muted', text: '—' })];
     return tagStr.split(', ').map(t => el('span', { class: `tag tag-${t.toLowerCase()}`, text: t }));
@@ -428,22 +394,35 @@ function statusBadge(status) {
     return el('span', { class: `pill pill-${status.toLowerCase()}`, text: status });
 }
 
-// ─────────────────────────────── Scaling view ───────────────────────────────
+// ─────────────────────────────── Scaling (chart + table) ───────────────────────────────
 let scalingSort = { key: 'tvs', dir: -1 };
 function initScalingHeader() {
     document.querySelectorAll('#scalingTable thead th[data-sort]').forEach(th => th.addEventListener('click', () => {
-        const k = th.dataset.sort;
-        scalingSort.dir = scalingSort.key === k ? -scalingSort.dir : 1;
-        scalingSort.key = k;
-        renderScalingView();
+        const k = th.dataset.sort; scalingSort.dir = scalingSort.key === k ? -scalingSort.dir : 1; scalingSort.key = k; renderScalingView();
     }));
 }
+function renderScalingChart() {
+    const wrap = document.getElementById('scalingChart'); if (!wrap) return;
+    const top = [...state.l2beat.values()].filter(p => p.tvs > 0).sort((a, b) => b.tvs - a.tvs).slice(0, 15);
+    if (state.l2beatMeta) document.getElementById('scalingMeta').textContent = `${state.l2beatMeta.count} projects · ${state.l2beatMeta.source}`;
+    wrap.textContent = '';
+    if (!top.length) { wrap.appendChild(el('div', { class: 'feed-empty', text: 'No scaling data.' })); return; }
+    const max = top[0].tvs;
+    for (const p of top) {
+        const pct = Math.max(2, (p.tvs / max) * 100);
+        const row = el('div', { class: 'bar-row', onclick: () => openChainDetail(p.chainId) }, [
+            el('div', { class: 'bar-label', text: p.displayName || p.slug }),
+            el('div', { class: 'bar-track' }, [el('div', { class: 'bar-fill' })]),
+            el('div', { class: 'bar-value mono', text: fmtUsd(p.tvs) })
+        ]);
+        const fill = row.querySelector('.bar-fill');
+        fill.style.width = `${pct}%`;
+        fill.style.background = `linear-gradient(90deg, var(--color-l2), #06b6d4)`;
+        wrap.appendChild(row);
+    }
+}
 function renderScalingView() {
-    const body = document.getElementById('scalingTableBody');
-    if (!body) return;
-    const meta = document.getElementById('scalingMeta');
-    if (state.l2beatMeta) meta.textContent = `${state.l2beatMeta.count} projects · ${state.l2beatMeta.source}`;
-
+    const body = document.getElementById('scalingTableBody'); if (!body) return;
     const rows = [...state.l2beat.values()].map(p => ({
         tvs: p.tvs ?? null, name: p.displayName || p.slug, chainId: p.chainId,
         stage: p.stage || '', category: p.category || '', da: p.daLayer || '', stack: p.stack || ''
@@ -457,7 +436,7 @@ function renderScalingView() {
     });
     body.textContent = '';
     for (const r of rows) {
-        const tr = el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
+        body.appendChild(el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
             el('td', { class: 'num strong', text: fmtUsd(r.tvs) }),
             el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
             el('td', { class: 'num mono', text: String(r.chainId) }),
@@ -465,153 +444,210 @@ function renderScalingView() {
             el('td', { class: 'muted', text: r.category || '—' }),
             el('td', { class: 'muted', text: r.da || '—' }),
             el('td', { class: 'muted', text: r.stack || '—' })
-        ]);
-        body.appendChild(tr);
-    }
-}
-
-// ─────────────────────────────── RPC & Status view ───────────────────────────────
-function renderRpcStatCards(s) {
-    const wrap = document.getElementById('rpcStatCards');
-    if (!wrap || !s?.rpc) return;
-    const cards = [
-        { label: 'Endpoints tested', value: s.rpc.tested?.toLocaleString() ?? '—' },
-        { label: 'Working', value: s.rpc.working?.toLocaleString() ?? '—', tone: 'good' },
-        { label: 'Failed', value: s.rpc.failed?.toLocaleString() ?? '—', tone: 'bad' },
-        { label: 'Health', value: s.rpc.healthPercent != null ? `${s.rpc.healthPercent}%` : '—' }
-    ];
-    wrap.textContent = '';
-    for (const c of cards) {
-        wrap.appendChild(el('div', { class: `stat-card ${c.tone || ''}` }, [
-            el('div', { class: 'stat-value', text: c.value }),
-            el('div', { class: 'stat-label', text: c.label })
         ]));
     }
 }
 
+// ─────────────────────────────── status pages (drawer links only) ───────────────────────────────
 async function loadStatusPages() {
     try {
         const d = await api('/status-pages');
-        state.statusPages = d.statusPages || [];
-        for (const sp of state.statusPages) for (const id of sp.chainIds || []) state.statusPagesByChain.set(id, { id: sp.id, name: sp.name, url: sp.url });
-        renderStatusPageList('');
-        const search = document.getElementById('statusPageSearch');
-        search?.addEventListener('input', e => renderStatusPageList(e.target.value.toLowerCase().trim()));
-    } catch { document.getElementById('statusPageList').textContent = 'Status pages unavailable.'; }
+        for (const sp of d.statusPages || []) for (const id of sp.chainIds || []) state.statusPagesByChain.set(id, { id: sp.id, name: sp.name, url: sp.url });
+    } catch { /* drawer just won't show a status link */ }
 }
 
-function renderStatusPageList(q) {
-    const list = document.getElementById('statusPageList');
-    if (!list) return;
-    const items = state.statusPages.filter(sp => !q || sp.name.toLowerCase().includes(q) || sp.id.includes(q));
-    list.textContent = '';
-    for (const sp of items) {
-        const host = safeHost(sp.url);
-        list.appendChild(el('a', { class: 'status-page-row', href: sp.url, target: '_blank', rel: 'noopener' }, [
-            el('span', { class: 'status-page-name', text: sp.name }),
-            el('span', { class: 'status-page-host', text: host || sp.url })
-        ]));
+// ─────────────────────────────── Incidents (live WS) ───────────────────────────────
+const STATUS_WORDS = ['Resolved', 'Completed', 'Monitoring', 'Verifying', 'Update', 'Identified', 'Investigating', 'Scheduled', 'In progress'];
+const incidents = { items: [], seen: new Set(), ws: null, retries: 0, groupBy: 'flat', dayFilter: null };
+
+function parseIncidentStatus(ev) {
+    const s = ev.summary || '';
+    const m = s.match(new RegExp(`<strong>\\s*(${STATUS_WORDS.join('|')})\\s*</strong>`, 'i'));
+    if (m) return m[1];
+    const m2 = s.match(/Status:\s*([a-z ]+?)(?:\s*\||$)/i);
+    if (m2) return m2[1].trim();
+    return null;
+}
+function parseIncidentTimes(ev) {
+    const s = ev.summary || '';
+    const year = (ev.publishedAt ? new Date(ev.publishedAt) : new Date()).getUTCFullYear();
+    const stamps = [...s.matchAll(/<small>([\s\S]*?)<\/small>/gi)]
+        .map(x => {
+            // Pull the visible tokens (month word, day, HH:MM) directly from the
+            // <small> content — e.g. "Jun <var…>26</var>, <var…>20:03</var> UTC".
+            // We only need to parse a date, so extract tokens instead of
+            // stripping tags (tag-stripping is brittle and only used here for
+            // a non-HTML purpose).
+            const inner = x[1];
+            const month = (inner.match(/[A-Za-z]{3,}/) || [])[0];
+            const nums = inner.match(/\d{1,2}:\d{2}|\d{1,2}/g) || [];
+            const day = nums.find(n => !n.includes(':'));
+            const time = nums.find(n => n.includes(':'));
+            if (!month || !day || !time) return null;
+            const d = new Date(`${month} ${day} ${year} ${time}:00 UTC`);
+            return Number.isNaN(d.getTime()) ? null : d.getTime();
+        }).filter(v => v != null);
+    if (stamps.length >= 2) return { start: Math.min(...stamps), end: Math.max(...stamps) };
+    // ISO fallback (e.g. "Resolved: 2026-06-26 18:49:13")
+    const iso = [...s.matchAll(/(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})/g)].map(x => Date.parse(x[1].replace(' ', 'T') + 'Z')).filter(Boolean);
+    if (iso.length >= 2) return { start: Math.min(...iso), end: Math.max(...iso) };
+    return null;
+}
+function incidentModel(ev) {
+    const chain = ev.chains?.[0];
+    const when = ev.publishedAt || ev.updatedAt;
+    const times = parseIncidentTimes(ev);
+    return {
+        id: ev.id || ev.url || ev.title,
+        title: ev.title || '(untitled)',
+        url: ev.url,
+        when: when ? new Date(when) : (times ? new Date(times.end) : null),
+        status: parseIncidentStatus(ev),
+        durationMs: times ? times.end - times.start : null,
+        netName: chain?.name || ev.statusPage?.name || ev.statusPage?.id || 'Unknown',
+        chainId: chain?.chainId ?? null,
+        spId: ev.statusPage?.id || (chain?.chainId != null ? String(chain.chainId) : 'unknown')
+    };
+}
+function dayKey(d) { return d ? d.toISOString().slice(0, 10) : null; }
+
+function addIncidents(events) {
+    let added = false;
+    for (const ev of events) {
+        const m = incidentModel(ev);
+        if (!m.id || incidents.seen.has(m.id)) continue;
+        incidents.seen.add(m.id); incidents.items.push(m); added = true;
     }
-    if (!items.length) list.appendChild(el('div', { class: 'feed-empty', text: 'No matching status pages.' }));
+    if (!added) return;
+    incidents.items.sort((a, b) => (b.when?.getTime() || 0) - (a.when?.getTime() || 0));
+    if (incidents.items.length > 500) incidents.items.length = 500;
+    renderIncidents();
 }
 
-// Live status feed over WebSocket: chains-status-news streams `status.item`
-// events and backfills recent ones via ?replay=N on connect. We dedupe by id
-// and fall back to the REST /events endpoint only if the socket can't open.
-const statusFeed = { items: [], seen: new Set(), ws: null, retries: 0, connected: false, restTried: false };
+function initIncidentControls() {
+    document.getElementById('grpFlat')?.addEventListener('click', () => setGroupBy('flat'));
+    document.getElementById('grpNetwork')?.addEventListener('click', () => setGroupBy('network'));
+}
+function setGroupBy(mode) {
+    incidents.groupBy = mode;
+    document.getElementById('grpFlat')?.classList.toggle('active', mode === 'flat');
+    document.getElementById('grpNetwork')?.classList.toggle('active', mode === 'network');
+    renderIncidents();
+}
 
-function feedItemNode(it) {
-    const host = safeHost(it.url);
-    const when = it.publishedAt || it.updatedAt || it.emittedAt;
-    return el('a', { class: 'feed-item', href: it.url || '#', target: '_blank', rel: 'noopener' }, [
-        el('div', { class: 'feed-title', text: it.title || '(untitled)' }),
-        el('div', { class: 'feed-meta', text: [it.statusPage?.id || it.statusPage?.name, when ? new Date(when).toLocaleString() : null, host].filter(Boolean).join(' · ') })
+function renderIncidents() {
+    renderCalendar();
+    renderIncidentList();
+}
+
+function renderCalendar() {
+    const cal = document.getElementById('incidentCalendar'); if (!cal) return;
+    const counts = new Map();
+    for (const it of incidents.items) { const k = dayKey(it.when); if (k) counts.set(k, (counts.get(k) || 0) + 1); }
+    const max = Math.max(1, ...counts.values());
+    cal.textContent = '';
+    const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(today); d.setUTCDate(today.getUTCDate() - i);
+        const k = dayKey(d); const n = counts.get(k) || 0;
+        const cell = el('div', { class: `cal-cell${n ? ' has' : ''}${incidents.dayFilter === k ? ' sel' : ''}`, title: `${k}: ${n} incident${n === 1 ? '' : 's'}` }, [
+            el('span', { class: 'cal-day', text: String(d.getUTCDate()) }),
+            n ? el('span', { class: 'cal-count', text: String(n) }) : null
+        ]);
+        if (n) { cell.style.background = `rgba(139,92,246,${0.15 + 0.6 * (n / max)})`; cell.addEventListener('click', () => { incidents.dayFilter = incidents.dayFilter === k ? null : k; renderIncidents(); }); }
+        cal.appendChild(cell);
+    }
+}
+
+function incidentCard(it) {
+    const meta = [it.netName, it.when ? it.when.toLocaleString() : null].filter(Boolean);
+    const dur = fmtDuration(it.durationMs);
+    return el('a', { class: 'incident-card', href: it.url || '#', target: '_blank', rel: 'noopener' }, [
+        networkIcon(it.netName, iconColorFor(it.chainId)),
+        el('div', { class: 'incident-body' }, [
+            el('div', { class: 'incident-title', text: it.title }),
+            el('div', { class: 'incident-meta', text: meta.join(' · ') })
+        ]),
+        el('div', { class: 'incident-side' }, [
+            it.status ? el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }) : null,
+            dur ? el('span', { class: 'incident-dur', text: dur }) : null
+        ])
     ]);
 }
 
-function renderStatusFeed() {
-    const feed = document.getElementById('statusFeed');
-    if (!feed) return;
-    feed.textContent = '';
-    if (!statusFeed.items.length) { feed.appendChild(el('div', { class: 'feed-empty', text: 'No recent status updates.' })); return; }
-    for (const it of statusFeed.items.slice(0, 60)) feed.appendChild(feedItemNode(it));
-}
+function renderIncidentList() {
+    const list = document.getElementById('incidentsList'); if (!list) return;
+    let items = incidents.items;
+    if (incidents.dayFilter) items = items.filter(it => dayKey(it.when) === incidents.dayFilter);
+    document.getElementById('incidentsCount').textContent =
+        `${items.length} event${items.length === 1 ? '' : 's'}${incidents.dayFilter ? ` on ${incidents.dayFilter}` : ''}`;
+    list.textContent = '';
+    if (!items.length) { list.appendChild(el('div', { class: 'feed-empty', text: 'No incidents in this range.' })); return; }
 
-function addStatusItems(items) {
-    let added = false;
-    for (const it of items) {
-        const key = it.id || it.url || it.title;
-        if (!key || statusFeed.seen.has(key)) continue;
-        statusFeed.seen.add(key);
-        statusFeed.items.push(it);
-        added = true;
+    if (incidents.groupBy === 'network') {
+        const groups = new Map();
+        for (const it of items) { if (!groups.has(it.spId)) groups.set(it.spId, []); groups.get(it.spId).push(it); }
+        const ordered = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+        for (const [, arr] of ordered) {
+            const head = arr[0];
+            list.appendChild(el('div', { class: 'incident-group-head' }, [
+                networkIcon(head.netName, iconColorFor(head.chainId), 'net-icon sm'),
+                el('span', { class: 'cell-name', text: head.netName }),
+                el('span', { class: 'muted', text: `${arr.length} event${arr.length === 1 ? '' : 's'}` })
+            ]));
+            for (const it of arr) list.appendChild(incidentCard(it));
+        }
+    } else {
+        for (const it of items) list.appendChild(incidentCard(it));
     }
-    if (!added) return;
-    statusFeed.items.sort((a, b) => new Date(b.publishedAt || b.updatedAt || b.emittedAt || 0) - new Date(a.publishedAt || a.updatedAt || a.emittedAt || 0));
-    if (statusFeed.items.length > 200) statusFeed.items.length = 200;
-    renderStatusFeed();
 }
 
 function connectStatusFeed() {
-    const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=40`;
+    const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=200`;
     let ws;
     try { ws = new WebSocket(wsUrl); } catch { return statusFeedRestFallback(); }
-    statusFeed.ws = ws;
-
-    ws.onopen = () => { statusFeed.connected = true; statusFeed.retries = 0; };
-    ws.onmessage = ev => {
-        let m; try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.type === 'status.item' && m.item) addStatusItems([m.item]);
-    };
+    incidents.ws = ws;
+    ws.onopen = () => { incidents.retries = 0; document.getElementById('incidentsMeta').textContent = 'live'; };
+    ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } if (m.type === 'status.item' && m.item) addIncidents([m.item]); };
     ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
     ws.onclose = () => {
-        statusFeed.ws = null;
-        // If we never got anything over WS, show REST results once so the panel isn't empty.
-        if (!statusFeed.items.length && !statusFeed.restTried) statusFeedRestFallback();
-        if (statusFeed.retries < 6) {
-            const delay = Math.min(1000 * 2 ** statusFeed.retries, 20000);
-            statusFeed.retries++;
-            setTimeout(connectStatusFeed, delay);
-        }
+        incidents.ws = null;
+        if (!incidents.items.length && !incidents.restTried) statusFeedRestFallback();
+        if (incidents.retries < 6) { const delay = Math.min(1000 * 2 ** incidents.retries, 20000); incidents.retries++; document.getElementById('incidentsMeta').textContent = 'reconnecting…'; setTimeout(connectStatusFeed, delay); }
     };
 }
-
 async function statusFeedRestFallback() {
-    statusFeed.restTried = true;
+    incidents.restTried = true;
     try {
-        const res = await fetch(`${STATUS_NEWS_BASE}/events?limit=40`, { headers: { accept: 'application/json' } });
+        const res = await fetch(`${STATUS_NEWS_BASE}/events?limit=200`, { headers: { accept: 'application/json' } });
         if (!res.ok) throw new Error(res.status);
         const d = await res.json();
-        addStatusItems(d.events || d.items || []);
+        addIncidents(d.events || d.items || []);
     } catch {
-        if (!statusFeed.items.length) {
-            const feed = document.getElementById('statusFeed');
-            if (feed) { feed.textContent = ''; feed.appendChild(el('div', { class: 'feed-empty', text: 'Live status feed unavailable (chains-status-news).' })); }
-        }
+        if (!incidents.items.length) { const l = document.getElementById('incidentsList'); if (l) { l.textContent = ''; l.appendChild(el('div', { class: 'feed-empty', text: 'Live status feed unavailable (chains-status-news).' })); } }
     }
 }
 
 // ─────────────────────────────── Detail drawer ───────────────────────────────
 function initDrawer() {
-    document.getElementById('closeDrawer')?.addEventListener('click', closeDrawer);
-    document.getElementById('drawerScrim')?.addEventListener('click', closeDrawer);
+    document.getElementById('closeDrawer')?.addEventListener('click', () => closeDrawer());
+    document.getElementById('drawerScrim')?.addEventListener('click', () => closeDrawer());
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 }
-function closeDrawer() { document.getElementById('detailDrawer')?.classList.add('hidden'); }
-
+function closeDrawer(opts = {}) {
+    document.getElementById('detailDrawer')?.classList.add('hidden');
+    if (!opts.fromUrl) setUrlChain(null);
+}
 function chainLink(id) {
     const c = state.byId.get(id);
     return el('a', { class: 'chip-link', href: '#', text: c?.name || `Chain ${id}`, onclick: e => { e.preventDefault(); openChainDetail(id); } });
 }
-
 function detailRow(label, valueNode) {
     return el('div', { class: 'd-row' }, [el('span', { class: 'd-label', text: label }), el('div', { class: 'd-value' }, [].concat(valueNode))]);
 }
-
-function openChainDetail(chainId) {
-    const c = state.byId.get(chainId);
-    if (!c) return;
-    const drawer = document.getElementById('detailDrawer');
+function openChainDetail(chainId, opts = {}) {
+    const c = state.byId.get(chainId); if (!c) return;
+    if (!opts.fromUrl) setUrlChain(chainId);
     const body = document.getElementById('drawerBody');
     const type = classify(c);
     const e = state.rel.get(chainId) || {};
@@ -619,111 +655,60 @@ function openChainDetail(chainId) {
     const sp = state.statusPagesByChain.get(chainId);
     body.textContent = '';
 
-    // header
-    const icon = el('div', { class: 'd-icon', text: (c.name || '?').charAt(0).toUpperCase() });
-    icon.style.background = `linear-gradient(135deg, ${COLORS[type]}, ${COLORS[type]}33)`;
+    const icon = networkIcon(c.name, COLORS[type], 'd-icon');
     const badges = [el('span', { class: 'badge', text: `ID: ${c.chainId}` })];
     if (c.status) badges.push(statusBadge(c.status));
     (c.tags || []).forEach(t => badges.push(el('span', { class: `tag tag-${t.toLowerCase()}`, text: t })));
     body.appendChild(el('div', { class: 'd-header' }, [icon, el('div', {}, [
-        el('h2', { text: c.name || `Chain ${c.chainId}` }),
-        el('div', { class: 'd-badges' }, badges)
+        el('h2', { text: c.name || `Chain ${c.chainId}` }), el('div', { class: 'd-badges' }, badges)
     ])]));
 
     const content = el('div', { class: 'd-content' });
     content.appendChild(detailRow('Native currency', el('span', { text: c.nativeCurrency ? `${c.nativeCurrency.name} (${c.nativeCurrency.symbol})` : '—' })));
-
-    // relations
     if (e.l1Parent != null) content.appendChild(detailRow('L1 / parent', chainLink(e.l1Parent)));
     if (e.mainnet != null) content.appendChild(detailRow('Mainnet', chainLink(e.mainnet)));
     if (e.l2Children?.length) content.appendChild(detailRow(`L2 / L3 (${e.l2Children.length})`, e.l2Children.slice(0, 30).map(chainLink)));
     if (e.testnetChildren?.length) content.appendChild(detailRow(`Testnets (${e.testnetChildren.length})`, e.testnetChildren.slice(0, 30).map(chainLink)));
-
-    // L2BEAT
-    if (l2b) {
-        content.appendChild(detailRow('L2BEAT', el('div', { class: 'l2b-grid' }, [
-            el('span', { class: 'pill pill-stage', text: l2b.stage || '—' }),
-            el('span', { class: 'muted', text: l2b.category || '' }),
-            el('span', { class: 'strong', text: fmtUsd(l2b.tvs) }),
-            l2b.daLayer ? el('span', { class: 'muted', text: `DA: ${l2b.daLayer}` }) : null
-        ])));
-    }
-
-    // status page
-    if (sp) {
-        const host = safeHost(sp.url);
-        content.appendChild(detailRow('Status page', el('a', { href: sp.url, target: '_blank', rel: 'noopener', text: host || sp.name })));
-    }
-
-    // explorers
-    if (c.explorers?.length) {
-        content.appendChild(detailRow('Explorers', c.explorers.map(x => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name || safeHost(x.url) }))));
-    }
-    // website
-    if (c.infoURL) {
-        const host = safeHost(c.infoURL);
-        content.appendChild(detailRow('Website', host ? el('a', { href: c.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: c.infoURL })));
-    }
-    // slip44
+    if (l2b) content.appendChild(detailRow('L2BEAT', el('div', { class: 'l2b-grid' }, [
+        el('span', { class: 'pill pill-stage', text: l2b.stage || '—' }), el('span', { class: 'muted', text: l2b.category || '' }),
+        el('span', { class: 'strong', text: fmtUsd(l2b.tvs) }), l2b.daLayer ? el('span', { class: 'muted', text: `DA: ${l2b.daLayer}` }) : null
+    ])));
+    if (sp) { const host = safeHost(sp.url); content.appendChild(detailRow('Status page', el('a', { href: sp.url, target: '_blank', rel: 'noopener', text: host || sp.name }))); }
+    if (c.explorers?.length) content.appendChild(detailRow('Explorers', c.explorers.map(x => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name || safeHost(x.url) }))));
+    if (c.infoURL) { const host = safeHost(c.infoURL); content.appendChild(detailRow('Website', host ? el('a', { href: c.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: c.infoURL }))); }
     if (c.slip44 != null) content.appendChild(detailRow('SLIP-44', el('span', { class: 'mono', text: String(c.slip44) })));
 
-    // RPC endpoints (static list) + live health placeholder
     const rpcBox = el('div', { class: 'd-rpc' }, [el('div', { class: 'd-rpc-loading', text: 'Checking RPC health…' })]);
     content.appendChild(detailRow('RPC endpoints', rpcBox));
-
-    // clients placeholder
     const clientBox = el('div', { class: 'd-clients muted', text: '—' });
     content.appendChild(detailRow('Clients (live)', clientBox));
 
     body.appendChild(content);
-    drawer.classList.remove('hidden');
-
+    document.getElementById('detailDrawer').classList.remove('hidden');
     loadLiveRpc(chainId, rpcBox);
     loadLiveClients(chainId, clientBox);
 }
-
 async function loadLiveRpc(chainId, box) {
-    const staticUrls = (state.byId.get(chainId)?.rpc || [])
-        .map(u => typeof u === 'string' ? u : u?.url)
-        .filter(u => u && u.startsWith('http') && !u.includes('${'));
+    const staticUrls = (state.byId.get(chainId)?.rpc || []).map(u => typeof u === 'string' ? u : u?.url).filter(u => u && u.startsWith('http') && !u.includes('${'));
     let results = [];
-    try {
-        const d = await api(`/rpc-monitor/${chainId}`);
-        results = d.results || d.endpoints || (Array.isArray(d) ? d : []);
-    } catch { /* fall back to static list */ }
-
+    try { const d = await api(`/rpc-monitor/${chainId}`); results = d.results || d.endpoints || (Array.isArray(d) ? d : []); } catch { /* noop */ }
     box.textContent = '';
     if (results.length) {
         for (const r of results.slice(0, 12)) {
             const ok = r.status === 'working' || r.ok === true;
-            const host = safeHost(r.url) || r.url;
-            const meta = [r.blockNumber || r.blockHeight ? `#${r.blockNumber ?? r.blockHeight}` : null, r.clientVersion ? String(r.clientVersion).split('/')[0] : null].filter(Boolean).join(' · ');
-            box.appendChild(el('div', { class: 'rpc-row' }, [
-                el('span', { class: `dot ${ok ? 'dot-ok' : 'dot-bad'}` }),
-                el('span', { class: 'rpc-host mono', text: host }),
-                el('span', { class: 'rpc-meta muted', text: meta })
-            ]));
+            const meta = [(r.blockNumber || r.blockHeight) ? `#${r.blockNumber ?? r.blockHeight}` : null, r.clientVersion ? String(r.clientVersion).split('/')[0] : null].filter(Boolean).join(' · ');
+            box.appendChild(el('div', { class: 'rpc-row' }, [el('span', { class: `dot ${ok ? 'dot-ok' : 'dot-bad'}` }), el('span', { class: 'rpc-host mono', text: safeHost(r.url) || r.url }), el('span', { class: 'rpc-meta muted', text: meta })]));
         }
     } else if (staticUrls.length) {
         for (const u of staticUrls.slice(0, 12)) box.appendChild(el('div', { class: 'rpc-row' }, [el('span', { class: 'dot' }), el('span', { class: 'rpc-host mono', text: safeHost(u) || u })]));
-    } else {
-        box.appendChild(el('span', { class: 'muted', text: 'No public endpoints.' }));
-    }
+    } else box.appendChild(el('span', { class: 'muted', text: 'No public endpoints.' }));
 }
-
 async function loadLiveClients(chainId, box) {
     try {
         const d = await api(`/clients/${chainId}`);
         const clients = d.clients || [];
         if (!clients.length) { box.textContent = 'No client data yet.'; return; }
-        box.textContent = '';
-        box.classList.remove('muted');
-        for (const cl of clients) {
-            box.appendChild(el('span', { class: 'client-pill', text: `${cl.name}${cl.nodeCount ? ` ×${cl.nodeCount}` : ''}` }));
-        }
+        box.textContent = ''; box.classList.remove('muted');
+        for (const cl of clients) box.appendChild(el('span', { class: 'client-pill', text: `${cl.name}${cl.nodeCount ? ` ×${cl.nodeCount}` : ''}` }));
     } catch { box.textContent = '—'; }
 }
-
-// init table headers once DOM is parsed (sections exist at load)
-initChainsTableHeader();
-initScalingHeader();

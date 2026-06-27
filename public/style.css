@@ -222,10 +222,54 @@ a:hover { text-decoration: underline; }
 .d-clients { display: flex; flex-wrap: wrap; gap: 6px; }
 .client-pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; background: rgba(139, 92, 246, 0.16); color: #c4b5fd; }
 
+/* ─── Scaling chart (TVS bars) ─── */
+.scaling-chart { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.bar-row { display: grid; grid-template-columns: 180px 1fr 72px; gap: 12px; align-items: center; cursor: pointer; padding: 3px 0; }
+.bar-row:hover .bar-label { color: var(--text-main); }
+.bar-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-track { height: 16px; background: rgba(255, 255, 255, 0.04); border-radius: 5px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 5px; min-width: 2px; transition: width .3s; }
+.bar-value { font-size: 12px; text-align: right; color: var(--text-main); }
+
+/* ─── Incidents calendar ─── */
+.calendar { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 6px; margin-bottom: 22px; }
+.cal-cell { aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--panel-border); background: rgba(255, 255, 255, 0.02); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.cal-cell.has { cursor: pointer; border-color: rgba(139, 92, 246, 0.4); }
+.cal-cell.has:hover { filter: brightness(1.25); }
+.cal-cell.sel { outline: 2px solid var(--accent); outline-offset: -1px; }
+.cal-day { font-size: 11px; color: var(--text-muted); }
+.cal-cell.has .cal-day { color: var(--text-main); }
+.cal-count { font-size: 12px; font-weight: 700; color: #c4b5fd; }
+
+/* ─── Incidents list ─── */
+.incidents-list { display: flex; flex-direction: column; gap: 8px; }
+.incident-card { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: 1px solid var(--panel-border); border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.02); }
+.incident-card:hover { background: rgba(255, 255, 255, 0.05); text-decoration: none; }
+.incident-body { min-width: 0; flex: 1; }
+.incident-title { font-size: 13px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.incident-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.incident-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.incident-dur { font-size: 11px; color: var(--text-muted); }
+.incident-group-head { display: flex; align-items: center; gap: 10px; margin: 18px 0 8px; }
+.net-icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
+.net-icon.sm { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+
+/* incident status pills */
+.st-resolved, .st-completed { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
+.st-monitoring, .st-verifying { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+.st-identified, .st-update { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+.st-investigating, .st-inprogress, .st-scheduled { background: rgba(239, 68, 68, 0.16); color: #fca5a5; }
+
 /* ─── Responsive ─── */
 @media (max-width: 860px) {
-    #appbar { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 10px; --appbar-h: 112px; }
+    #appbar { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 10px; --appbar-h: 126px; }
+    .appbar-brand { order: 1; }
+    .tabs { order: 2; margin-left: auto; overflow-x: auto; max-width: 62%; -webkit-overflow-scrolling: touch; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { white-space: nowrap; }
     .search-box { order: 3; max-width: none; flex-basis: 100%; }
-    .tabs { margin-left: 0; }
-    .status-columns { grid-template-columns: 1fr; }
+    .view-inner { padding: 18px 14px 80px; }
+    .bar-row { grid-template-columns: 110px 1fr 60px; gap: 8px; }
+    .d-row { grid-template-columns: 96px 1fr; }
+    .calendar { grid-template-columns: repeat(7, 1fr); }
 }
