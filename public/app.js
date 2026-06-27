@@ -522,6 +522,42 @@ function parseIncidentStatus(ev) {
     if (m2) return m2[1].trim();
     return null;
 }
+// Parse one <small> timestamp out of an HTML block ("Jun 26, 20:03 UTC").
+function smallTimeIn(html, year) {
+    const m = html.match(/<small>([\s\S]*?)<\/small>/i);
+    if (!m) return null;
+    const month = (m[1].match(/[A-Za-z]{3,}/) || [])[0];
+    const nums = m[1].match(/\d{1,2}:\d{2}|\d{1,2}/g) || [];
+    const day = nums.find(n => !n.includes(':'));
+    const time = nums.find(n => n.includes(':'));
+    if (!month || !day || !time) return null;
+    const d = new Date(`${month} ${day} ${year} ${time}:00 UTC`);
+    return Number.isNaN(d.getTime()) ? null : d.getTime();
+}
+// Full lifecycle of an incident, oldest → newest: [{ status, at }].
+// statuspage.io summaries list one <p> per update (newest first), each with a
+// <strong>STATUS</strong> and a <small>time</small>. Consecutive duplicate
+// statuses are collapsed so the track reads investigating → identified → … .
+function parseIncidentUpdates(ev) {
+    const s = ev.summary || '';
+    const year = (ev.publishedAt ? new Date(ev.publishedAt) : new Date()).getUTCFullYear();
+    const re = new RegExp(`<strong>\\s*(${STATUS_WORDS.join('|')})\\s*</strong>`, 'i');
+    const raw = [];
+    for (const block of s.split(/<\/p>/i)) {
+        const m = block.match(re);
+        if (m) raw.push({ status: m[1], at: smallTimeIn(block, year) });
+    }
+    raw.reverse(); // oldest → newest
+    const updates = [];
+    for (const u of raw) {
+        const prev = updates[updates.length - 1];
+        if (prev && prev.status.toLowerCase() === u.status.toLowerCase()) { if (u.at) prev.at = prev.at ?? u.at; continue; }
+        updates.push({ ...u });
+    }
+    if (updates.length) return updates;
+    const single = parseIncidentStatus(ev);
+    return single ? [{ status: single, at: ev.publishedAt ? Date.parse(ev.publishedAt) || null : null }] : [];
+}
 function parseIncidentTimes(ev) {
     const s = ev.summary || '';
     const year = (ev.publishedAt ? new Date(ev.publishedAt) : new Date()).getUTCFullYear();
@@ -560,6 +596,7 @@ function incidentModel(ev) {
         url: ev.url,
         when,
         status: parseIncidentStatus(ev),
+        updates: parseIncidentUpdates(ev),
         durationMs: times ? times.end - times.start : null,
         netName: chain?.name || ev.statusPage?.name || ev.statusPage?.id || 'Unknown',
         chainId: chain?.chainId ?? null,
@@ -616,19 +653,31 @@ function renderCalendar() {
     }
 }
 
+function stateTrack(updates) {
+    const track = el('div', { class: 'incident-track' });
+    updates.forEach((u, i) => {
+        if (i > 0) track.appendChild(el('span', { class: 'track-arrow', text: '→' }));
+        track.appendChild(el('span', {
+            class: `track-step st-${u.status.toLowerCase().replace(/\s+/g, '')}`,
+            text: u.status,
+            title: u.at ? new Date(u.at).toLocaleString() : ''
+        }));
+    });
+    return track;
+}
 function incidentCard(it) {
     const meta = [it.netName, it.when ? it.when.toLocaleString() : null].filter(Boolean);
     const dur = fmtDuration(it.durationMs);
+    const body = [
+        el('div', { class: 'incident-title', text: it.title }),
+        el('div', { class: 'incident-meta', text: meta.join(' · ') })
+    ];
+    if (it.updates?.length) body.push(stateTrack(it.updates));
+    else if (it.status) body.push(el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }));
     return el('a', { class: 'incident-card', href: it.url || '#', target: '_blank', rel: 'noopener' }, [
         networkIcon(it.netName, iconColorFor(it.chainId)),
-        el('div', { class: 'incident-body' }, [
-            el('div', { class: 'incident-title', text: it.title }),
-            el('div', { class: 'incident-meta', text: meta.join(' · ') })
-        ]),
-        el('div', { class: 'incident-side' }, [
-            it.status ? el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }) : null,
-            dur ? el('span', { class: 'incident-dur', text: dur }) : null
-        ])
+        el('div', { class: 'incident-body' }, body),
+        el('div', { class: 'incident-side' }, [dur ? el('span', { class: 'incident-dur', text: dur }) : null])
     ]);
 }
 
