@@ -76,10 +76,19 @@ function networkIcon(label, color, cls = 'net-icon') {
     return n;
 }
 
-async function api(path) {
-    const res = await fetch(`${API_BASE}${path}`, { headers: { accept: 'application/json' } });
-    if (!res.ok) throw new Error(`${path} → ${res.status}`);
-    return res.json();
+async function api(path, { timeoutMs = 25000 } = {}) {
+    // fetch() has no built-in timeout — a stalled response (e.g. the multi-MB
+    // /export over a flaky connection) would otherwise hang forever and the
+    // page would never fall back or surface an error. Abort so callers can.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+        const res = await fetch(`${API_BASE}${path}`, { headers: { accept: 'application/json' }, signal: ctrl.signal });
+        if (!res.ok) throw new Error(`${path} → ${res.status}`);
+        return await res.json();
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 // ─────────────────────────────── bootstrap ───────────────────────────────
@@ -112,8 +121,13 @@ async function loadStatsLine() {
 
 async function loadBulk() {
     let payload;
-    try { payload = await api('/export'); }
-    catch {
+    // Try the live export, retry once (transient tunnel blips happen), then
+    // fall back to the checked-in snapshot so the dashboard still renders.
+    for (let attempt = 0; attempt < 2 && !payload; attempt++) {
+        try { payload = await api('/export'); }
+        catch { if (attempt === 0) await new Promise(r => setTimeout(r, 1200)); }
+    }
+    if (!payload) {
         try { payload = await (await fetch('export.json')).json(); }
         catch { return graphLoadError(); }
     }
