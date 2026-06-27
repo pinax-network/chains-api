@@ -90,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initDrawer();
     initIncidentControls();
     initChainsTableHeader();
+    initAppbarHeight();     // keep --appbar-h in sync with the real bar height
     applyUrlState();        // restore view + ?q= immediately (before data loads)
     // Start the live incidents feed immediately — it must NOT wait on the heavy
     // /export bulk load (13MB + 3D graph build) or it appears stuck.
@@ -160,6 +161,19 @@ function buildRelations() {
         }
     }
     for (const e of state.rel.values()) { e.l2Children = [...new Set(e.l2Children)]; e.testnetChildren = [...new Set(e.testnetChildren)]; }
+}
+
+// ─── keep --appbar-h equal to the real (wrapping) app-bar height ───
+// The bar is position:fixed; content uses padding-top:var(--appbar-h). A fixed
+// guess overlaps on mobile when the bar wraps to extra rows (long stats line,
+// scrolled tabs). Measuring it guarantees content always clears the bar.
+function initAppbarHeight() {
+    const bar = document.getElementById('appbar');
+    if (!bar) return;
+    const sync = () => document.documentElement.style.setProperty('--appbar-h', `${bar.offsetHeight}px`);
+    sync();
+    window.addEventListener('resize', sync);
+    if ('ResizeObserver' in window) new ResizeObserver(sync).observe(bar);
 }
 
 // ─────────────────────────────── tabs ───────────────────────────────
@@ -477,7 +491,9 @@ async function loadStatusPages() {
 
 // ─────────────────────────────── Incidents (live WS) ───────────────────────────────
 const STATUS_WORDS = ['Resolved', 'Completed', 'Monitoring', 'Verifying', 'Update', 'Identified', 'Investigating', 'Scheduled', 'In progress'];
-const incidents = { items: [], seen: new Set(), ws: null, retries: 0, groupBy: 'flat', dayFilter: null };
+// Statuses that close an incident/maintenance — used to know it's done.
+const CLOSED_STATUSES = new Set(['resolved', 'completed', 'closed']);
+const incidents = { items: [], byKey: new Map(), ws: null, retries: 0, groupBy: 'flat', dayFilter: null, category: 'all' };
 
 function parseIncidentStatus(ev) {
     const s = ev.summary || '';
@@ -486,6 +502,15 @@ function parseIncidentStatus(ev) {
     const m2 = s.match(/Status:\s*([a-z ]+?)(?:\s*\||$)/i);
     if (m2) return m2[1].trim();
     return null;
+}
+// Incident vs scheduled maintenance. Incident lifecycle words win (so an
+// "Investigating…" event isn't miscategorised); otherwise maintenance/upgrade
+// signals mark it scheduled.
+function classifyKind(ev) {
+    const blob = `${ev.title || ''} ${ev.summary || ''}`;
+    if (/\b(Investigating|Identified|Monitoring)\b/i.test(blob)) return 'incident';
+    if (/\b(Scheduled|Maintenance|Verifying|Completed|In progress)\b/i.test(blob) || /maintenance|upgrade|planned/i.test(ev.title || '')) return 'scheduled';
+    return 'incident';
 }
 function parseIncidentTimes(ev) {
     const s = ev.summary || '';
@@ -512,48 +537,84 @@ function parseIncidentTimes(ev) {
     if (iso.length >= 2) return { start: Math.min(...iso), end: Math.max(...iso) };
     return null;
 }
+// One incident = one block, keyed by status page + title. The feed emits a
+// separate event per poll/update for the same incident; we merge them, keep the
+// latest status, and measure the open span across all the events we've seen.
+function incidentKey(ev) {
+    const sp = ev.statusPage?.id || (ev.chains?.[0]?.chainId ?? 'unknown');
+    return `${sp}|${(ev.title || '').toLowerCase().trim()}`;
+}
+function eventTimeMs(ev) {
+    const t = Date.parse(ev.publishedAt || ev.updatedAt || '');
+    return Number.isNaN(t) ? null : t;
+}
 function incidentModel(ev) {
     const chain = ev.chains?.[0];
-    const raw = ev.publishedAt || ev.updatedAt;
-    const times = parseIncidentTimes(ev);
-    let when = raw ? new Date(raw) : null;
-    if (when && Number.isNaN(when.getTime())) when = null;
-    if (!when && times) when = new Date(times.end);
+    const whenMs = eventTimeMs(ev);
     return {
-        id: ev.id || ev.url || ev.title,
+        key: incidentKey(ev),
         title: ev.title || '(untitled)',
         url: ev.url,
-        when,
+        whenMs,
+        firstSeen: whenMs,
+        lastSeen: whenMs,
         status: parseIncidentStatus(ev),
-        durationMs: times ? times.end - times.start : null,
+        kind: classifyKind(ev),
+        durationMs: (() => { const t = parseIncidentTimes(ev); return t ? t.end - t.start : null; })(),
         netName: chain?.name || ev.statusPage?.name || ev.statusPage?.id || 'Unknown',
         chainId: chain?.chainId ?? null,
         spId: ev.statusPage?.id || (chain?.chainId != null ? String(chain.chainId) : 'unknown')
     };
 }
-function dayKey(d) { return d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null; }
+function dayKey(ms) { return ms != null && !Number.isNaN(ms) ? new Date(ms).toISOString().slice(0, 10) : null; }
 
 function addIncidents(events) {
-    let added = false;
+    let changed = false;
     for (const ev of events) {
         const m = incidentModel(ev);
-        if (!m.id || incidents.seen.has(m.id)) continue;
-        incidents.seen.add(m.id); incidents.items.push(m); added = true;
+        const existing = incidents.byKey.get(m.key);
+        if (!existing) { incidents.byKey.set(m.key, m); changed = true; continue; }
+        // merge into the single block for this incident
+        if (m.whenMs != null) {
+            existing.firstSeen = Math.min(existing.firstSeen ?? m.whenMs, m.whenMs);
+            existing.lastSeen = Math.max(existing.lastSeen ?? m.whenMs, m.whenMs);
+            if (existing.whenMs == null || m.whenMs >= existing.whenMs) { // newest event wins for current status
+                existing.whenMs = m.whenMs; existing.status = m.status; existing.url = m.url; existing.kind = m.kind;
+            }
+        }
+        changed = true;
     }
-    if (!added) return;
-    incidents.items.sort((a, b) => (b.when?.getTime() || 0) - (a.when?.getTime() || 0));
-    if (incidents.items.length > 500) incidents.items.length = 500;
+    if (!changed) return;
+    for (const m of incidents.byKey.values()) {
+        // Prefer the observed open span (first→last update); fall back to the
+        // duration parsed from a single summary.
+        if (m.firstSeen != null && m.lastSeen != null && m.lastSeen > m.firstSeen) m.durationMs = m.lastSeen - m.firstSeen;
+    }
+    incidents.items = [...incidents.byKey.values()].sort((a, b) => (b.whenMs || 0) - (a.whenMs || 0));
     try { renderIncidents(); } catch (err) { console.error('incident render failed', err); }
+}
+
+// Items after the active category filter (incidents / scheduled / all).
+function visibleIncidents() {
+    if (incidents.category === 'all') return incidents.items;
+    return incidents.items.filter(it => it.kind === incidents.category);
 }
 
 function initIncidentControls() {
     document.getElementById('grpFlat')?.addEventListener('click', () => setGroupBy('flat'));
     document.getElementById('grpNetwork')?.addEventListener('click', () => setGroupBy('network'));
+    document.querySelectorAll('#incidentCategory .chip').forEach(chip =>
+        chip.addEventListener('click', () => setCategory(chip.dataset.cat)));
 }
 function setGroupBy(mode) {
     incidents.groupBy = mode;
     document.getElementById('grpFlat')?.classList.toggle('active', mode === 'flat');
     document.getElementById('grpNetwork')?.classList.toggle('active', mode === 'network');
+    renderIncidentList();
+}
+function setCategory(cat) {
+    incidents.category = cat;
+    document.querySelectorAll('#incidentCategory .chip').forEach(c => c.classList.toggle('active', c.dataset.cat === cat));
     renderIncidents();
 }
 
@@ -565,13 +626,13 @@ function renderIncidents() {
 function renderCalendar() {
     const cal = document.getElementById('incidentCalendar'); if (!cal) return;
     const counts = new Map();
-    for (const it of incidents.items) { const k = dayKey(it.when); if (k) counts.set(k, (counts.get(k) || 0) + 1); }
+    for (const it of visibleIncidents()) { const k = dayKey(it.whenMs); if (k) counts.set(k, (counts.get(k) || 0) + 1); }
     const max = Math.max(1, ...counts.values());
     cal.textContent = '';
     const today = new Date(); today.setUTCHours(0, 0, 0, 0);
     for (let i = 29; i >= 0; i--) {
         const d = new Date(today); d.setUTCDate(today.getUTCDate() - i);
-        const k = dayKey(d); const n = counts.get(k) || 0;
+        const k = d.toISOString().slice(0, 10); const n = counts.get(k) || 0;
         const cell = el('div', { class: `cal-cell${n ? ' has' : ''}${incidents.dayFilter === k ? ' sel' : ''}`, title: `${k}: ${n} incident${n === 1 ? '' : 's'}` }, [
             el('span', { class: 'cal-day', text: String(d.getUTCDate()) }),
             n ? el('span', { class: 'cal-count', text: String(n) }) : null
@@ -582,30 +643,36 @@ function renderCalendar() {
 }
 
 function incidentCard(it) {
-    const meta = [it.netName, it.when ? it.when.toLocaleString() : null].filter(Boolean);
+    const open = it.status && !CLOSED_STATUSES.has(it.status.toLowerCase());
+    const when = it.whenMs != null ? new Date(it.whenMs).toLocaleString() : null;
+    const meta = [it.netName, when, open ? 'ongoing' : null].filter(Boolean);
     const dur = fmtDuration(it.durationMs);
-    return el('a', { class: 'incident-card', href: it.url || '#', target: '_blank', rel: 'noopener' }, [
+    const side = [];
+    if (it.status) side.push(el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }));
+    if (dur) side.push(el('span', { class: 'incident-dur', text: dur }));
+    return el('a', { class: `incident-card${open ? ' open' : ''}`, href: it.url || '#', target: '_blank', rel: 'noopener' }, [
         networkIcon(it.netName, iconColorFor(it.chainId)),
         el('div', { class: 'incident-body' }, [
-            el('div', { class: 'incident-title', text: it.title }),
+            el('div', { class: 'incident-title' }, [
+                it.kind === 'scheduled' ? el('span', { class: 'kind-tag', text: 'Scheduled' }) : null,
+                el('span', { text: it.title })
+            ]),
             el('div', { class: 'incident-meta', text: meta.join(' · ') })
         ]),
-        el('div', { class: 'incident-side' }, [
-            it.status ? el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }) : null,
-            dur ? el('span', { class: 'incident-dur', text: dur }) : null
-        ])
+        el('div', { class: 'incident-side' }, side)
     ]);
 }
 
 function renderIncidentList() {
     const list = document.getElementById('incidentsList'); if (!list) return;
-    let items = incidents.items;
-    if (incidents.dayFilter) items = items.filter(it => dayKey(it.when) === incidents.dayFilter);
+    let items = visibleIncidents();
+    if (incidents.dayFilter) items = items.filter(it => dayKey(it.whenMs) === incidents.dayFilter);
     if (searchQuery) items = items.filter(it => it.netName?.toLowerCase().includes(searchQuery) || it.title?.toLowerCase().includes(searchQuery) || String(it.chainId).includes(searchQuery));
+    const noun = incidents.category === 'scheduled' ? 'maintenance' : 'incident';
     document.getElementById('incidentsCount').textContent =
-        `${items.length} event${items.length === 1 ? '' : 's'}${incidents.dayFilter ? ` on ${incidents.dayFilter}` : ''}${searchQuery ? ` · “${searchQuery}”` : ''}`;
+        `${items.length} ${noun}${items.length === 1 ? '' : 's'}${incidents.dayFilter ? ` on ${incidents.dayFilter}` : ''}${searchQuery ? ` · “${searchQuery}”` : ''}`;
     list.textContent = '';
-    if (!items.length) { list.appendChild(el('div', { class: 'feed-empty', text: 'No incidents in this range.' })); return; }
+    if (!items.length) { list.appendChild(el('div', { class: 'feed-empty', text: 'Nothing in this range.' })); return; }
 
     if (incidents.groupBy === 'network') {
         const groups = new Map();
