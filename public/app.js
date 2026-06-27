@@ -472,11 +472,19 @@ function parseIncidentTimes(ev) {
     const s = ev.summary || '';
     const year = (ev.publishedAt ? new Date(ev.publishedAt) : new Date()).getUTCFullYear();
     const stamps = [...s.matchAll(/<small>([\s\S]*?)<\/small>/gi)]
-        .map(x => x[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').replace(',', '').trim()) // "Jun 26 20:03 UTC"
-        .map(t => {
-            const mm = t.match(/^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})/);
-            if (!mm) return null;
-            const d = new Date(`${mm[1]} ${mm[2]} ${year} ${mm[3]}:${mm[4]}:00 UTC`);
+        .map(x => {
+            // Pull the visible tokens (month word, day, HH:MM) directly from the
+            // <small> content — e.g. "Jun <var…>26</var>, <var…>20:03</var> UTC".
+            // We only need to parse a date, so extract tokens instead of
+            // stripping tags (tag-stripping is brittle and only used here for
+            // a non-HTML purpose).
+            const inner = x[1];
+            const month = (inner.match(/[A-Za-z]{3,}/) || [])[0];
+            const nums = inner.match(/\d{1,2}:\d{2}|\d{1,2}/g) || [];
+            const day = nums.find(n => !n.includes(':'));
+            const time = nums.find(n => n.includes(':'));
+            if (!month || !day || !time) return null;
+            const d = new Date(`${month} ${day} ${year} ${time}:00 UTC`);
             return Number.isNaN(d.getTime()) ? null : d.getTime();
         }).filter(v => v != null);
     if (stamps.length >= 2) return { start: Math.min(...stamps), end: Math.max(...stamps) };
