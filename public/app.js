@@ -130,7 +130,7 @@ async function loadBulk() {
     }
     // status data (independent of bulk)
     loadStatusPages();
-    loadStatusFeed();
+    connectStatusFeed();
 }
 
 function graphLoadError() {
@@ -515,26 +515,79 @@ function renderStatusPageList(q) {
     if (!items.length) list.appendChild(el('div', { class: 'feed-empty', text: 'No matching status pages.' }));
 }
 
-async function loadStatusFeed() {
+// Live status feed over WebSocket: chains-status-news streams `status.item`
+// events and backfills recent ones via ?replay=N on connect. We dedupe by id
+// and fall back to the REST /events endpoint only if the socket can't open.
+const statusFeed = { items: [], seen: new Set(), ws: null, retries: 0, connected: false, restTried: false };
+
+function feedItemNode(it) {
+    const host = safeHost(it.url);
+    const when = it.publishedAt || it.updatedAt || it.emittedAt;
+    return el('a', { class: 'feed-item', href: it.url || '#', target: '_blank', rel: 'noopener' }, [
+        el('div', { class: 'feed-title', text: it.title || '(untitled)' }),
+        el('div', { class: 'feed-meta', text: [it.statusPage?.id || it.statusPage?.name, when ? new Date(when).toLocaleString() : null, host].filter(Boolean).join(' · ') })
+    ]);
+}
+
+function renderStatusFeed() {
     const feed = document.getElementById('statusFeed');
+    if (!feed) return;
+    feed.textContent = '';
+    if (!statusFeed.items.length) { feed.appendChild(el('div', { class: 'feed-empty', text: 'No recent status updates.' })); return; }
+    for (const it of statusFeed.items.slice(0, 60)) feed.appendChild(feedItemNode(it));
+}
+
+function addStatusItems(items) {
+    let added = false;
+    for (const it of items) {
+        const key = it.id || it.url || it.title;
+        if (!key || statusFeed.seen.has(key)) continue;
+        statusFeed.seen.add(key);
+        statusFeed.items.push(it);
+        added = true;
+    }
+    if (!added) return;
+    statusFeed.items.sort((a, b) => new Date(b.publishedAt || b.updatedAt || b.emittedAt || 0) - new Date(a.publishedAt || a.updatedAt || a.emittedAt || 0));
+    if (statusFeed.items.length > 200) statusFeed.items.length = 200;
+    renderStatusFeed();
+}
+
+function connectStatusFeed() {
+    const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=40`;
+    let ws;
+    try { ws = new WebSocket(wsUrl); } catch { return statusFeedRestFallback(); }
+    statusFeed.ws = ws;
+
+    ws.onopen = () => { statusFeed.connected = true; statusFeed.retries = 0; };
+    ws.onmessage = ev => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === 'status.item' && m.item) addStatusItems([m.item]);
+    };
+    ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
+    ws.onclose = () => {
+        statusFeed.ws = null;
+        // If we never got anything over WS, show REST results once so the panel isn't empty.
+        if (!statusFeed.items.length && !statusFeed.restTried) statusFeedRestFallback();
+        if (statusFeed.retries < 6) {
+            const delay = Math.min(1000 * 2 ** statusFeed.retries, 20000);
+            statusFeed.retries++;
+            setTimeout(connectStatusFeed, delay);
+        }
+    };
+}
+
+async function statusFeedRestFallback() {
+    statusFeed.restTried = true;
     try {
         const res = await fetch(`${STATUS_NEWS_BASE}/events?limit=40`, { headers: { accept: 'application/json' } });
         if (!res.ok) throw new Error(res.status);
         const d = await res.json();
-        const items = d.events || d.items || [];
-        feed.textContent = '';
-        if (!items.length) { feed.appendChild(el('div', { class: 'feed-empty', text: 'No recent status updates.' })); return; }
-        for (const it of items) {
-            const host = safeHost(it.url);
-            const when = it.publishedAt || it.updatedAt;
-            feed.appendChild(el('a', { class: 'feed-item', href: it.url || '#', target: '_blank', rel: 'noopener' }, [
-                el('div', { class: 'feed-title', text: it.title || '(untitled)' }),
-                el('div', { class: 'feed-meta', text: [it.statusPage?.id || it.statusPage?.name, when ? new Date(when).toLocaleString() : null, host].filter(Boolean).join(' · ') })
-            ]));
-        }
+        addStatusItems(d.events || d.items || []);
     } catch {
-        feed.textContent = '';
-        feed.appendChild(el('div', { class: 'feed-empty', text: 'Live status feed unavailable (chains-status-news).' }));
+        if (!statusFeed.items.length) {
+            const feed = document.getElementById('statusFeed');
+            if (feed) { feed.textContent = ''; feed.appendChild(el('div', { class: 'feed-empty', text: 'Live status feed unavailable (chains-status-news).' })); }
+        }
     }
 }
 
