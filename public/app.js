@@ -17,7 +17,7 @@ const ALL_SOURCES = ['chains', 'chainlist', 'theGraph', 'slip44', 'l2beat'];
 
 const state = {
     chains: [], byId: new Map(), rel: new Map(),
-    l2beat: new Map(), l2beatMeta: null,
+    l2beat: new Map(), l2beatProjects: [], l2beatMeta: null,
     statusPagesByChain: new Map(),
     lastUpdated: null
 };
@@ -90,7 +90,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initDrawer();
     initIncidentControls();
     initChainsTableHeader();
-    initScalingHeader();
     initAppbarHeight();     // keep --appbar-h in sync with the real bar height
     applyUrlState();        // restore view + ?q= immediately (before data loads)
     // Start the live incidents feed immediately — it must NOT wait on the heavy
@@ -101,12 +100,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('popstate', applyUrlState);
 });
 
+let stats = null;
 async function loadStatsLine() {
     try {
-        const s = await api('/stats');
+        stats = await api('/stats');
         document.getElementById('statsLine').textContent =
-            `${s.totalChains} chains · ${s.totalMainnets} mainnets · ${s.totalL2s} L2s · ${s.totalTestnets} testnets`;
-        renderRpcStatCards(s);
+            `${stats.totalChains} chains · ${stats.totalMainnets} mainnets · ${stats.totalL2s} L2s · ${stats.totalTestnets} testnets`;
+        renderSummaryCards();
     } catch { /* noop */ }
 }
 
@@ -122,12 +122,13 @@ async function loadBulk() {
     state.lastUpdated = data.lastUpdated ?? null;
     state.byId = new Map(state.chains.map(c => [c.chainId, c]));
     state.l2beatMeta = data.l2beat ? { source: data.l2beat.source, count: (data.l2beat.projects || []).length } : null;
-    for (const p of data.l2beat?.projects ?? []) if (p.chainId != null) state.l2beat.set(p.chainId, p);
+    state.l2beatProjects = data.l2beat?.projects ?? [];
+    for (const p of state.l2beatProjects) if (p.chainId != null) state.l2beat.set(p.chainId, p);
 
     buildRelations();
     buildGraph();
+    renderSummaryCards();   // total TVS needs the L2BEAT projects just loaded
     renderScalingChart();
-    renderScalingView();
     renderChainsView();
     if (!document.getElementById('statsLine').textContent.includes('chains')) {
         document.getElementById('statsLine').textContent = `${state.chains.length} chains loaded`;
@@ -371,15 +372,27 @@ function focusNode(node) {
 }
 function focusNodeById(id) { const n = filteredData.nodes.find(x => x.id === id) || graphData.nodes.find(x => x.id === id); if (n) focusNode(n); }
 
-// ─────────────────────────────── RPC health cards ───────────────────────────────
-function renderRpcStatCards(s) {
-    const wrap = document.getElementById('rpcStatCards');
-    if (!wrap || !s?.rpc) return;
+// ─────────────────────────────── summary metric strip ───────────────────────────────
+function totalTvs() { return state.l2beatProjects.reduce((s, p) => s + (p.tvs || 0), 0); }
+function renderSummaryCards() {
+    const wrap = document.getElementById('summaryCards'); if (!wrap) return;
+    const s = stats || {};
+    const num = v => (v != null ? Number(v).toLocaleString() : '—');
+    const tvs = totalTvs();
+    const cards = [
+        { label: 'Networks', value: num(s.totalChains ?? state.chains.length) },
+        { label: 'Mainnets', value: num(s.totalMainnets) },
+        { label: 'L2s', value: num(s.totalL2s) },
+        { label: 'Testnets', value: num(s.totalTestnets) },
+        { label: 'RPC working', value: s.rpc ? `${s.rpc.healthPercent}%` : '—', sub: s.rpc ? `${num(s.rpc.working)} / ${num(s.rpc.tested)}` : '', tone: 'good' },
+        { label: 'Total TVS', value: tvs ? fmtUsd(tvs) : '—', sub: state.l2beatProjects.length ? `${state.l2beatProjects.length} L2BEAT projects` : '' }
+    ];
     wrap.textContent = '';
-    for (const c of [{ label: 'Endpoints tested', value: s.rpc.tested?.toLocaleString() ?? '—' },
-                     { label: 'Working', value: s.rpc.working?.toLocaleString() ?? '—', tone: 'good' }]) {
+    for (const c of cards) {
         wrap.appendChild(el('div', { class: `stat-card ${c.tone || ''}` }, [
-            el('div', { class: 'stat-value', text: c.value }), el('div', { class: 'stat-label', text: c.label })
+            el('div', { class: 'stat-value', text: c.value }),
+            el('div', { class: 'stat-label', text: c.label }),
+            c.sub ? el('div', { class: 'stat-sub', text: c.sub }) : null
         ]));
     }
 }
@@ -401,9 +414,11 @@ function initChainsTableHeader() {
 }
 function chainRowData(c) {
     const rpcCount = (c.rpc || []).filter(u => { const url = typeof u === 'string' ? u : u?.url; return url && url.startsWith('http') && !url.includes('${'); }).length;
+    const l2b = state.l2beat.get(c.chainId);
     return {
-        chainId: c.chainId, name: c.name || `Chain ${c.chainId}`, tags: (c.tags || []).join(', '),
-        native: c.nativeCurrency?.symbol || '', rpcs: rpcCount, tvs: state.l2beat.get(c.chainId)?.tvs ?? null, status: c.status || ''
+        chainId: c.chainId, name: c.name || `Chain ${c.chainId}`,
+        type: classify(c), stage: l2b?.stage || '',
+        rpcs: rpcCount, tvs: l2b?.tvs ?? null, status: c.status || ''
     };
 }
 function renderChainsView() {
@@ -429,42 +444,32 @@ function renderChainsView() {
         body.appendChild(el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
             el('td', { class: 'num mono', text: String(r.chainId) }),
             el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
-            el('td', {}, tagBadges(r.tags)),
-            el('td', { class: 'mono muted', text: r.native || '—' }),
-            el('td', { class: 'num', text: r.rpcs ? String(r.rpcs) : '—' }),
+            el('td', {}, [el('span', { class: `tag tag-${r.type.toLowerCase()}`, text: r.type })]),
+            el('td', {}, [r.stage ? el('span', { class: 'pill pill-stage', text: r.stage }) : el('span', { class: 'muted', text: '—' })]),
             el('td', { class: 'num', text: r.tvs != null ? fmtUsd(r.tvs) : '—' }),
+            el('td', { class: 'num', text: r.rpcs ? String(r.rpcs) : '—' }),
             el('td', {}, [statusBadge(r.status)])
         ]));
     }
     const more = document.getElementById('chainsTableMore'); more.textContent = '';
     if (rows.length > chainShown) more.appendChild(el('button', { class: 'load-more', text: `Show more (${(rows.length - chainShown).toLocaleString()} remaining)`, onclick: () => { chainShown += CHAIN_PAGE * 2; renderChainsView(); } }));
 }
-function tagBadges(tagStr) {
-    if (!tagStr) return [el('span', { class: 'muted', text: '—' })];
-    return tagStr.split(', ').map(t => el('span', { class: `tag tag-${t.toLowerCase()}`, text: t }));
-}
 function statusBadge(status) {
     if (!status) return el('span', { class: 'muted', text: '—' });
     return el('span', { class: `pill pill-${status.toLowerCase()}`, text: status });
 }
 
-// ─────────────────────────────── Scaling (chart + table) ───────────────────────────────
-let scalingSort = { key: 'tvs', dir: -1 };
-function initScalingHeader() {
-    document.querySelectorAll('#scalingTable thead th[data-sort]').forEach(th => th.addEventListener('click', () => {
-        const k = th.dataset.sort; scalingSort.dir = scalingSort.key === k ? -scalingSort.dir : 1; scalingSort.key = k; renderScalingView();
-    }));
-}
+// ─────────────────────────────── Top-L2s TVS chart ───────────────────────────────
 function renderScalingChart() {
     const wrap = document.getElementById('scalingChart'); if (!wrap) return;
-    const top = [...state.l2beat.values()].filter(p => p.tvs > 0).sort((a, b) => b.tvs - a.tvs).slice(0, 15);
+    const top = state.l2beatProjects.filter(p => p.tvs > 0).sort((a, b) => b.tvs - a.tvs).slice(0, 15);
     if (state.l2beatMeta) document.getElementById('scalingMeta').textContent = `${state.l2beatMeta.count} projects · ${state.l2beatMeta.source}`;
     wrap.textContent = '';
     if (!top.length) { wrap.appendChild(el('div', { class: 'feed-empty', text: 'No scaling data.' })); return; }
     const max = top[0].tvs;
     for (const p of top) {
         const pct = Math.max(2, (p.tvs / max) * 100);
-        const row = el('div', { class: 'bar-row', onclick: () => openChainDetail(p.chainId) }, [
+        const row = el('div', { class: 'bar-row', onclick: p.chainId != null ? () => openChainDetail(p.chainId) : null }, [
             el('div', { class: 'bar-label', text: p.displayName || p.slug }),
             el('div', { class: 'bar-track' }, [el('div', { class: 'bar-fill' })]),
             el('div', { class: 'bar-value mono', text: fmtUsd(p.tvs) })
@@ -473,32 +478,6 @@ function renderScalingChart() {
         fill.style.width = `${pct}%`;
         fill.style.background = `linear-gradient(90deg, var(--color-l2), #06b6d4)`;
         wrap.appendChild(row);
-    }
-}
-function renderScalingView() {
-    const body = document.getElementById('scalingTableBody'); if (!body) return;
-    const rows = [...state.l2beat.values()].map(p => ({
-        tvs: p.tvs ?? null, name: p.displayName || p.slug, chainId: p.chainId,
-        stage: p.stage || '', category: p.category || '', da: p.daLayer || '', stack: p.stack || ''
-    }));
-    const { key, dir } = scalingSort;
-    rows.sort((a, b) => {
-        let av = a[key], bv = b[key];
-        if (key === 'tvs') { av = av ?? -1; bv = bv ?? -1; }
-        if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
-        return String(av).localeCompare(String(bv)) * dir;
-    });
-    body.textContent = '';
-    for (const r of rows) {
-        body.appendChild(el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
-            el('td', { class: 'num strong', text: fmtUsd(r.tvs) }),
-            el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
-            el('td', { class: 'num mono', text: String(r.chainId) }),
-            el('td', {}, [el('span', { class: 'pill pill-stage', text: r.stage || '—' })]),
-            el('td', { class: 'muted', text: r.category || '—' }),
-            el('td', { class: 'muted', text: r.da || '—' }),
-            el('td', { class: 'muted', text: r.stack || '—' })
-        ]));
     }
 }
 

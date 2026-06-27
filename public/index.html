@@ -87,35 +87,18 @@
         </div>
     </section>
 
-    <!-- ─── View: Networks (chains + RPC + scaling) ─── -->
+    <!-- ─── View: Networks ─── -->
     <section id="view-networks" class="view scroll-view">
         <div class="view-inner">
-            <!-- RPC health -->
-            <h2 class="section-title">RPC health</h2>
-            <div class="stat-cards" id="rpcStatCards"></div>
+            <!-- Summary metric strip -->
+            <div class="stat-cards summary" id="summaryCards"></div>
 
-            <!-- Scaling -->
-            <h2 class="section-title">L2 scaling <span class="src-pill" id="scalingMeta"></span></h2>
+            <!-- Compact top-L2s-by-TVS chart -->
+            <h2 class="section-title">Top L2s by TVS <span class="src-pill" id="scalingMeta"></span></h2>
             <div class="scaling-chart" id="scalingChart"></div>
-            <div class="table-wrap">
-                <table class="data-table" id="scalingTable">
-                    <thead>
-                        <tr>
-                            <th data-sort="tvs" class="num">TVS</th>
-                            <th data-sort="name">Project</th>
-                            <th data-sort="chainId" class="num">Chain ID</th>
-                            <th data-sort="stage">Stage</th>
-                            <th data-sort="category">Type</th>
-                            <th data-sort="da">DA</th>
-                            <th data-sort="stack">Stack</th>
-                        </tr>
-                    </thead>
-                    <tbody id="scalingTableBody"></tbody>
-                </table>
-            </div>
 
-            <!-- Chains -->
-            <h2 class="section-title">Networks <span class="toolbar-count" id="chainsCount"></span></h2>
+            <!-- One unified networks table -->
+            <h2 class="section-title">All networks <span class="toolbar-count" id="chainsCount"></span></h2>
             <div class="toolbar">
                 <div class="chip-row" id="chainTagChips">
                     <button class="chip active" data-tag="all">All</button>
@@ -132,10 +115,10 @@
                         <tr>
                             <th data-sort="chainId" class="num">ID</th>
                             <th data-sort="name">Name</th>
-                            <th data-sort="tags">Tags</th>
-                            <th data-sort="native">Native</th>
-                            <th data-sort="rpcs" class="num">RPCs</th>
+                            <th data-sort="type">Type</th>
+                            <th data-sort="stage">Stage</th>
                             <th data-sort="tvs" class="num">TVS</th>
+                            <th data-sort="rpcs" class="num">RPCs</th>
                             <th data-sort="status">Status</th>
                         </tr>
                     </thead>
