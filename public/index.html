@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chains — Blockchain Networks Dashboard</title>
-    <meta name="description" content="Explore blockchain networks: relationships, chain info, RPC endpoints and health, operator status, and L2 scaling data — aggregated from five sources.">
+    <meta name="description" content="Explore blockchain networks: relationships, chain info, RPC endpoints and health, L2 scaling, and operator incidents — aggregated from multiple sources.">
 
     <script src="3d-force-graph.min.js"></script>
     <link rel="stylesheet" href="fonts/inter.css">
@@ -29,16 +29,15 @@
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <input type="text" id="searchInput" placeholder="Search by chain ID or name…" autocomplete="off">
+            <input type="text" id="searchInput" placeholder="Find a network — id or name…" autocomplete="off">
             <kbd class="search-hint">/</kbd>
             <div id="searchDropdown" class="search-dropdown hidden"></div>
         </div>
 
         <nav class="tabs" id="tabs">
             <button class="tab active" data-view="graph">Relationships</button>
-            <button class="tab" data-view="chains">Chains</button>
-            <button class="tab" data-view="status">RPC &amp; Status</button>
-            <button class="tab" data-view="scaling">Scaling</button>
+            <button class="tab" data-view="networks">Networks</button>
+            <button class="tab" data-view="incidents">Incidents</button>
         </nav>
     </header>
 
@@ -88,9 +87,35 @@
         </div>
     </section>
 
-    <!-- ─── View: Chains ─── -->
-    <section id="view-chains" class="view scroll-view">
+    <!-- ─── View: Networks (chains + RPC + scaling) ─── -->
+    <section id="view-networks" class="view scroll-view">
         <div class="view-inner">
+            <!-- RPC health -->
+            <h2 class="section-title">RPC health</h2>
+            <div class="stat-cards" id="rpcStatCards"></div>
+
+            <!-- Scaling -->
+            <h2 class="section-title">L2 scaling <span class="src-pill" id="scalingMeta"></span></h2>
+            <div class="scaling-chart" id="scalingChart"></div>
+            <div class="table-wrap">
+                <table class="data-table" id="scalingTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="tvs" class="num">TVS</th>
+                            <th data-sort="name">Project</th>
+                            <th data-sort="chainId" class="num">Chain ID</th>
+                            <th data-sort="stage">Stage</th>
+                            <th data-sort="category">Type</th>
+                            <th data-sort="da">DA</th>
+                            <th data-sort="stack">Stack</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scalingTableBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Chains -->
+            <h2 class="section-title">Networks <span class="toolbar-count" id="chainsCount"></span></h2>
             <div class="toolbar">
                 <div class="chip-row" id="chainTagChips">
                     <button class="chip active" data-tag="all">All</button>
@@ -100,7 +125,7 @@
                     <button class="chip" data-tag="Beacon">Beacon</button>
                     <button class="chip" data-tag="ZK">ZK</button>
                 </div>
-                <span class="toolbar-count" id="chainsCount"></span>
+                <input type="text" id="chainFilter" class="mini-search" placeholder="Filter networks…">
             </div>
             <div class="table-wrap">
                 <table class="data-table" id="chainsTable">
@@ -122,51 +147,22 @@
         </div>
     </section>
 
-    <!-- ─── View: RPC & Status ─── -->
-    <section id="view-status" class="view scroll-view">
+    <!-- ─── View: Incidents ─── -->
+    <section id="view-incidents" class="view scroll-view">
         <div class="view-inner">
-            <h2 class="section-title">RPC health</h2>
-            <div class="stat-cards" id="rpcStatCards"></div>
-
-            <div class="status-columns">
-                <div class="status-col">
-                    <h2 class="section-title">Live status &amp; incidents
-                        <span class="src-pill">chains-status-news</span>
-                    </h2>
-                    <div class="feed" id="statusFeed"><div class="feed-empty">Loading status feed…</div></div>
-                </div>
-                <div class="status-col">
-                    <h2 class="section-title">Operator status pages
-                        <input type="text" id="statusPageSearch" class="mini-search" placeholder="Filter…">
-                    </h2>
-                    <div class="status-page-list" id="statusPageList"></div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ─── View: Scaling ─── -->
-    <section id="view-scaling" class="view scroll-view">
-        <div class="view-inner">
-            <h2 class="section-title">L2BEAT scaling projects
-                <span class="src-pill" id="scalingMeta"></span>
+            <h2 class="section-title">Incidents — past 30 days
+                <span class="src-pill" id="incidentsMeta">live</span>
             </h2>
-            <div class="table-wrap">
-                <table class="data-table" id="scalingTable">
-                    <thead>
-                        <tr>
-                            <th data-sort="tvs" class="num">TVS</th>
-                            <th data-sort="name">Project</th>
-                            <th data-sort="chainId" class="num">Chain ID</th>
-                            <th data-sort="stage">Stage</th>
-                            <th data-sort="category">Type</th>
-                            <th data-sort="da">DA</th>
-                            <th data-sort="stack">Stack</th>
-                        </tr>
-                    </thead>
-                    <tbody id="scalingTableBody"></tbody>
-                </table>
+            <div class="calendar" id="incidentCalendar"></div>
+
+            <div class="toolbar">
+                <div class="chip-row">
+                    <button class="chip active" id="grpFlat">Chronological</button>
+                    <button class="chip" id="grpNetwork">Group by network</button>
+                </div>
+                <span class="toolbar-count" id="incidentsCount"></span>
             </div>
+            <div id="incidentsList" class="incidents-list"><div class="feed-empty">Connecting to live status feed…</div></div>
         </div>
     </section>
 
