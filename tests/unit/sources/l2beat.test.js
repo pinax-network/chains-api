@@ -49,7 +49,7 @@ describe('normalizeL2BeatResponse', () => {
     expect(result[0].slug).toBe('base');
   });
 
-  it('drops projects without slug or chainId', () => {
+  it('keeps slug-bearing projects (chainId optional), drops those with no slug', () => {
     const result = normalizeL2BeatResponse({
       projects: [
         { slug: 'arbitrum', chainId: 42161, name: 'Arbitrum One' },
@@ -57,8 +57,8 @@ describe('normalizeL2BeatResponse', () => {
         { chainId: 999, name: 'No Slug' }
       ]
     });
-    expect(result).toHaveLength(1);
-    expect(result[0].slug).toBe('arbitrum');
+    expect(result.map(p => p.slug).sort()).toEqual(['arbitrum', 'no-chain-id']);
+    expect(result.find(p => p.slug === 'no-chain-id').chainId).toBeNull();
   });
 
   it('handles nested stage/daLayer/tvs shapes defensively', () => {
@@ -116,13 +116,14 @@ describe('normalizeL2BeatResponse', () => {
     expect(result[0].chainId).toBe(10);
   });
 
-  it('drops object-map projects whose slug is not in the chain map', () => {
+  it('keeps object-map projects without a mapped chainId (chainId null)', () => {
     const result = normalizeL2BeatResponse({
       projects: {
-        'totally-unknown-l2': { id: 'totally-unknown-l2', name: 'Nope' }
+        'totally-unknown-l2': { id: 'totally-unknown-l2', name: 'Nope', stage: 'Stage 0', tvs: { breakdown: { total: 5 } } }
       }
     });
-    expect(result).toEqual([]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ slug: 'totally-unknown-l2', displayName: 'Nope', chainId: null, tvs: 5 });
   });
 
   it('reads DA layer from the badges array (current API shape)', () => {

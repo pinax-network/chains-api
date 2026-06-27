@@ -93,9 +93,14 @@ async function loadFallback() {
 export function normalizeL2BeatResponse(json) {
   const projects = extractProjectsArray(json);
 
+  // Keep every project that has a slug. chainId may be null when the project
+  // isn't in the curated slug→chainId map — those still carry full L2BEAT data
+  // (TVS, stage, category, DA) and surface in the scaling list. Only the
+  // index/attach step (indexL2BeatSource) needs a chainId, and it already
+  // skips entries without a safe-integer chainId.
   return projects
     .map(normalizeProject)
-    .filter(p => p.slug && p.chainId !== null && p.chainId !== undefined);
+    .filter(p => p.slug);
 }
 
 /**
