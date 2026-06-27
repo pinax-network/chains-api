@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initIncidentControls();
     initChainsTableHeader();
     initScalingHeader();
+    initAppbarHeight();     // keep --appbar-h in sync with the real bar height
     applyUrlState();        // restore view + ?q= immediately (before data loads)
     // Start the live incidents feed immediately — it must NOT wait on the heavy
     // /export bulk load (13MB + 3D graph build) or it appears stuck.
@@ -159,6 +160,19 @@ function buildRelations() {
         }
     }
     for (const e of state.rel.values()) { e.l2Children = [...new Set(e.l2Children)]; e.testnetChildren = [...new Set(e.testnetChildren)]; }
+}
+
+// ─── keep --appbar-h equal to the real (wrapping) app-bar height ───
+// The bar is position:fixed; content uses padding-top:var(--appbar-h). A fixed
+// guess overlaps on mobile when the bar wraps to extra rows (long stats line,
+// scrolled tabs). Measuring it guarantees content always clears the bar.
+function initAppbarHeight() {
+    const bar = document.getElementById('appbar');
+    if (!bar) return;
+    const sync = () => document.documentElement.style.setProperty('--appbar-h', `${bar.offsetHeight}px`);
+    sync();
+    window.addEventListener('resize', sync);
+    if ('ResizeObserver' in window) new ResizeObserver(sync).observe(bar);
 }
 
 // ─────────────────────────────── tabs ───────────────────────────────

@@ -262,9 +262,14 @@ a:hover { text-decoration: underline; }
 
 /* ─── Responsive ─── */
 @media (max-width: 860px) {
-    #appbar { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 10px; --appbar-h: 126px; }
+    /* Fallback until JS measures the real bar height (initAppbarHeight sets
+       --appbar-h on :root). Must be on :root so .scroll-view inherits it —
+       a custom prop set on #appbar would not cascade to sibling content. */
+    :root { --appbar-h: 116px; }
+    #appbar { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 8px; align-items: center; }
     .appbar-brand { order: 1; }
-    .tabs { order: 2; margin-left: auto; overflow-x: auto; max-width: 62%; -webkit-overflow-scrolling: touch; }
+    .brand-text .subtitle { display: none; }   /* keep the mobile bar compact */
+    .tabs { order: 2; margin-left: auto; overflow-x: auto; max-width: 64%; -webkit-overflow-scrolling: touch; }
     .tabs::-webkit-scrollbar { display: none; }
     .tab { white-space: nowrap; }
     .search-box { order: 3; max-width: none; flex-basis: 100%; }
