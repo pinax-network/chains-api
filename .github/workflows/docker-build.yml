@@ -40,6 +40,17 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
+
+      - name: Check OpenAPI spec is up to date
+        # Regenerate public/openapi.json and fail if it differs from the
+        # committed copy, so the checked-in spec never drifts from the routes.
+        run: |
+          npm run openapi
+          if ! git diff --quiet -- public/openapi.json; then
+            echo "::error::public/openapi.json is stale. Run 'npm run openapi' and commit the result."
+            git --no-pager diff -- public/openapi.json
+            exit 1
+          fi
   build-docker-push:
     needs: test-and-analyze
     runs-on: ubuntu-latest

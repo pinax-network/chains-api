@@ -5,7 +5,10 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import fastifyStatic from '@fastify/static';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import ajvErrors from 'ajv-errors';
+import pkg from '../../package.json' with { type: 'json' };
 import { initializeDataOnStartup } from '../services/loader.js';
 import { startRpcHealthCheck } from '../services/rpcHealth.js';
 import { startL2BeatRefresh } from '../services/l2beatRefresher.js';
@@ -70,6 +73,64 @@ function formatSchemaValidationError(errors, dataVar) {
   return err;
 }
 
+// Group every route under an OpenAPI tag derived from its first path segment,
+// so the generated spec / Swagger UI is organized without each route file
+// having to declare `schema.tags` by hand.
+const TAG_BY_SEGMENT = {
+  chains: 'Chains',
+  search: 'Chains',
+  relations: 'Relations',
+  endpoints: 'Endpoints',
+  slip44: 'SLIP-44',
+  'rpc-monitor': 'RPC Monitor',
+  clients: 'Clients',
+  scaling: 'Scaling',
+  'status-pages': 'Status Pages',
+  keywords: 'Keywords',
+  validate: 'Validation',
+  stats: 'Stats',
+  metrics: 'Observability',
+  refresher: 'Observability',
+  health: 'Meta',
+  sources: 'Meta',
+  export: 'Meta',
+  reload: 'Admin'
+};
+
+function tagForUrl(url) {
+  const segment = url.split('?')[0].split('/').filter(Boolean)[0];
+  return TAG_BY_SEGMENT[segment] || 'Meta';
+}
+
+// @fastify/swagger transform: hide non-API surfaces (static UI, the raw spec
+// route) and auto-tag everything else.
+function openapiTransform({ schema, url }) {
+  const next = { ...(schema || {}) };
+  if (url.startsWith('/ui') || url === '/openapi.json') {
+    next.hide = true;
+  } else if (!next.tags) {
+    next.tags = [tagForUrl(url)];
+  }
+  return { schema: next, url };
+}
+
+const OPENAPI_TAGS = [
+  { name: 'Chains', description: 'Chain metadata, search, and lookup' },
+  { name: 'Relations', description: 'L2 / testnet / parent relationships and graph traversal' },
+  { name: 'Endpoints', description: 'RPC, firehose, and substreams endpoints per chain' },
+  { name: 'RPC Monitor', description: 'Live RPC endpoint health results' },
+  { name: 'Clients', description: 'Execution-client registry and versions' },
+  { name: 'Scaling', description: 'L2BEAT scaling data (stage, category, DA layer, TVS)' },
+  { name: 'Status Pages', description: 'Curated operator status/incident pages' },
+  { name: 'SLIP-44', description: 'SLIP-0044 coin-type registry' },
+  { name: 'Keywords', description: 'Indexed search keywords' },
+  { name: 'Validation', description: 'Cross-source validation rules' },
+  { name: 'Stats', description: 'Aggregate counts' },
+  { name: 'Observability', description: 'Prometheus metrics and refresher status' },
+  { name: 'Admin', description: 'Data reload' },
+  { name: 'Meta', description: 'Service info, health, and data sources' }
+];
+
 export async function buildApp(options = {}) {
   const {
     logger = true,
@@ -109,6 +170,27 @@ export async function buildApp(options = {}) {
     return reply.code(statusCode).send({ error: error.message || 'Error' });
   });
 
+  // OpenAPI: registered before the route plugins so its onRoute hook captures
+  // every route's JSON Schema. Routes are auto-tagged by path via the transform.
+  await fastify.register(swagger, {
+    openapi: {
+      openapi: '3.1.0',
+      info: {
+        title: 'Chains API',
+        description: 'Aggregated blockchain chain data from five external sources '
+          + '(TheGraph, Chainlist, Chain ID Network, SLIP-0044, L2BEAT): chain metadata, '
+          + 'relations, RPC endpoints and health, L2 scaling, and operator status.',
+        version: pkg.version
+      },
+      servers: [
+        { url: 'https://chains-api.johnaverse.cc', description: 'Production' },
+        { url: 'http://localhost:3000', description: 'Local' }
+      ],
+      tags: OPENAPI_TAGS
+    },
+    transform: openapiTransform
+  });
+
   await fastify.register(cors, {
     origin: resolveCorsOrigin(CORS_ORIGIN),
     credentials: false
@@ -125,6 +207,20 @@ export async function buildApp(options = {}) {
         imgSrc: ["'self'", 'data:']
       }
     }
+  });
+
+  // Swagger UI ships an inline bootstrap script/style that the API's strict CSP
+  // would block. Relax CSP for the docs surface only — everything else (the API
+  // and the /ui dashboard) keeps the hardened policy.
+  fastify.addHook('onSend', async (request, reply, payload) => {
+    if (request.url.startsWith('/docs')) {
+      reply.header(
+        'content-security-policy',
+        "default-src 'self'; base-uri 'self'; script-src 'self' 'unsafe-inline'; "
+        + "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:"
+      );
+    }
+    return payload;
   });
 
   // Serve public/ directory for the 3D visualization UI.
@@ -171,6 +267,13 @@ export async function buildApp(options = {}) {
   await fastify.register(metricsRoute);
   await fastify.register(refresherRoute);
   await fastify.register(rootRoute);
+
+  // Interactive docs at /docs and the raw machine-readable spec at /openapi.json.
+  await fastify.register(swaggerUi, {
+    routePrefix: '/docs',
+    uiConfig: { docExpansion: 'list', deepLinking: true }
+  });
+  fastify.get('/openapi.json', { schema: { hide: true } }, async () => fastify.swagger());
 
   return fastify;
 }
