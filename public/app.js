@@ -256,10 +256,10 @@ function initSearch() {
     const dd = document.getElementById('searchDropdown');
     let activeIdx = -1;
 
-    // On the graph view there's no list to filter, so offer a jump-to-network
-    // autocomplete. On Networks/Incidents the same query filters the page.
+    // A jump-to-network autocomplete on every view (select → open detail). On
+    // Networks/Incidents the same query also filters the page.
     const renderDropdown = debounce(q => {
-        if (!q || activeView !== 'graph') { dd.classList.add('hidden'); return; }
+        if (!q) { dd.classList.add('hidden'); return; }
         const matches = state.chains.filter(c =>
             String(c.chainId).includes(q) || c.name?.toLowerCase().includes(q) || c.shortName?.toLowerCase().includes(q)
         ).sort((a, b) => {
@@ -752,6 +752,7 @@ function initDrawer() {
 }
 function closeDrawer(opts = {}) {
     document.getElementById('detailDrawer')?.classList.add('hidden');
+    stopBlockHead();
     openChainId = null;
     if (!opts.fromUrl) updateUrl();
 }
@@ -796,30 +797,50 @@ function openChainDetail(chainId, opts = {}) {
     if (c.infoURL) { const host = safeHost(c.infoURL); content.appendChild(detailRow('Website', host ? el('a', { href: c.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: c.infoURL }))); }
     if (c.slip44 != null) content.appendChild(detailRow('SLIP-44', el('span', { class: 'mono', text: String(c.slip44) })));
 
-    const rpcBox = el('div', { class: 'd-rpc' }, [el('div', { class: 'd-rpc-loading', text: 'Checking RPC health…' })]);
+    const headCell = el('span', { class: 'mono', text: '…' });
+    content.appendChild(detailRow('Block head', headCell));
+    const rpcBox = el('div', { class: 'd-rpc' }, [el('div', { class: 'd-rpc-loading', text: 'Checking RPC endpoints…' })]);
     content.appendChild(detailRow('RPC endpoints', rpcBox));
     const clientBox = el('div', { class: 'd-clients muted', text: '—' });
     content.appendChild(detailRow('Clients (live)', clientBox));
 
     body.appendChild(content);
     document.getElementById('detailDrawer').classList.remove('hidden');
-    loadLiveRpc(chainId, rpcBox);
+    loadLiveRpc(chainId, rpcBox, headCell);
     loadLiveClients(chainId, clientBox);
 }
-async function loadLiveRpc(chainId, box) {
+// "Geth/v1.13.0/linux/go1.21" → "Geth v1.13.0"
+function clientNameVersion(cv) {
+    if (!cv) return null;
+    return String(cv).split('/').slice(0, 2).join(' ').trim() || null;
+}
+async function loadLiveRpc(chainId, box, headCell) {
+    stopBlockHead();
     const staticUrls = (state.byId.get(chainId)?.rpc || []).map(u => typeof u === 'string' ? u : u?.url).filter(u => u && u.startsWith('http') && !u.includes('${'));
     let results = [];
     try { const d = await api(`/rpc-monitor/${chainId}`); results = d.results || d.endpoints || (Array.isArray(d) ? d : []); } catch { /* noop */ }
+    const working = results.filter(r => r.status === 'working' || r.ok === true);
+    // List only reachable endpoints (failed ones are ignored). If nothing has
+    // been health-checked yet, fall back to the registry list as untested.
+    const listed = working.length ? working : (results.length ? [] : staticUrls.map(u => ({ url: u })));
     box.textContent = '';
-    if (results.length) {
-        for (const r of results.slice(0, 12)) {
-            const ok = r.status === 'working' || r.ok === true;
-            const meta = [(r.blockNumber || r.blockHeight) ? `#${r.blockNumber ?? r.blockHeight}` : null, r.clientVersion ? String(r.clientVersion).split('/')[0] : null].filter(Boolean).join(' · ');
-            box.appendChild(el('div', { class: 'rpc-row' }, [el('span', { class: `dot ${ok ? 'dot-ok' : 'dot-bad'}` }), el('span', { class: 'rpc-host mono', text: safeHost(r.url) || r.url }), el('span', { class: 'rpc-meta muted', text: meta })]));
+    if (listed.length) {
+        for (const r of listed.slice(0, 20)) {
+            const ver = clientNameVersion(r.clientVersion);
+            box.appendChild(el('div', { class: 'rpc-row' }, [
+                el('span', { class: 'dot dot-ok' }),
+                el('span', { class: 'rpc-host mono', text: safeHost(r.url) || r.url }),
+                ver ? el('span', { class: 'rpc-meta muted', text: ver }) : null
+            ]));
         }
-    } else if (staticUrls.length) {
-        for (const u of staticUrls.slice(0, 12)) box.appendChild(el('div', { class: 'rpc-row' }, [el('span', { class: 'dot' }), el('span', { class: 'rpc-host mono', text: safeHost(u) || u })]));
-    } else box.appendChild(el('span', { class: 'muted', text: 'No public endpoints.' }));
+    } else {
+        box.appendChild(el('span', { class: 'muted', text: 'No reachable endpoints.' }));
+    }
+    // Block head: poll one live endpoint client-side every 5s. Try working
+    // first, then any registry endpoint (browser CORS can differ from the
+    // server's reachability).
+    const candidates = [...new Set([...working.map(r => r.url), ...staticUrls])];
+    if (candidates.length) startBlockHead(candidates, headCell); else headCell.textContent = '—';
 }
 async function loadLiveClients(chainId, box) {
     try {
@@ -827,6 +848,43 @@ async function loadLiveClients(chainId, box) {
         const clients = d.clients || [];
         if (!clients.length) { box.textContent = 'No client data yet.'; return; }
         box.textContent = ''; box.classList.remove('muted');
-        for (const cl of clients) box.appendChild(el('span', { class: 'client-pill', text: `${cl.name}${cl.nodeCount ? ` ×${cl.nodeCount}` : ''}` }));
+        for (const cl of clients) {
+            const v = (cl.versions || [])[0]?.version;
+            const allVers = (cl.versions || []).map(x => `${x.version}${x.nodeCount ? ` ×${x.nodeCount}` : ''}`).join(', ');
+            box.appendChild(el('span', { class: 'client-pill', title: allVers }, [
+                `${cl.name}${v ? ' ' : ''}`,
+                v ? el('span', { class: 'client-ver', text: v }) : null,
+                cl.nodeCount ? el('span', { class: 'client-count', text: ` ×${cl.nodeCount}` }) : null
+            ]));
+        }
     } catch { box.textContent = '—'; }
+}
+
+// ─── client-side block-head polling (one endpoint, every 5s) ───
+let blockHeadTimer = null;
+let blockHeadToken = 0;
+function stopBlockHead() { if (blockHeadTimer) { clearInterval(blockHeadTimer); blockHeadTimer = null; } }
+async function rpcBlockNumber(url) {
+    try {
+        const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }) });
+        if (!res.ok) return null;
+        const d = await res.json();
+        const n = typeof d.result === 'string' ? parseInt(d.result, 16) : null;
+        return Number.isFinite(n) ? n : null;
+    } catch { return null; }
+}
+function startBlockHead(urls, cell) {
+    stopBlockHead();
+    const token = ++blockHeadToken;
+    let liveUrl = null;
+    const poll = async () => {
+        for (const u of (liveUrl ? [liveUrl, ...urls] : urls)) {
+            const n = await rpcBlockNumber(u);
+            if (token !== blockHeadToken) return;         // drawer changed/closed
+            if (n != null) { liveUrl = u; cell.textContent = `#${n.toLocaleString()}`; cell.title = safeHost(u) || u; return; }
+        }
+        if (token === blockHeadToken && !liveUrl) cell.textContent = '—';
+    };
+    poll();
+    blockHeadTimer = setInterval(poll, 5000);
 }
