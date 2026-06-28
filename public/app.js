@@ -426,12 +426,17 @@ function initChainsTableHeader() {
         chip.classList.add('active'); chainTagFilter = chip.dataset.tag; chainShown = CHAIN_PAGE; renderChainsView();
     }));
 }
+// Type = the environment (Mainnet/Testnet). L2 / Beacon / ZK / Validium /
+// Optimium are orthogonal tags — a chain can be a mainnet-L2 or a testnet-L2.
+function networkType(c) { return c.tags?.includes('Testnet') ? 'Testnet' : 'Mainnet'; }
+function extraTags(c) { return (c.tags || []).filter(t => t !== 'Testnet'); }
+
 function chainRowData(c) {
     const rpcCount = (c.rpc || []).filter(u => { const url = typeof u === 'string' ? u : u?.url; return url && url.startsWith('http') && !url.includes('${'); }).length;
     const l2b = state.l2beat.get(c.chainId);
     return {
         chainId: c.chainId, name: c.name || `Chain ${c.chainId}`,
-        type: classify(c), stage: l2b?.stage || '',
+        type: networkType(c), tags: extraTags(c), stage: l2b?.stage || '',
         rpcs: rpcCount, tvs: l2b?.tvs ?? null, status: c.status || ''
     };
 }
@@ -439,7 +444,11 @@ function renderChainsView() {
     const body = document.getElementById('chainsTableBody'); if (!body) return;
     const q = searchQuery;
     let rows = state.chains.filter(c => {
-        if (chainTagFilter === 'Mainnet' ? classify(c) !== 'Mainnet' : (chainTagFilter !== 'all' && !c.tags?.includes(chainTagFilter))) return false;
+        if (chainTagFilter !== 'all') {
+            if (chainTagFilter === 'Mainnet') { if (networkType(c) !== 'Mainnet') return false; }      // env: not a testnet (incl. mainnet-L2s)
+            else if (chainTagFilter === 'Testnet') { if (!c.tags?.includes('Testnet')) return false; }  // env: testnet (incl. testnet-L2s)
+            else if (!c.tags?.includes(chainTagFilter)) return false;                                   // tag membership: L2 / Beacon / ZK …
+        }
         if (q && !(`${c.chainId}`.includes(q) || c.name?.toLowerCase().includes(q) || c.shortName?.toLowerCase().includes(q))) return false;
         return true;
     }).map(chainRowData);
@@ -458,7 +467,10 @@ function renderChainsView() {
         body.appendChild(el('tr', { 'data-id': r.chainId, onclick: () => openChainDetail(r.chainId) }, [
             el('td', { class: 'num mono', text: String(r.chainId) }),
             el('td', {}, [el('span', { class: 'cell-name', text: r.name })]),
-            el('td', {}, [el('span', { class: `tag tag-${r.type.toLowerCase()}`, text: r.type })]),
+            el('td', {}, [
+                el('span', { class: `tag tag-${r.type.toLowerCase()}`, text: r.type }),
+                ...r.tags.map(t => el('span', { class: `tag tag-${t.toLowerCase()}`, text: t }))
+            ]),
             el('td', {}, [r.stage ? el('span', { class: 'pill pill-stage', text: r.stage }) : el('span', { class: 'muted', text: '—' })]),
             el('td', { class: 'num', text: r.tvs != null ? fmtUsd(r.tvs) : '—' }),
             el('td', { class: 'num', text: r.rpcs ? String(r.rpcs) : '—' }),
