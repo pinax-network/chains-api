@@ -31,7 +31,9 @@ const ENDPOINTS = {
   '/scaling/:id': 'Get L2BEAT scaling data for a specific chain by ID',
   '/scaling/status': 'Get L2BEAT refresher status (last refresh, source, errors)',
   '/metrics': 'Prometheus exposition format (counters + gauges for source freshness, refreshes, validation)',
-  '/refresher': 'Unified rolling refresher status (queue depth, sweep cursor, per-job-type state)'
+  '/refresher': 'Unified rolling refresher status (queue depth, sweep cursor, per-job-type state)',
+  '/docs': 'Interactive API reference (Swagger UI)',
+  '/openapi.json': 'OpenAPI 3 specification (machine-readable)'
 };
 
 export async function rootRoute(fastify) {
