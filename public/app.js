@@ -196,7 +196,7 @@ function initTabs() {
 }
 // View / search / selected-chain are all reflected in the URL so each tab is a
 // separate, shareable, reloadable page (e.g. ?view=incidents&q=base).
-const VIEWS = ['graph', 'networks', 'incidents'];
+const VIEWS = ['graph', 'networks', 'incidents', 'providers'];
 let activeView = 'graph';
 let searchQuery = '';
 let openChainId = null;
@@ -218,6 +218,7 @@ function updateSearchPlaceholder() {
     const input = document.getElementById('searchInput');
     if (input) input.placeholder = activeView === 'networks' ? 'Filter networks — id or name…'
         : activeView === 'incidents' ? 'Filter incidents — network or title…'
+        : activeView === 'providers' ? 'Filter provider incidents — provider, chain or title…'
         : 'Find a network — id or name…';
 }
 
@@ -225,6 +226,7 @@ function updateSearchPlaceholder() {
 function applySearch() {
     if (activeView === 'networks') { chainShown = CHAIN_PAGE; renderChainsView(); }
     else if (activeView === 'incidents') renderIncidentList();
+    else if (activeView === 'providers') renderProviderList();
 }
 
 function updateUrl({ push = false } = {}) {
@@ -520,6 +522,7 @@ const STATUS_WORDS = ['Resolved', 'Completed', 'Monitoring', 'Verifying', 'Updat
 // Statuses that close an incident/maintenance — used to know it's done.
 const CLOSED_STATUSES = new Set(['resolved', 'completed', 'closed']);
 const incidents = { items: [], byKey: new Map(), ws: null, retries: 0, groupBy: 'flat', dayFilter: null, category: 'all' };
+const providers = { filter: 'all' };
 
 function parseIncidentStatus(ev) {
     const s = ev.summary || '';
@@ -577,6 +580,7 @@ function eventTimeMs(ev) {
 function incidentModel(ev) {
     const chain = ev.chains?.[0];
     const whenMs = eventTimeMs(ev);
+    const isProvider = ev.statusPage?.kind === 'rpc-provider';
     return {
         key: incidentKey(ev),
         title: ev.title || '(untitled)',
@@ -589,7 +593,14 @@ function incidentModel(ev) {
         durationMs: (() => { const t = parseIncidentTimes(ev); return t ? t.end - t.start : null; })(),
         netName: chain?.name || ev.statusPage?.name || ev.statusPage?.id || 'Unknown',
         chainId: chain?.chainId ?? null,
-        spId: ev.statusPage?.id || (chain?.chainId != null ? String(chain.chainId) : 'unknown')
+        spId: ev.statusPage?.id || (chain?.chainId != null ? String(chain.chainId) : 'unknown'),
+        // RPC provider incidents (Infura, QuickNode, dRPC, Pinax) get their own
+        // tab; one provider status page can affect many chains per incident.
+        isProvider,
+        provider: isProvider ? (ev.statusPage?.id || 'unknown') : null,
+        providerName: isProvider ? (ev.statusPage?.name || ev.statusPage?.id || 'Provider') : null,
+        affectedChains: isProvider ? (ev.chains || []).map(c => c.chainId).filter(id => id != null) : [],
+        affectedComponents: Array.isArray(ev.affectedComponents) ? ev.affectedComponents : []
     };
 }
 function dayKey(ms) { return ms != null && !Number.isNaN(ms) ? new Date(ms).toISOString().slice(0, 10) : null; }
@@ -606,6 +617,8 @@ function addIncidents(events) {
             existing.lastSeen = Math.max(existing.lastSeen ?? m.whenMs, m.whenMs);
             if (existing.whenMs == null || m.whenMs >= existing.whenMs) { // newest event wins for current status
                 existing.whenMs = m.whenMs; existing.status = m.status; existing.url = m.url; existing.kind = m.kind;
+                if (m.affectedChains.length) existing.affectedChains = m.affectedChains;
+                if (m.affectedComponents.length) existing.affectedComponents = m.affectedComponents;
             }
         }
         changed = true;
@@ -618,12 +631,15 @@ function addIncidents(events) {
     }
     incidents.items = [...incidents.byKey.values()].sort((a, b) => (b.whenMs || 0) - (a.whenMs || 0));
     try { renderIncidents(); } catch (err) { console.error('incident render failed', err); }
+    try { renderProviders(); } catch (err) { console.error('provider render failed', err); }
 }
 
-// Items after the active category filter (incidents / scheduled / all).
+// The Incidents tab covers chain operator status pages; RPC provider status
+// pages live in their own Providers tab. Items after the active category filter.
 function visibleIncidents() {
-    if (incidents.category === 'all') return incidents.items;
-    return incidents.items.filter(it => it.kind === incidents.category);
+    const chainIncidents = incidents.items.filter(it => !it.isProvider);
+    if (incidents.category === 'all') return chainIncidents;
+    return chainIncidents.filter(it => it.kind === incidents.category);
 }
 
 function initIncidentControls() {
@@ -718,19 +734,105 @@ function renderIncidentList() {
     }
 }
 
+// ─────────────────────────────── RPC providers (live WS) ───────────────────────────────
+// Same feed as Incidents; provider items (statusPage.kind === 'rpc-provider')
+// are split out here and grouped by provider, each showing the chains it hit.
+function providerIncidents() { return incidents.items.filter(it => it.isProvider); }
+function visibleProviderIncidents() {
+    const all = providerIncidents();
+    return providers.filter === 'all' ? all : all.filter(it => it.provider === providers.filter);
+}
+function providerMatchesSearch(it, q) {
+    if (it.providerName?.toLowerCase().includes(q) || it.title?.toLowerCase().includes(q)) return true;
+    if ((it.affectedComponents || []).some(c => c.toLowerCase().includes(q))) return true;
+    return (it.affectedChains || []).some(id => String(id).includes(q) || state.byId.get(id)?.name?.toLowerCase().includes(q));
+}
+
+function setProviderFilter(prov) {
+    providers.filter = prov;
+    renderProviderFilter();
+    renderProviderList();
+}
+
+function renderProviders() {
+    renderProviderFilter();
+    renderProviderList();
+}
+
+function renderProviderFilter() {
+    const bar = document.getElementById('providerFilter'); if (!bar) return;
+    const all = providerIncidents();
+    const counts = new Map(), names = new Map();
+    for (const it of all) { counts.set(it.provider, (counts.get(it.provider) || 0) + 1); if (!names.has(it.provider)) names.set(it.provider, it.providerName); }
+    bar.textContent = '';
+    const chip = (prov, label) => el('button', { class: `chip${providers.filter === prov ? ' active' : ''}`, 'data-prov': prov, onclick: () => setProviderFilter(prov), text: label });
+    bar.appendChild(chip('all', `All (${all.length})`));
+    for (const [id, name] of [...names].sort((a, b) => (a[1] || '').localeCompare(b[1] || '')))
+        bar.appendChild(chip(id, `${name} (${counts.get(id) || 0})`));
+}
+
+function providerCard(it) {
+    const open = it.status && !CLOSED_STATUSES.has(it.status.toLowerCase());
+    const when = it.whenMs != null ? new Date(it.whenMs).toLocaleString() : null;
+    const meta = [it.providerName, when, open ? 'ongoing' : null].filter(Boolean);
+    const dur = fmtDuration(it.durationMs);
+    const side = [];
+    if (it.status) side.push(el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }));
+    if (dur) side.push(el('span', { class: 'incident-dur', text: dur }));
+    // Affected chains as clickable chips (open the chain drawer); fall back to
+    // raw component names when no chain mapped, or a "provider-wide" note.
+    let affected = null;
+    if (it.affectedChains?.length) {
+        affected = el('div', { class: 'affected-chains' }, it.affectedChains.slice(0, 12).map(id => {
+            const c = state.byId.get(id);
+            return el('span', { class: 'chain-chip', onclick: e => { e.preventDefault(); e.stopPropagation(); openChainDetail(id); }, text: c?.name || `Chain ${id}` });
+        }));
+    } else if (it.affectedComponents?.length) {
+        affected = el('div', { class: 'incident-meta muted', text: it.affectedComponents.slice(0, 5).join(', ') });
+    } else {
+        affected = el('div', { class: 'incident-meta muted', text: 'No specific chain — provider-wide' });
+    }
+    return el('a', { class: `incident-card${open ? ' open' : ''}`, href: it.url || '#', target: '_blank', rel: 'noopener' }, [
+        networkIcon(it.providerName, COLORS.Default, 'net-icon provider-icon'),
+        el('div', { class: 'incident-body' }, [
+            el('div', { class: 'incident-title' }, [el('span', { text: it.title })]),
+            el('div', { class: 'incident-meta', text: meta.join(' · ') }),
+            affected
+        ]),
+        el('div', { class: 'incident-side' }, side)
+    ]);
+}
+
+function renderProviderList() {
+    const list = document.getElementById('providersList'); if (!list) return;
+    let items = visibleProviderIncidents();
+    if (searchQuery) items = items.filter(it => providerMatchesSearch(it, searchQuery));
+    const countEl = document.getElementById('providersCount');
+    if (countEl) countEl.textContent = `${items.length} incident${items.length === 1 ? '' : 's'}${searchQuery ? ` · “${searchQuery}”` : ''}`;
+    list.textContent = '';
+    if (!items.length) {
+        list.appendChild(el('div', { class: 'feed-empty', text: providerIncidents().length ? 'Nothing matches.' : 'No RPC provider incidents in range.' }));
+        return;
+    }
+    for (const it of items) list.appendChild(providerCard(it));
+}
+
 function connectStatusFeed() {
     const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=200`;
     let ws;
     try { ws = new WebSocket(wsUrl); } catch { return statusFeedRestFallback(); }
     incidents.ws = ws;
-    ws.onopen = () => { incidents.retries = 0; document.getElementById('incidentsMeta').textContent = 'live'; };
+    ws.onopen = () => { incidents.retries = 0; setFeedMeta('live'); };
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } if (m.type === 'status.item' && m.item) addIncidents([m.item]); };
     ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
     ws.onclose = () => {
         incidents.ws = null;
         if (!incidents.items.length && !incidents.restTried) statusFeedRestFallback();
-        if (incidents.retries < 6) { const delay = Math.min(1000 * 2 ** incidents.retries, 20000); incidents.retries++; document.getElementById('incidentsMeta').textContent = 'reconnecting…'; setTimeout(connectStatusFeed, delay); }
+        if (incidents.retries < 6) { const delay = Math.min(1000 * 2 ** incidents.retries, 20000); incidents.retries++; setFeedMeta('reconnecting…'); setTimeout(connectStatusFeed, delay); }
     };
+}
+function setFeedMeta(text) {
+    for (const id of ['incidentsMeta', 'providersMeta']) { const e = document.getElementById(id); if (e) e.textContent = text; }
 }
 async function statusFeedRestFallback() {
     incidents.restTried = true;

@@ -265,6 +265,13 @@ a:hover { text-decoration: underline; }
 .incident-group-head { display: flex; align-items: center; gap: 10px; margin: 18px 0 8px; }
 .net-icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
 .net-icon.sm { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+.net-icon.provider-icon { border-radius: 9px; }
+
+/* provider incidents — affected-chain chips */
+.view-lead { font-size: 13px; color: var(--text-muted); margin: -4px 0 18px; max-width: 720px; line-height: 1.5; }
+.affected-chains { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chain-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: rgba(59, 130, 246, 0.14); color: #93c5fd; cursor: pointer; }
+.chain-chip:hover { background: rgba(59, 130, 246, 0.28); }
 
 /* incident status pills */
 .st-resolved, .st-completed { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }

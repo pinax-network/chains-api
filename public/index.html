@@ -38,6 +38,7 @@
             <button class="tab active" data-view="graph">Relationships</button>
             <button class="tab" data-view="networks">Networks</button>
             <button class="tab" data-view="incidents">Incidents</button>
+            <button class="tab" data-view="providers">Providers</button>
         </nav>
     </header>
 
@@ -150,6 +151,25 @@
                 <span class="toolbar-count" id="incidentsCount"></span>
             </div>
             <div id="incidentsList" class="incidents-list"><div class="feed-empty">Connecting to live status feed…</div></div>
+        </div>
+    </section>
+
+    <!-- ─── View: Providers (RPC provider incidents) ─── -->
+    <section id="view-providers" class="view scroll-view">
+        <div class="view-inner">
+            <h2 class="section-title">RPC provider incidents — past 30 days
+                <span class="src-pill" id="providersMeta">live</span>
+            </h2>
+            <p class="view-lead">Status of public RPC providers (Infura, QuickNode, dRPC, Pinax). Each incident is
+                mapped to the chains it affects.</p>
+
+            <div class="toolbar">
+                <div class="chip-row" id="providerFilter">
+                    <button class="chip active" data-prov="all">All</button>
+                </div>
+                <span class="toolbar-count" id="providersCount"></span>
+            </div>
+            <div id="providersList" class="incidents-list"><div class="feed-empty">Connecting to live status feed…</div></div>
         </div>
     </section>
 
