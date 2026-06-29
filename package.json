@@ -1,6 +1,6 @@
 {
   "name": "chains-api",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "API query service for blockchain chain data from multiple sources",
   "main": "index.js",
   "type": "module",
