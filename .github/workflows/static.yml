@@ -42,6 +42,15 @@ jobs:
         # Refresh public/openapi.json from the live route schemas so the
         # published API reference can never drift from the deployed code.
         run: npm run openapi
+      - name: Refresh offline data snapshot
+        # Best-effort: pull a fresh /summary from the live API so the
+        # dashboard's last-resort fallback isn't stale. Keeps the committed
+        # copy when the API is unreachable at deploy time.
+        run: |
+          curl -sf --max-time 30 https://chains-api.johnaverse.cc/summary -o /tmp/summary.json \
+            && node -e "JSON.parse(require('fs').readFileSync('/tmp/summary.json','utf8'))" \
+            && mv /tmp/summary.json public/summary.json \
+            || echo "Live /summary unavailable — keeping committed snapshot"
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
