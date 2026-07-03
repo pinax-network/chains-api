@@ -19,7 +19,10 @@ npm test             # Run all tests (vitest run)
 npm run test:watch   # Run tests in watch mode
 npm run test:coverage # Run tests with v8 coverage report
 npm run lint         # ESLint on src/
+npm run openapi      # Regenerate public/openapi.json from the route schemas
 ```
+
+**API docs:** Every route's JSON Schema feeds `@fastify/swagger` — interactive Swagger UI at `/docs`, raw spec at `/openapi.json`. Routes are auto-tagged by path (no per-route `tags` needed). `npm run openapi` writes `public/openapi.json`; CI regenerates it for the GitHub Pages reference (`/api-docs.html`, Redoc) and fails the build if the committed copy is stale.
 
 ## Architecture
 
@@ -191,6 +194,8 @@ Services: `chains-api` (port 3000) and `chains-api-mcp` (port 3001). Both have h
 | GET | `/export` | Export cached data |
 | GET | `/metrics` | Prometheus exposition (counters + gauges) |
 | GET | `/refresher` | Unified refresher cursor + queue depth |
+| GET | `/docs` | Interactive API reference (Swagger UI) |
+| GET | `/openapi.json` | OpenAPI 3 specification (machine-readable) |
 | POST | `/reload` | Reload all data sources |
 
 ## Common Tasks

@@ -1,0 +1,610 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Chains API",
+    "description": "Aggregated blockchain chain data from five external sources (TheGraph, Chainlist, Chain ID Network, SLIP-0044, L2BEAT): chain metadata, relations, RPC endpoints and health, L2 scaling, and operator status.",
+    "version": "1.4.0"
+  },
+  "components": {
+    "schemas": {}
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/sources": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/export": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/reload": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/validate": {
+      "get": {
+        "tags": [
+          "Validation"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/keywords": {
+      "get": {
+        "tags": [
+          "Keywords"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/stats": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/chains": {
+      "get": {
+        "tags": [
+          "Chains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Testnet",
+                "L2",
+                "Beacon",
+                "ZK",
+                "Validium",
+                "Optimium"
+              ],
+              "errorMessage": {
+                "enum": "Invalid tag. Allowed: Testnet, L2, Beacon, ZK, Validium, Optimium"
+              }
+            },
+            "in": "query",
+            "name": "tag",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/chains/{id}": {
+      "get": {
+        "tags": [
+          "Chains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "Chains"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "errorMessage": {
+                "minLength": "Query parameter \"q\" is required",
+                "maxLength": "Query too long. Max length: 200"
+              }
+            },
+            "in": "query",
+            "name": "q",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/relations": {
+      "get": {
+        "tags": [
+          "Relations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/relations/{id}": {
+      "get": {
+        "tags": [
+          "Relations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/relations/{id}/graph": {
+      "get": {
+        "tags": [
+          "Relations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 2,
+              "errorMessage": "Invalid depth. Must be between 1 and 5"
+            },
+            "in": "query",
+            "name": "depth",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/endpoints": {
+      "get": {
+        "tags": [
+          "Endpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/endpoints/{id}": {
+      "get": {
+        "tags": [
+          "Endpoints"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/slip44": {
+      "get": {
+        "tags": [
+          "SLIP-44"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/slip44/{coinType}": {
+      "get": {
+        "tags": [
+          "SLIP-44"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid coin type"
+            },
+            "in": "path",
+            "name": "coinType",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/rpc-monitor": {
+      "get": {
+        "tags": [
+          "RPC Monitor"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/rpc-monitor/{id}": {
+      "get": {
+        "tags": [
+          "RPC Monitor"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/clients": {
+      "get": {
+        "tags": [
+          "Clients"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/clients/{id}": {
+      "get": {
+        "tags": [
+          "Clients"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/scaling": {
+      "get": {
+        "tags": [
+          "Scaling"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/scaling/status": {
+      "get": {
+        "tags": [
+          "Scaling"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/scaling/{id}": {
+      "get": {
+        "tags": [
+          "Scaling"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/status-pages": {
+      "get": {
+        "tags": [
+          "Status Pages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/status-pages/symbol/{symbol}": {
+      "get": {
+        "tags": [
+          "Status Pages"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_]{1,20}$",
+              "errorMessage": "Invalid coin symbol"
+            },
+            "in": "path",
+            "name": "symbol",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/status-pages/{id}": {
+      "get": {
+        "tags": [
+          "Status Pages"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^-?\\d+$",
+              "errorMessage": "Invalid chain ID"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "Observability"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/refresher": {
+      "get": {
+        "tags": [
+          "Observability"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://chains-api.johnaverse.cc",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Chains",
+      "description": "Chain metadata, search, and lookup"
+    },
+    {
+      "name": "Relations",
+      "description": "L2 / testnet / parent relationships and graph traversal"
+    },
+    {
+      "name": "Endpoints",
+      "description": "RPC, firehose, and substreams endpoints per chain"
+    },
+    {
+      "name": "RPC Monitor",
+      "description": "Live RPC endpoint health results"
+    },
+    {
+      "name": "Clients",
+      "description": "Execution-client registry and versions"
+    },
+    {
+      "name": "Scaling",
+      "description": "L2BEAT scaling data (stage, category, DA layer, TVS)"
+    },
+    {
+      "name": "Status Pages",
+      "description": "Curated operator status/incident pages"
+    },
+    {
+      "name": "SLIP-44",
+      "description": "SLIP-0044 coin-type registry"
+    },
+    {
+      "name": "Keywords",
+      "description": "Indexed search keywords"
+    },
+    {
+      "name": "Validation",
+      "description": "Cross-source validation rules"
+    },
+    {
+      "name": "Stats",
+      "description": "Aggregate counts"
+    },
+    {
+      "name": "Observability",
+      "description": "Prometheus metrics and refresher status"
+    },
+    {
+      "name": "Admin",
+      "description": "Data reload"
+    },
+    {
+      "name": "Meta",
+      "description": "Service info, health, and data sources"
+    }
+  ]
+}
