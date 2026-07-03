@@ -48,9 +48,37 @@ const EMPTY_KEYWORDS = {
   }
 };
 
+// Memoized per data version: the keyword index only changes when sources
+// reload (lastUpdated) or an RPC sweep adds client versions (lastRpcCheck).
+// Without this, every /keywords request re-tokenized ~3k chains + RPC results.
+let keywordsCache = { lastUpdated: null, lastRpcCheck: null, value: null };
+
 export function getAllKeywords() {
   if (!cachedData.indexed) return structuredClone(EMPTY_KEYWORDS);
 
+  if (
+    keywordsCache.value !== null &&
+    keywordsCache.lastUpdated === cachedData.lastUpdated &&
+    keywordsCache.lastRpcCheck === cachedData.lastRpcCheck
+  ) {
+    return keywordsCache.value;
+  }
+
+  const value = buildKeywords();
+  keywordsCache = {
+    lastUpdated: cachedData.lastUpdated,
+    lastRpcCheck: cachedData.lastRpcCheck,
+    value
+  };
+  return value;
+}
+
+// Test-only helper.
+export function _resetKeywordsCacheForTests() {
+  keywordsCache = { lastUpdated: null, lastRpcCheck: null, value: null };
+}
+
+function buildKeywords() {
   const blockchainNames = new Set();
   const networkNames = new Set();
   const softwareClients = new Set();

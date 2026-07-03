@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { getCachedData } from '../../store/cache.js';
 import {
@@ -120,7 +121,7 @@ export async function adminRoutes(fastify) {
         timeWindow: RATE_LIMIT_WINDOW_MS
       }
     }
-  }, async (_request, reply) => {
+  }, async (request, reply) => {
     if (!DATA_CACHE_ENABLED) {
       return sendError(reply, 503, 'Data cache export is disabled');
     }
@@ -128,12 +129,25 @@ export async function adminRoutes(fastify) {
     const filePath = resolve(DATA_CACHE_FILE);
 
     try {
+      // ETag keyed on file identity (mtime+size) — hashing the multi-MB body
+      // per request would defeat the point. Unchanged snapshots revalidate as
+      // 304 without reading the file at all.
+      const { mtimeMs, size } = await stat(filePath);
+      const etag = `"${createHash('sha1').update(`${mtimeMs}:${size}`).digest('hex')}"`;
+      reply.header('ETag', etag);
+      reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=600');
+      if (request.headers['if-none-match'] === etag) {
+        return reply.code(304).send();
+      }
+
       const raw = await readFile(filePath, 'utf8');
-      const exportData = JSON.parse(raw);
+      JSON.parse(raw); // validate before serving; corrupt cache → 500 below
 
       reply.header('Content-Type', 'application/json; charset=utf-8');
       reply.header('Content-Disposition', `attachment; filename="${basename(filePath)}"`);
-      return exportData;
+      // Send the raw bytes — re-serializing the parsed object would double
+      // the CPU cost of every request for an identical body.
+      return reply.send(raw);
     } catch (error) {
       if (error?.code === 'ENOENT') {
         return sendError(reply, 404, 'Export file not found');
