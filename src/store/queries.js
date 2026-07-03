@@ -78,26 +78,27 @@ export function searchChains(query) {
   if (!cachedData.indexed) return [];
 
   const results = [];
+  const seen = new Set(); // O(1) dedup — results.some() made this O(n²)
+  const push = chainId => {
+    if (seen.has(chainId)) return;
+    seen.add(chainId);
+    results.push(getChainById(chainId));
+  };
   const queryLower = query.toLowerCase();
 
   const parsedChainId = Number.parseInt(query, 10);
-  if (!Number.isNaN(parsedChainId)) {
-    const chain = getChainById(parsedChainId);
-    if (chain) results.push(chain);
+  if (!Number.isNaN(parsedChainId) && getChainByIdRaw(parsedChainId)) {
+    push(parsedChainId);
   }
 
-  cachedData.indexed.all.forEach(chain => {
-    if (chain.name?.toLowerCase().includes(queryLower)) {
-      if (!results.some(r => r.chainId === chain.chainId)) {
-        results.push(getChainById(chain.chainId));
-      }
+  for (const chain of cachedData.indexed.all) {
+    if (
+      chain.name?.toLowerCase().includes(queryLower) ||
+      chain.shortName?.toLowerCase().includes(queryLower)
+    ) {
+      push(chain.chainId);
     }
-    if (chain.shortName?.toLowerCase().includes(queryLower)) {
-      if (!results.some(r => r.chainId === chain.chainId)) {
-        results.push(getChainById(chain.chainId));
-      }
-    }
-  });
+  }
 
   return results;
 }

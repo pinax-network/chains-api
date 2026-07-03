@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import fastifyStatic from '@fastify/static';
+import compress from '@fastify/compress';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import ajvErrors from 'ajv-errors';
@@ -31,6 +32,7 @@ import { statusPagesRoutes } from './routes/statusPages.js';
 import { adminRoutes } from './routes/admin.js';
 import { metricsRoute } from './routes/metrics.js';
 import { refresherRoute } from './routes/refresher.js';
+import { summaryRoute } from './routes/summary.js';
 import { rootRoute } from './routes/root.js';
 import { prefetchAllPrices } from '../../priceService.js';
 import { logger } from '../util/logger.js';
@@ -94,6 +96,7 @@ const TAG_BY_SEGMENT = {
   health: 'Meta',
   sources: 'Meta',
   export: 'Meta',
+  summary: 'Meta',
   reload: 'Admin'
 };
 
@@ -196,6 +199,11 @@ export async function buildApp(options = {}) {
     credentials: false
   });
 
+  // Origin-side response compression. Multi-MB JSON payloads (/export,
+  // /chains, /summary) shrink ~85% under gzip/brotli. A CDN may compress at
+  // its edge, but the origin→edge hop and direct clients benefit either way.
+  await fastify.register(compress, { threshold: 1024 });
+
   await fastify.register(helmet, {
     contentSecurityPolicy: {
       directives: {
@@ -266,6 +274,7 @@ export async function buildApp(options = {}) {
   await fastify.register(statusPagesRoutes);
   await fastify.register(metricsRoute);
   await fastify.register(refresherRoute);
+  await fastify.register(summaryRoute);
   await fastify.register(rootRoute);
 
   // Interactive docs at /docs and the raw machine-readable spec at /openapi.json.

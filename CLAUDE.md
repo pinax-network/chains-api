@@ -190,6 +190,7 @@ Services: `chains-api` (port 3000) and `chains-api-mcp` (port 3001). Both have h
 | GET | `/rpc-monitor/:id` | RPC results by chain |
 | GET | `/keywords` | Indexed search keywords |
 | GET | `/stats` | Aggregate counts |
+| GET | `/summary` | Slim dashboard projection (chains + L2BEAT headline), ETag/304 |
 | GET | `/validate` | Run 16 cross-source validation rules |
 | GET | `/export` | Export cached data |
 | GET | `/metrics` | Prometheus exposition (counters + gauges) |

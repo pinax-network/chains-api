@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { buildApp } from '../../index.js';
 import * as dataService from '../../dataService.js';
@@ -10,7 +10,8 @@ import * as fsPromises from 'node:fs/promises';
 const { version: PKG_VERSION } = createRequire(import.meta.url)('../../package.json');
 
 vi.mock('node:fs/promises', () => ({
-  readFile: vi.fn()
+  readFile: vi.fn(),
+  stat: vi.fn()
 }));
 
 // Shared mock fn instances. Hoisted so multiple vi.mock factories below can
@@ -690,6 +691,11 @@ describe('API Endpoints', () => {
   });
 
   describe('GET /export', () => {
+    beforeEach(() => {
+      // /export stats the cache file to derive its ETag before reading it.
+      vi.mocked(fsPromises.stat).mockResolvedValue({ mtimeMs: 1750000000000, size: 4096 });
+    });
+
     it('should return cached snapshot export when file exists', async () => {
       const mockExport = {
         schemaVersion: 1,
@@ -738,6 +744,25 @@ describe('API Endpoints', () => {
       expect(response.statusCode).toBe(500);
       const data = JSON.parse(response.payload);
       expect(data).toHaveProperty('error', 'Export file is not valid JSON');
+    });
+
+    it('should serve an ETag and answer a matching If-None-Match with 304', async () => {
+      vi.mocked(fsPromises.readFile).mockResolvedValue('{"schemaVersion":1}');
+
+      const first = await app.inject({ method: 'GET', url: '/export' });
+      expect(first.statusCode).toBe(200);
+      const etag = first.headers.etag;
+      expect(etag).toMatch(/^".+"$/);
+      expect(first.headers['cache-control']).toContain('max-age=60');
+
+      // Same mtime+size → same ETag → 304 without a body.
+      const second = await app.inject({
+        method: 'GET',
+        url: '/export',
+        headers: { 'if-none-match': etag }
+      });
+      expect(second.statusCode).toBe(304);
+      expect(second.payload).toBe('');
     });
   });
 

@@ -3,7 +3,7 @@
   "info": {
     "title": "Chains API",
     "description": "Aggregated blockchain chain data from five external sources (TheGraph, Chainlist, Chain ID Network, SLIP-0044, L2BEAT): chain metadata, relations, RPC endpoints and health, L2 scaling, and operator status.",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "components": {
     "schemas": {}
@@ -519,6 +519,19 @@
         "tags": [
           "Observability"
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/summary": {
+      "get": {
+        "tags": [
+          "Meta"
+        ],
+        "description": "Slim projection of all chains (id, name, tags, relations, RPC count) plus L2BEAT headline data. Designed for dashboards; a fraction of the size of /export. Supports ETag revalidation (If-None-Match → 304).",
         "responses": {
           "200": {
             "description": "Default Response"
