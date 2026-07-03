@@ -1,8 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Chains dashboard — Relationships (3D graph), Networks (chains + RPC + L2
-// scaling), and Incidents (live operator status, last 30 days).
-// Data: live chains-api (/export bulk + per-chain endpoints) and
-// chains-status-news (WebSocket /ws). Forum data is excluded for now.
+// Chains dashboard — Networks (default landing: KPIs + chains + L2 scaling),
+// Relationships (lazy-loaded 3D graph), Incidents and Providers (live
+// operator/RPC-provider status, last 30 days).
+// Data: chains-api /summary (slim bulk, ETag + localStorage SWR; falls back
+// to /export then the checked-in snapshot), per-chain detail endpoints on
+// drawer open, and chains-status-news (WebSocket /ws).
 // ─────────────────────────────────────────────────────────────────────────
 
 const SAME_ORIGIN_API =
@@ -29,6 +31,8 @@ let currentFilter = 'all';
 let enabledSources = new Set(ALL_SOURCES);
 let myGraph = null;
 let graphBuilt = false;
+let graphDirty = true;      // data changed since the graph was last (re)built
+let graphLibPromise = null; // in-flight lazy load of 3d-force-graph.min.js
 
 // ─── DOM helper ───
 function el(tag, props = {}, children = []) {
@@ -100,9 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initIncidentControls();
     initChainsTableHeader();
     initAppbarHeight();     // keep --appbar-h in sync with the real bar height
+    document.getElementById('loadRetryBtn')?.addEventListener('click', () => loadBulk());
     applyUrlState();        // restore view + ?q= immediately (before data loads)
-    // Start the live incidents feed immediately — it must NOT wait on the heavy
-    // /export bulk load (13MB + 3D graph build) or it appears stuck.
+    // Start the live incidents feed immediately — it must NOT wait on the
+    // bulk load or it appears stuck.
     connectStatusFeed();
     loadStatsLine();
     loadBulk();
@@ -119,45 +124,88 @@ async function loadStatsLine() {
     } catch { /* noop */ }
 }
 
+// ─── bulk load: /summary with ETag + localStorage stale-while-revalidate ───
+// A cached copy renders instantly on repeat visits; the network trip then
+// revalidates (304 = free) or refreshes in the background.
+const SUMMARY_LS_KEY = 'chains:summary:v1';
+const SUMMARY_TTL_MS = 24 * 60 * 60 * 1000; // ignore copies older than a day
+
+function readCachedSummary() {
+    try {
+        const raw = localStorage.getItem(SUMMARY_LS_KEY);
+        if (!raw) return null;
+        const entry = JSON.parse(raw);
+        if (!entry?.payload?.chains || Date.now() - (entry.savedAt || 0) > SUMMARY_TTL_MS) return null;
+        return entry;
+    } catch { return null; }
+}
+function writeCachedSummary(payload, etag) {
+    try { localStorage.setItem(SUMMARY_LS_KEY, JSON.stringify({ savedAt: Date.now(), etag: etag || null, payload })); }
+    catch { /* quota/private mode — cache is best-effort */ }
+}
+
 async function loadBulk() {
-    let payload;
-    // Try the live export, retry once (transient tunnel blips happen), then
-    // fall back to the checked-in snapshot so the dashboard still renders.
-    for (let attempt = 0; attempt < 2 && !payload; attempt++) {
-        try { payload = await api('/export'); }
-        catch { if (attempt === 0) await new Promise(r => setTimeout(r, 1200)); }
+    hideLoadError();
+    const cached = readCachedSummary();
+    if (cached) applyBulk(cached.payload);
+
+    // 1) /summary (slim, ETag-aware) — 2 attempts for transient tunnel blips.
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const headers = { accept: 'application/json' };
+            if (cached?.etag) headers['if-none-match'] = cached.etag;
+            const res = await fetch(`${API_BASE}/summary`, { headers, signal: AbortSignal.timeout(25000) });
+            if (res.status === 304) { writeCachedSummary(cached.payload, cached.etag); return; } // cache is current
+            if (!res.ok) throw new Error(`${res.status}`);
+            const payload = await res.json();
+            writeCachedSummary(payload, res.headers.get('etag'));
+            applyBulk(payload);
+            return;
+        } catch { if (attempt === 0) await new Promise(r => setTimeout(r, 1200)); }
     }
-    if (!payload) {
-        try { payload = await (await fetch('export.json')).json(); }
-        catch { return graphLoadError(); }
-    }
+    // 2) legacy /export (older API deployments), 3) checked-in slim snapshot.
+    try { applyBulk(await api('/export')); return; } catch { /* next */ }
+    try { applyBulk(await (await fetch('summary.json')).json()); return; } catch { /* fall through */ }
+    if (!state.chains.length) showLoadError();
+}
+
+// Accepts both shapes: /summary ({chains, l2beat}) and /export ({data:{indexed:{all}}}).
+let statusPagesLoaded = false;
+function applyBulk(payload) {
     const data = payload.data ?? payload;
-    state.chains = data.indexed?.all ?? [];
+    state.chains = data.chains ?? data.indexed?.all ?? [];
     state.lastUpdated = data.lastUpdated ?? null;
     state.byId = new Map(state.chains.map(c => [c.chainId, c]));
     state.l2beatMeta = data.l2beat ? { source: data.l2beat.source, count: (data.l2beat.projects || []).length } : null;
     state.l2beatProjects = data.l2beat?.projects ?? [];
+    state.l2beat = new Map();
     for (const p of state.l2beatProjects) if (p.chainId != null) state.l2beat.set(p.chainId, p);
+    state.rel = new Map();
 
     buildRelations();
-    buildGraph();
+    graphDirty = true;
+    if (activeView === 'graph') ensureGraphView();
     renderSummaryCards();   // total TVS needs the L2BEAT projects just loaded
     renderScalingChart();
     renderChainsView();
     if (!document.getElementById('statsLine').textContent.includes('chains')) {
         document.getElementById('statsLine').textContent = `${state.chains.length} chains loaded`;
     }
-    loadStatusPages();      // populate drawer status-page links (no list UI)
+    if (!statusPagesLoaded) { statusPagesLoaded = true; loadStatusPages(); } // drawer status-page links
     applyUrlState();        // deep-link ?chain=
 }
 
-function graphLoadError() {
+function showLoadError() {
+    const b = document.getElementById('loadErrorBanner');
+    if (b) b.classList.remove('hidden');
     const o = document.getElementById('loadingOverlay');
-    if (!o) return;
-    o.querySelector('.spinner').style.display = 'none';
-    o.querySelector('p').textContent = 'Failed to load data.';
-    o.querySelector('.loading-sub').textContent = 'Check your connection or that the API is reachable.';
+    if (o) {
+        o.querySelector('.spinner').style.display = 'none';
+        o.querySelector('p').textContent = 'Failed to load data.';
+        o.querySelector('.loading-sub').textContent = 'Check your connection or that the API is reachable.';
+    }
 }
+function hideLoadError() { document.getElementById('loadErrorBanner')?.classList.add('hidden'); }
 
 // ─── relations ───
 function relEntry(id) {
@@ -192,23 +240,35 @@ function initAppbarHeight() {
 
 // ─────────────────────────────── tabs ───────────────────────────────
 function initTabs() {
-    document.querySelectorAll('#tabs .tab').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
+    const tabs = [...document.querySelectorAll('#tabs .tab')];
+    tabs.forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
+    // Arrow keys cycle the tab group (ARIA tabs pattern).
+    document.getElementById('tabs')?.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const i = tabs.findIndex(t => t.dataset.view === activeView);
+        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+        next.focus(); switchView(next.dataset.view);
+    });
 }
 // View / search / selected-chain are all reflected in the URL so each tab is a
 // separate, shareable, reloadable page (e.g. ?view=incidents&q=base).
-const VIEWS = ['graph', 'networks', 'incidents', 'providers'];
-let activeView = 'graph';
+// Networks is the default landing view: info-dense and cheap to render —
+// the 3D graph (1.2 MB lib + physics warmup) only loads when visited.
+const VIEWS = ['networks', 'graph', 'incidents', 'providers'];
+const DEFAULT_VIEW = 'networks';
+let activeView = DEFAULT_VIEW;
 let searchQuery = '';
 let openChainId = null;
 
 function switchView(view, opts = {}) {
-    if (!VIEWS.includes(view)) view = 'graph';
+    if (!VIEWS.includes(view)) view = DEFAULT_VIEW;
     activeView = view;
     document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(`view-${view}`).classList.add('active');
     document.body.classList.toggle('graph-active', view === 'graph');
-    if (view === 'graph' && myGraph) setTimeout(() => myGraph.width(window.innerWidth).height(window.innerHeight), 0);
+    if (view === 'graph') ensureGraphView();
     updateSearchPlaceholder();
     applySearch();
     if (!opts.fromUrl) updateUrl({ push: true });
@@ -232,7 +292,7 @@ function applySearch() {
 function updateUrl({ push = false } = {}) {
     const u = new URL(location.href);
     const set = (k, v) => { if (v == null || v === '') u.searchParams.delete(k); else u.searchParams.set(k, v); };
-    set('view', activeView === 'graph' ? null : activeView); // graph is the default; keep URL clean
+    set('view', activeView === DEFAULT_VIEW ? null : activeView); // default view keeps the URL clean
     set('q', searchQuery || null);
     set('chain', openChainId);
     history[push ? 'pushState' : 'replaceState'](null, '', u);
@@ -245,7 +305,7 @@ function applyUrlState() {
     searchQuery = q.trim().toLowerCase();
     const input = document.getElementById('searchInput');
     if (input && input.value !== q) input.value = q;
-    switchView(params.get('view') || 'graph', { fromUrl: true });
+    switchView(params.get('view') || DEFAULT_VIEW, { fromUrl: true });
 
     const chain = params.get('chain');
     if (chain && state.byId.has(Number(chain))) openChainDetail(Number(chain), { fromUrl: true });
@@ -284,10 +344,13 @@ function initSearch() {
         dd.classList.remove('hidden');
     }, 140);
 
+    // Filtering the page re-renders the whole table/list — debounce it so
+    // fast typing doesn't rebuild 2.5k rows per keystroke.
+    const debouncedApplySearch = debounce(applySearch, 150);
     function onInput(raw) {
         searchQuery = raw.trim().toLowerCase();
         updateUrl();           // ?q= reflects the search (shareable / reloadable)
-        applySearch();         // filter the active page (networks / incidents)
+        debouncedApplySearch();
         renderDropdown(searchQuery);
     }
     function pick(id) { dd.classList.add('hidden'); openChainDetail(id); if (activeView === 'graph') focusNodeById(id); }
@@ -307,6 +370,30 @@ function initSearch() {
 }
 
 // ─────────────────────────────── graph ───────────────────────────────
+// The 1.2 MB 3d-force-graph library is NOT in index.html — it's injected on
+// the first visit to the Relationships tab so the default Networks landing
+// stays light.
+function ensureGraphLib() {
+    if (globalThis.ForceGraph3D) return Promise.resolve();
+    if (!graphLibPromise) {
+        graphLibPromise = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = '3d-force-graph.min.js';
+            s.onload = resolve;
+            s.onerror = () => { graphLibPromise = null; reject(new Error('graph lib failed to load')); };
+            document.head.appendChild(s);
+        });
+    }
+    return graphLibPromise;
+}
+async function ensureGraphView() {
+    if (myGraph) setTimeout(() => myGraph.width(window.innerWidth).height(window.innerHeight), 0);
+    if (!state.chains.length) return; // data still loading; applyBulk() re-enters
+    try { await ensureGraphLib(); } catch { showLoadError(); return; }
+    if (activeView !== 'graph') return; // user tabbed away while the lib loaded
+    if (graphDirty) { buildGraph(); applyGraphFilter(); graphDirty = false; }
+}
+
 function initGraphControls() {
     document.querySelectorAll('.filter-btn').forEach(btn => btn.addEventListener('click', e => {
         document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -327,6 +414,9 @@ function visibleChains() {
     return state.chains.filter(c => c.sources?.some(s => enabledSources.has(s)));
 }
 function buildGraph() {
+    // Lib not in yet (lazy load in flight, or a source toggle raced it):
+    // mark dirty and let ensureGraphView() rebuild once it lands.
+    if (!globalThis.ForceGraph3D) { graphDirty = true; return; }
     const chains = visibleChains();
     const ids = new Set(chains.map(c => c.chainId));
     const nodes = []; const nodeMap = new Map();
@@ -395,21 +485,33 @@ function renderSummaryCards() {
     const s = stats || {};
     const num = v => (v != null ? Number(v).toLocaleString() : '—');
     const tvs = totalTvs();
+    const rpcPct = s.rpc ? Number(s.rpc.healthPercent) : null;
     const cards = [
-        { label: 'Networks', value: num(s.totalChains ?? state.chains.length) },
+        { label: 'Networks', value: num(s.totalChains ?? (state.chains.length || null)) },
         { label: 'Mainnets', value: num(s.totalMainnets) },
         { label: 'L2s', value: num(s.totalL2s) },
         { label: 'Testnets', value: num(s.totalTestnets) },
-        { label: 'RPC working', value: s.rpc ? `${s.rpc.healthPercent}%` : '—', sub: s.rpc ? `${num(s.rpc.working)} / ${num(s.rpc.tested)}` : '', tone: 'good' },
+        {
+            label: 'RPC health', value: rpcPct != null ? `${rpcPct}%` : '—',
+            sub: s.rpc ? `${num(s.rpc.working)} / ${num(s.rpc.tested)} endpoints` : '',
+            tone: rpcPct == null ? '' : rpcPct >= 90 ? 'good' : rpcPct >= 70 ? 'warn' : 'bad',
+            bar: rpcPct
+        },
         { label: 'Total TVS', value: tvs ? fmtUsd(tvs) : '—', sub: state.l2beatProjects.length ? `${state.l2beatProjects.length} L2BEAT projects` : '' }
     ];
     wrap.textContent = '';
     for (const c of cards) {
-        wrap.appendChild(el('div', { class: `stat-card ${c.tone || ''}` }, [
+        const card = el('div', { class: `stat-card ${c.tone || ''}` }, [
             el('div', { class: 'stat-value', text: c.value }),
             el('div', { class: 'stat-label', text: c.label }),
             c.sub ? el('div', { class: 'stat-sub', text: c.sub }) : null
-        ]));
+        ]);
+        if (c.bar != null) {
+            const track = el('div', { class: 'stat-bar' }, [el('div', { class: 'stat-bar-fill' })]);
+            track.firstChild.style.width = `${Math.max(0, Math.min(100, c.bar))}%`;
+            card.appendChild(track);
+        }
+        wrap.appendChild(card);
     }
 }
 
@@ -434,7 +536,8 @@ function networkType(c) { return c.tags?.includes('Testnet') ? 'Testnet' : 'Main
 function extraTags(c) { return (c.tags || []).filter(t => t !== 'Testnet'); }
 
 function chainRowData(c) {
-    const rpcCount = (c.rpc || []).filter(u => { const url = typeof u === 'string' ? u : u?.url; return url && url.startsWith('http') && !url.includes('${'); }).length;
+    // /summary precomputes rpcCount; the /export fallback still ships raw URLs.
+    const rpcCount = c.rpcCount ?? (c.rpc || []).filter(u => { const url = typeof u === 'string' ? u : u?.url; return url && url.startsWith('http') && !url.includes('${'); }).length;
     const l2b = state.l2beat.get(c.chainId);
     return {
         chainId: c.chainId, name: c.name || `Chain ${c.chainId}`,
@@ -684,22 +787,44 @@ function renderCalendar() {
     }
 }
 
+// One card builder for both chain incidents and provider incidents — they
+// differ only in icon/label source and the affected-chains chip row.
 function incidentCard(it) {
+    const isProvider = !!it.isProvider;
+    const label = isProvider ? it.providerName : it.netName;
     const open = it.status && !CLOSED_STATUSES.has(it.status.toLowerCase());
     const when = it.whenMs != null ? new Date(it.whenMs).toLocaleString() : null;
-    const meta = [it.netName, when, open ? 'ongoing' : null].filter(Boolean);
+    const meta = [label, when, open ? 'ongoing' : null].filter(Boolean);
     const dur = fmtDuration(it.durationMs);
     const side = [];
     if (it.status) side.push(el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }));
     if (dur) side.push(el('span', { class: 'incident-dur', text: dur }));
+
+    // Provider incidents map to the chains they hit: clickable chips (open the
+    // drawer), else raw component names, else a "provider-wide" note.
+    let affected = null;
+    if (isProvider) {
+        if (it.affectedChains?.length) {
+            affected = el('div', { class: 'affected-chains' }, it.affectedChains.slice(0, 12).map(id => {
+                const c = state.byId.get(id);
+                return el('span', { class: 'chain-chip', onclick: e => { e.preventDefault(); e.stopPropagation(); openChainDetail(id); }, text: c?.name || `Chain ${id}` });
+            }));
+        } else if (it.affectedComponents?.length) {
+            affected = el('div', { class: 'incident-meta muted', text: it.affectedComponents.slice(0, 5).join(', ') });
+        } else {
+            affected = el('div', { class: 'incident-meta muted', text: 'No specific chain — provider-wide' });
+        }
+    }
+
     return el('a', { class: `incident-card${open ? ' open' : ''}`, href: it.url || '#', target: '_blank', rel: 'noopener' }, [
-        networkIcon(it.netName, iconColorFor(it.chainId)),
+        isProvider ? networkIcon(label, COLORS.Default, 'net-icon provider-icon') : networkIcon(label, iconColorFor(it.chainId)),
         el('div', { class: 'incident-body' }, [
             el('div', { class: 'incident-title' }, [
-                it.kind === 'scheduled' ? el('span', { class: 'kind-tag', text: 'Scheduled' }) : null,
+                !isProvider && it.kind === 'scheduled' ? el('span', { class: 'kind-tag', text: 'Scheduled' }) : null,
                 el('span', { text: it.title })
             ]),
-            el('div', { class: 'incident-meta', text: meta.join(' · ') })
+            el('div', { class: 'incident-meta', text: meta.join(' · ') }),
+            affected
         ]),
         el('div', { class: 'incident-side' }, side)
     ]);
@@ -771,38 +896,6 @@ function renderProviderFilter() {
         bar.appendChild(chip(id, `${name} (${counts.get(id) || 0})`));
 }
 
-function providerCard(it) {
-    const open = it.status && !CLOSED_STATUSES.has(it.status.toLowerCase());
-    const when = it.whenMs != null ? new Date(it.whenMs).toLocaleString() : null;
-    const meta = [it.providerName, when, open ? 'ongoing' : null].filter(Boolean);
-    const dur = fmtDuration(it.durationMs);
-    const side = [];
-    if (it.status) side.push(el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }));
-    if (dur) side.push(el('span', { class: 'incident-dur', text: dur }));
-    // Affected chains as clickable chips (open the chain drawer); fall back to
-    // raw component names when no chain mapped, or a "provider-wide" note.
-    let affected = null;
-    if (it.affectedChains?.length) {
-        affected = el('div', { class: 'affected-chains' }, it.affectedChains.slice(0, 12).map(id => {
-            const c = state.byId.get(id);
-            return el('span', { class: 'chain-chip', onclick: e => { e.preventDefault(); e.stopPropagation(); openChainDetail(id); }, text: c?.name || `Chain ${id}` });
-        }));
-    } else if (it.affectedComponents?.length) {
-        affected = el('div', { class: 'incident-meta muted', text: it.affectedComponents.slice(0, 5).join(', ') });
-    } else {
-        affected = el('div', { class: 'incident-meta muted', text: 'No specific chain — provider-wide' });
-    }
-    return el('a', { class: `incident-card${open ? ' open' : ''}`, href: it.url || '#', target: '_blank', rel: 'noopener' }, [
-        networkIcon(it.providerName, COLORS.Default, 'net-icon provider-icon'),
-        el('div', { class: 'incident-body' }, [
-            el('div', { class: 'incident-title' }, [el('span', { text: it.title })]),
-            el('div', { class: 'incident-meta', text: meta.join(' · ') }),
-            affected
-        ]),
-        el('div', { class: 'incident-side' }, side)
-    ]);
-}
-
 function renderProviderList() {
     const list = document.getElementById('providersList'); if (!list) return;
     let items = visibleProviderIncidents();
@@ -814,7 +907,7 @@ function renderProviderList() {
         list.appendChild(el('div', { class: 'feed-empty', text: providerIncidents().length ? 'Nothing matches.' : 'No RPC provider incidents in range.' }));
         return;
     }
-    for (const it of items) list.appendChild(providerCard(it));
+    for (const it of items) list.appendChild(incidentCard(it));
 }
 
 function connectStatusFeed() {
@@ -877,15 +970,19 @@ function openChainDetail(chainId, opts = {}) {
     body.textContent = '';
 
     const icon = networkIcon(c.name, COLORS[type], 'd-icon');
-    const badges = [el('span', { class: 'badge', text: `ID: ${c.chainId}` })];
-    if (c.status) badges.push(statusBadge(c.status));
-    (c.tags || []).forEach(t => badges.push(el('span', { class: `tag tag-${t.toLowerCase()}`, text: t })));
+    const badgeList = [el('span', { class: 'badge', text: `ID: ${c.chainId}` })];
+    if (c.status) badgeList.push(statusBadge(c.status));
+    (c.tags || []).forEach(t => badgeList.push(el('span', { class: `tag tag-${t.toLowerCase()}`, text: t })));
+    const badges = el('div', { class: 'd-badges' }, badgeList);
     body.appendChild(el('div', { class: 'd-header' }, [icon, el('div', {}, [
-        el('h2', { text: c.name || `Chain ${c.chainId}` }), el('div', { class: 'd-badges' }, badges)
+        el('h2', { text: c.name || `Chain ${c.chainId}` }), badges
     ])]));
 
     const content = el('div', { class: 'd-content' });
-    content.appendChild(detailRow('Native currency', el('span', { text: c.nativeCurrency ? `${c.nativeCurrency.name} (${c.nativeCurrency.symbol})` : '—' })));
+    // Rows that need the full chain record land here — /summary is slim, so
+    // detail (currency, explorers, website) is fetched per chain on open.
+    const extraBox = el('div', { class: 'd-extra' });
+    content.appendChild(extraBox);
     if (e.l1Parent != null) content.appendChild(detailRow('L1 / parent', chainLink(e.l1Parent)));
     if (e.mainnet != null) content.appendChild(detailRow('Mainnet', chainLink(e.mainnet)));
     if (e.l2Children?.length) content.appendChild(detailRow(`L2 / L3 (${e.l2Children.length})`, e.l2Children.slice(0, 30).map(chainLink)));
@@ -895,9 +992,7 @@ function openChainDetail(chainId, opts = {}) {
         el('span', { class: 'strong', text: fmtUsd(l2b.tvs) }), l2b.daLayer ? el('span', { class: 'muted', text: `DA: ${l2b.daLayer}` }) : null
     ])));
     if (sp) { const host = safeHost(sp.url); content.appendChild(detailRow('Status page', el('a', { href: sp.url, target: '_blank', rel: 'noopener', text: host || sp.name }))); }
-    if (c.explorers?.length) content.appendChild(detailRow('Explorers', c.explorers.map(x => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name || safeHost(x.url) }))));
-    if (c.infoURL) { const host = safeHost(c.infoURL); content.appendChild(detailRow('Website', host ? el('a', { href: c.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: c.infoURL }))); }
-    if (c.slip44 != null) content.appendChild(detailRow('SLIP-44', el('span', { class: 'mono', text: String(c.slip44) })));
+    loadChainDetail(chainId, extraBox, badges);
 
     const headCell = el('span', { class: 'mono', text: '…' });
     content.appendChild(detailRow('Block head', headCell));
@@ -911,6 +1006,25 @@ function openChainDetail(chainId, opts = {}) {
     loadLiveRpc(chainId, rpcBox, headCell);
     loadLiveClients(chainId, clientBox);
 }
+// Fill the detail-only rows (currency, price, explorers, website, SLIP-44)
+// from the full chain record. /summary is slim, so this usually needs a
+// /chains/:id fetch; the /export fallback already carries everything.
+async function loadChainDetail(chainId, box, badges) {
+    let d = state.byId.get(chainId) || {};
+    if (!d.nativeCurrency && !d.explorers && !d.infoURL) {
+        try { d = await api(`/chains/${chainId}`); } catch { /* render what we have */ }
+    }
+    if (openChainId !== chainId) return; // drawer moved on while fetching
+    box.textContent = '';
+    const currency = d.nativeCurrency ? `${d.nativeCurrency.name} (${d.nativeCurrency.symbol})` : '—';
+    const price = typeof d.price?.usd === 'number' ? ` · $${d.price.usd.toLocaleString()}` : '';
+    box.appendChild(detailRow('Native currency', el('span', { text: currency + price })));
+    if (d.status && !badges.querySelector('.pill')) badges.appendChild(statusBadge(d.status));
+    if (d.explorers?.length) box.appendChild(detailRow('Explorers', d.explorers.slice(0, 6).map(x => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name || safeHost(x.url) }))));
+    if (d.infoURL) { const host = safeHost(d.infoURL); box.appendChild(detailRow('Website', host ? el('a', { href: d.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: d.infoURL }))); }
+    if (d.slip44 != null) box.appendChild(detailRow('SLIP-44', el('span', { class: 'mono', text: String(d.slip44) })));
+}
+
 // "Geth/v1.13.0/linux/go1.21" → "Geth v1.13.0"
 function clientNameVersion(cv) {
     if (!cv) return null;
@@ -918,9 +1032,17 @@ function clientNameVersion(cv) {
 }
 async function loadLiveRpc(chainId, box, headCell) {
     stopBlockHead();
-    const staticUrls = (state.byId.get(chainId)?.rpc || []).map(u => typeof u === 'string' ? u : u?.url).filter(u => u && u.startsWith('http') && !u.includes('${'));
+    const usable = urls => urls.map(u => typeof u === 'string' ? u : u?.url).filter(u => u && u.startsWith('http') && !u.includes('${'));
+    let staticUrls = usable(state.byId.get(chainId)?.rpc || []);
     let results = [];
-    try { const d = await api(`/rpc-monitor/${chainId}`); results = d.results || d.endpoints || (Array.isArray(d) ? d : []); } catch { /* noop */ }
+    // Health results + (when on slim /summary data) the registry URL list.
+    const [healthRes, endpointsRes] = await Promise.allSettled([
+        api(`/rpc-monitor/${chainId}`),
+        staticUrls.length || !state.byId.get(chainId)?.rpcCount ? Promise.resolve(null) : api(`/endpoints/${chainId}`)
+    ]);
+    if (healthRes.status === 'fulfilled') { const d = healthRes.value; results = d.results || d.endpoints || (Array.isArray(d) ? d : []); }
+    if (endpointsRes.status === 'fulfilled' && endpointsRes.value) staticUrls = usable(endpointsRes.value.rpc || []);
+    if (openChainId !== chainId) return; // drawer moved on while fetching
     const working = results.filter(r => r.status === 'working' || r.ok === true);
     // List only reachable endpoints (failed ones are ignored). If nothing has
     // been health-checked yet, fall back to the registry list as untested.

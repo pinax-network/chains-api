@@ -5,14 +5,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chains — Blockchain Networks Dashboard</title>
-    <meta name="description" content="Explore blockchain networks: relationships, chain info, RPC endpoints and health, L2 scaling, and operator incidents — aggregated from multiple sources.">
+    <meta name="description" content="Explore blockchain networks: chain info, RPC endpoints and health, L2 scaling, relationships, and operator incidents — aggregated from multiple sources.">
 
-    <script src="3d-force-graph.min.js"></script>
+    <!-- Warm up the API + live-feed origins before the first fetch -->
+    <link rel="preconnect" href="https://chains-api.johnaverse.cc" crossorigin>
+    <link rel="preconnect" href="https://chains-status-news.johnaverse.cc" crossorigin>
+
     <link rel="stylesheet" href="fonts/inter.css">
     <link rel="stylesheet" href="style.css">
+    <!-- 3d-force-graph (1.2 MB) is injected lazily on first visit to the
+         Relationships tab — see ensureGraphLib() in app.js. -->
+    <script src="app.js" defer></script>
 </head>
 
-<body class="graph-active">
+<body>
     <!-- ─── Top App Bar ─── -->
     <header id="appbar">
         <div class="appbar-brand">
@@ -34,16 +40,66 @@
             <div id="searchDropdown" class="search-dropdown hidden"></div>
         </div>
 
-        <nav class="tabs" id="tabs">
-            <button class="tab active" data-view="graph">Relationships</button>
-            <button class="tab" data-view="networks">Networks</button>
-            <button class="tab" data-view="incidents">Incidents</button>
-            <button class="tab" data-view="providers">Providers</button>
+        <nav class="tabs" id="tabs" role="tablist">
+            <button class="tab active" data-view="networks" role="tab">Networks</button>
+            <button class="tab" data-view="graph" role="tab">Relationships</button>
+            <button class="tab" data-view="incidents" role="tab">Incidents</button>
+            <button class="tab" data-view="providers" role="tab">Providers</button>
         </nav>
     </header>
 
-    <!-- ─── View: Relationships (3D graph) ─── -->
-    <section id="view-graph" class="view active">
+    <!-- Load-failure banner (hidden unless the bulk fetch fails everywhere) -->
+    <div id="loadErrorBanner" class="load-error hidden">
+        <span id="loadErrorText">Failed to load network data.</span>
+        <button id="loadRetryBtn" class="chip">Retry</button>
+    </div>
+
+    <!-- ─── View: Networks (default landing) ─── -->
+    <section id="view-networks" class="view scroll-view active">
+        <div class="view-inner">
+            <!-- Hero KPI strip -->
+            <div class="stat-cards summary" id="summaryCards">
+                <div class="stat-card skeleton"><div class="stat-value">…</div><div class="stat-label">Loading</div></div>
+            </div>
+
+            <!-- Compact top-L2s-by-TVS chart -->
+            <h2 class="section-title">Top L2s by TVS <span class="src-pill" id="scalingMeta"></span></h2>
+            <div class="scaling-chart" id="scalingChart"></div>
+
+            <!-- One unified networks table -->
+            <h2 class="section-title">All networks <span class="toolbar-count" id="chainsCount"></span></h2>
+            <div class="toolbar">
+                <div class="chip-row" id="chainTagChips">
+                    <button class="chip active" data-tag="all">All</button>
+                    <button class="chip" data-tag="Mainnet">Mainnet</button>
+                    <button class="chip" data-tag="L2">L2</button>
+                    <button class="chip" data-tag="Testnet">Testnet</button>
+                    <button class="chip" data-tag="Beacon">Beacon</button>
+                    <button class="chip" data-tag="ZK">ZK</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table" id="chainsTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="chainId" class="num">ID</th>
+                            <th data-sort="name">Name</th>
+                            <th data-sort="type">Type</th>
+                            <th data-sort="stage">Stage</th>
+                            <th data-sort="tvs" class="num">TVS</th>
+                            <th data-sort="rpcs" class="num">RPCs</th>
+                            <th data-sort="status">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chainsTableBody"></tbody>
+                </table>
+                <div class="table-more" id="chainsTableMore"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── View: Relationships (3D graph, lazy-loaded) ─── -->
+    <section id="view-graph" class="view">
         <div id="3d-graph"></div>
 
         <div class="graph-overlay">
@@ -82,50 +138,8 @@
 
             <div id="loadingOverlay" class="glass-panel loading-overlay">
                 <div class="spinner"></div>
-                <p>Loading networks…</p>
-                <p class="loading-sub">Fetching chain data and building graph</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- ─── View: Networks ─── -->
-    <section id="view-networks" class="view scroll-view">
-        <div class="view-inner">
-            <!-- Summary metric strip -->
-            <div class="stat-cards summary" id="summaryCards"></div>
-
-            <!-- Compact top-L2s-by-TVS chart -->
-            <h2 class="section-title">Top L2s by TVS <span class="src-pill" id="scalingMeta"></span></h2>
-            <div class="scaling-chart" id="scalingChart"></div>
-
-            <!-- One unified networks table -->
-            <h2 class="section-title">All networks <span class="toolbar-count" id="chainsCount"></span></h2>
-            <div class="toolbar">
-                <div class="chip-row" id="chainTagChips">
-                    <button class="chip active" data-tag="all">All</button>
-                    <button class="chip" data-tag="Mainnet">Mainnet</button>
-                    <button class="chip" data-tag="L2">L2</button>
-                    <button class="chip" data-tag="Testnet">Testnet</button>
-                    <button class="chip" data-tag="Beacon">Beacon</button>
-                    <button class="chip" data-tag="ZK">ZK</button>
-                </div>
-            </div>
-            <div class="table-wrap">
-                <table class="data-table" id="chainsTable">
-                    <thead>
-                        <tr>
-                            <th data-sort="chainId" class="num">ID</th>
-                            <th data-sort="name">Name</th>
-                            <th data-sort="type">Type</th>
-                            <th data-sort="stage">Stage</th>
-                            <th data-sort="tvs" class="num">TVS</th>
-                            <th data-sort="rpcs" class="num">RPCs</th>
-                            <th data-sort="status">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="chainsTableBody"></tbody>
-                </table>
-                <div class="table-more" id="chainsTableMore"></div>
+                <p>Loading graph…</p>
+                <p class="loading-sub">Fetching the 3D engine and building the network graph</p>
             </div>
         </div>
     </section>
@@ -181,8 +195,6 @@
             <div id="drawerBody"></div>
         </div>
     </aside>
-
-    <script src="app.js"></script>
 </body>
 
 </html>
