@@ -940,31 +940,39 @@ function renderProviderList() {
 }
 
 function connectStatusFeed() {
-    const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=200`;
+    // The WS replay is capped server-side (~100 events, a few days), so the
+    // full history always comes from the REST backfill; the WS only streams
+    // live updates on top. addIncidents() merges the two by incident key.
+    statusFeedBackfill();
+    const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=100`;
     let ws;
-    try { ws = new WebSocket(wsUrl); } catch { return statusFeedRestFallback(); }
+    try { ws = new WebSocket(wsUrl); } catch { return; }
     incidents.ws = ws;
-    ws.onopen = () => { incidents.retries = 0; setFeedMeta('live'); };
+    ws.onopen = () => { incidents.retries = 0; setFeedMeta('live'); statusFeedBackfill(); };
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } if (m.type === 'status.item' && m.item) addIncidents([m.item]); };
     ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
     ws.onclose = () => {
         incidents.ws = null;
-        if (!incidents.items.length && !incidents.restTried) statusFeedRestFallback();
         if (incidents.retries < 6) { const delay = Math.min(1000 * 2 ** incidents.retries, 20000); incidents.retries++; setFeedMeta('reconnecting…'); setTimeout(connectStatusFeed, delay); }
     };
 }
 function setFeedMeta(text) {
     for (const id of ['incidentsMeta', 'providersMeta']) { const e = document.getElementById(id); if (e) e.textContent = text; }
 }
-async function statusFeedRestFallback() {
-    incidents.restTried = true;
+async function statusFeedBackfill() {
+    if (incidents.backfilled || incidents.backfillInFlight) return;
+    incidents.backfillInFlight = true;
     try {
-        const res = await fetch(`${STATUS_NEWS_BASE}/events?limit=200`, { headers: { accept: 'application/json' } });
+        // limit=500 > store size — returns everything the feed has retained.
+        const res = await fetch(`${STATUS_NEWS_BASE}/events?limit=500`, { headers: { accept: 'application/json' } });
         if (!res.ok) throw new Error(res.status);
         const d = await res.json();
         addIncidents(d.events || d.items || []);
+        incidents.backfilled = true;
     } catch {
         if (!incidents.items.length) { const l = document.getElementById('incidentsList'); if (l) { l.textContent = ''; l.appendChild(el('div', { class: 'feed-empty', text: 'Live status feed unavailable (chains-status-news).' })); } }
+    } finally {
+        incidents.backfillInFlight = false;
     }
 }
 
