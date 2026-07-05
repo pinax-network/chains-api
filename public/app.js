@@ -625,7 +625,7 @@ const STATUS_WORDS = ['Resolved', 'Completed', 'Monitoring', 'Verifying', 'Updat
 // Statuses that close an incident/maintenance — used to know it's done.
 const CLOSED_STATUSES = new Set(['resolved', 'completed', 'closed']);
 const incidents = { items: [], byKey: new Map(), ws: null, retries: 0, groupBy: 'flat', dayFilter: null, category: 'all' };
-const providers = { filter: 'all' };
+const providers = { filter: 'all', dayFilter: null };
 
 function parseIncidentStatus(ev) {
     const s = ev.summary || '';
@@ -768,23 +768,46 @@ function renderIncidents() {
     renderIncidentList();
 }
 
-function renderCalendar() {
-    const cal = document.getElementById('incidentCalendar'); if (!cal) return;
+// Three real month grids — previous, current, next (next month surfaces
+// upcoming scheduled maintenance). Monday-first, UTC day keys (matches
+// dayKey()), days with events are heat-shaded and click-toggle a day filter.
+function renderMonthCalendars(containerId, items, selectedDay, onSelect) {
+    const wrap = document.getElementById(containerId); if (!wrap) return;
     const counts = new Map();
-    for (const it of visibleIncidents()) { const k = dayKey(it.whenMs); if (k) counts.set(k, (counts.get(k) || 0) + 1); }
+    for (const it of items) { const k = dayKey(it.whenMs); if (k) counts.set(k, (counts.get(k) || 0) + 1); }
     const max = Math.max(1, ...counts.values());
-    cal.textContent = '';
-    const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-    for (let i = 29; i >= 0; i--) {
-        const d = new Date(today); d.setUTCDate(today.getUTCDate() - i);
-        const k = d.toISOString().slice(0, 10); const n = counts.get(k) || 0;
-        const cell = el('div', { class: `cal-cell${n ? ' has' : ''}${incidents.dayFilter === k ? ' sel' : ''}`, title: `${k}: ${n} incident${n === 1 ? '' : 's'}` }, [
-            el('span', { class: 'cal-day', text: String(d.getUTCDate()) }),
-            n ? el('span', { class: 'cal-count', text: String(n) }) : null
-        ]);
-        if (n) { cell.style.background = `rgba(139,92,246,${0.15 + 0.6 * (n / max)})`; cell.addEventListener('click', () => { incidents.dayFilter = incidents.dayFilter === k ? null : k; renderIncidents(); }); }
-        cal.appendChild(cell);
+    const todayKey = dayKey(Date.now());
+    const now = new Date();
+    wrap.textContent = '';
+    for (let off = -1; off <= 1; off++) {
+        const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
+        const daysInMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+        const grid = el('div', { class: 'cal-grid' },
+            ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => el('div', { class: 'cal-dow', text: d })));
+        for (let i = (first.getUTCDay() + 6) % 7; i > 0; i--) grid.appendChild(el('div', { class: 'cal-cell blank' }));
+        for (let d = 1; d <= daysInMonth; d++) {
+            const k = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), d)).toISOString().slice(0, 10);
+            const n = counts.get(k) || 0;
+            const cell = el('div', {
+                class: `cal-cell${n ? ' has' : ''}${selectedDay === k ? ' sel' : ''}${k === todayKey ? ' today' : ''}`,
+                title: `${k}: ${n} incident${n === 1 ? '' : 's'}`
+            }, [
+                el('span', { class: 'cal-day', text: String(d) }),
+                n ? el('span', { class: 'cal-count', text: String(n) }) : null
+            ]);
+            if (n) { cell.style.background = `rgba(139,92,246,${0.15 + 0.6 * (n / max)})`; cell.addEventListener('click', () => onSelect(k)); }
+            grid.appendChild(cell);
+        }
+        wrap.appendChild(el('div', { class: 'cal-month' }, [
+            el('div', { class: 'cal-month-title', text: first.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }) }),
+            grid
+        ]));
     }
+}
+
+function renderCalendar() {
+    renderMonthCalendars('incidentCalendar', visibleIncidents(), incidents.dayFilter,
+        k => { incidents.dayFilter = incidents.dayFilter === k ? null : k; renderIncidents(); });
 }
 
 // One card builder for both chain incidents and provider incidents — they
@@ -875,13 +898,18 @@ function providerMatchesSearch(it, q) {
 
 function setProviderFilter(prov) {
     providers.filter = prov;
+    renderProviders();
+}
+
+function renderProviders() {
+    renderProviderCalendar();
     renderProviderFilter();
     renderProviderList();
 }
 
-function renderProviders() {
-    renderProviderFilter();
-    renderProviderList();
+function renderProviderCalendar() {
+    renderMonthCalendars('providerCalendar', visibleProviderIncidents(), providers.dayFilter,
+        k => { providers.dayFilter = providers.dayFilter === k ? null : k; renderProviders(); });
 }
 
 function renderProviderFilter() {
@@ -899,9 +927,10 @@ function renderProviderFilter() {
 function renderProviderList() {
     const list = document.getElementById('providersList'); if (!list) return;
     let items = visibleProviderIncidents();
+    if (providers.dayFilter) items = items.filter(it => dayKey(it.whenMs) === providers.dayFilter);
     if (searchQuery) items = items.filter(it => providerMatchesSearch(it, searchQuery));
     const countEl = document.getElementById('providersCount');
-    if (countEl) countEl.textContent = `${items.length} incident${items.length === 1 ? '' : 's'}${searchQuery ? ` · “${searchQuery}”` : ''}`;
+    if (countEl) countEl.textContent = `${items.length} incident${items.length === 1 ? '' : 's'}${providers.dayFilter ? ` on ${providers.dayFilter}` : ''}${searchQuery ? ` · “${searchQuery}”` : ''}`;
     list.textContent = '';
     if (!items.length) {
         list.appendChild(el('div', { class: 'feed-empty', text: providerIncidents().length ? 'Nothing matches.' : 'No RPC provider incidents in range.' }));

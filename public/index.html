@@ -147,10 +147,10 @@
     <!-- ─── View: Incidents ─── -->
     <section id="view-incidents" class="view scroll-view">
         <div class="view-inner">
-            <h2 class="section-title">Incidents — past 30 days
+            <h2 class="section-title">Incidents
                 <span class="src-pill" id="incidentsMeta">live</span>
             </h2>
-            <div class="calendar" id="incidentCalendar"></div>
+            <div class="calendars" id="incidentCalendar"></div>
 
             <div class="toolbar">
                 <div class="chip-row" id="incidentCategory">
@@ -171,11 +171,12 @@
     <!-- ─── View: Providers (RPC provider incidents) ─── -->
     <section id="view-providers" class="view scroll-view">
         <div class="view-inner">
-            <h2 class="section-title">RPC provider incidents — past 30 days
+            <h2 class="section-title">RPC provider incidents
                 <span class="src-pill" id="providersMeta">live</span>
             </h2>
             <p class="view-lead">Status of public RPC providers (Infura, QuickNode, dRPC, Pinax). Each incident is
                 mapped to the chains it affects.</p>
+            <div class="calendars" id="providerCalendar"></div>
 
             <div class="toolbar">
                 <div class="chip-row" id="providerFilter">
