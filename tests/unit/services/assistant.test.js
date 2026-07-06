@@ -198,6 +198,13 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('DISAMBIGUATE NETWORKS');
     expect(prompt).toContain('LIVE vs STATIC');
     expect(prompt).toContain('STAY ON TOPIC');
+    expect(prompt).toContain('UNKNOWN is not DOWN');
     expect(prompt).not.toContain('undefined');
+  });
+
+  it('lists every callable tool by name', () => {
+    const prompt = buildSystemPrompt(undefined, new Date('2026-07-06T12:00:00Z'));
+    // The mocked registry has two tools — both must appear in the manifest
+    expect(prompt).toContain('ALL of these tools exist and are callable: search_chains, get_chain_by_id');
   });
 });

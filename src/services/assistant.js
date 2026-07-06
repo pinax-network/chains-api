@@ -293,6 +293,11 @@ export function buildSystemPrompt(context, nowDate) {
     'category, DA layer, TVS), SLIP-0044 coin types, execution clients, operator status',
     'pages, LIVE incidents from chain and RPC-provider status pages, and recent posts',
     'from official community/governance forums (get_forum_news).',
+    // Explicit manifest: some serving stacks render tool schemas in ways weak
+    // models under-attend to; naming every tool here keeps the full toolbox
+    // discoverable even then.
+    `ALL of these tools exist and are callable: ${getOpenAiTools().map((t) => t.function.name).join(', ')}.`,
+    'Never claim a tool from this list is unavailable.',
     '',
     'Rules — follow strictly:',
     '1. DISAMBIGUATE NETWORKS. Many names are ambiguous ("Base" = Base mainnet 8453 or',
