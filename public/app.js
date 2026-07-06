@@ -1012,11 +1012,15 @@ async function statusFeedBackfill() {
     }
 }
 
-// ─────────────────────────────── Forum activity (by chain, heatmap) ───────────────────────────────
-// Posts are grouped by forum (one forum can front several chains). The heatmap
-// is forum rows × the last 14 days, cells shaded by posts/day.
-const forum = { posts: [], byForum: new Map(), loaded: false, loading: false, filter: null };
+// ─────────────────────────────── Forum activity (treemap by forum) ───────────────────────────────
+// Posts are grouped by forum (one forum can front several chains) and drawn as
+// a squarified treemap: tile area ∝ post volume, colour ∝ weekly momentum.
+const forum = { byForum: new Map(), loaded: false, loading: false, filter: null };
 const FORUM_TREEMAP_HEIGHT = 520;
+
+// Canonical thread id for a forum post URL — the feed can emit one thread from
+// two registry entries whose URLs differ only by #fragment / ?page.
+function forumThreadKey(u) { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } }
 
 function ensureForumView() {
     if (forum.loaded) { renderForumTreemap(); return; } // re-fit to current width
@@ -1033,8 +1037,7 @@ async function loadForumFeed() {
         const res = await fetch(`${FORUM_NEWS_BASE}/news?limit=500`, { headers: { accept: 'application/json' } });
         if (!res.ok) throw new Error(res.status);
         const raw = (await res.json()).news || [];
-        forum.posts = normalizeForumPosts(raw);
-        forum.byForum = groupByForum(forum.posts);
+        forum.byForum = groupByForum(normalizeForumPosts(raw));
         forum.loaded = true;
         setForumMeta('live');
     } catch {
@@ -1052,7 +1055,6 @@ async function loadForumFeed() {
 // Dedupe per thread (same thread can arrive from two registry entries, URLs
 // differing only by #post fragment / ?page), newest first.
 function normalizeForumPosts(raw) {
-    const threadKey = (u) => { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } };
     const byThread = new Map();
     for (const p of raw) {
         const whenMs = Date.parse(p.publishedAt || p.updatedAt || '');
@@ -1064,7 +1066,7 @@ function normalizeForumPosts(raw) {
             forumName: p.forum?.name || p.forum?.id || 'Forum',
             chains: Array.isArray(p.chains) ? p.chains.filter(c => c?.chainId != null) : []
         };
-        const key = threadKey(item.url);
+        const key = forumThreadKey(item.url);
         const prev = byThread.get(key);
         if (!prev || (item.whenMs || 0) > (prev.whenMs || 0)) byThread.set(key, item);
     }
@@ -1076,17 +1078,23 @@ function groupByForum(posts) {
     const WEEK = 7 * 86400 * 1000;
     const map = new Map();
     for (const p of posts) {
-        if (!map.has(p.forumId)) map.set(p.forumId, { id: p.forumId, name: p.forumName, chains: p.chains, posts: [], recent: 0, prior: 0 });
+        if (!map.has(p.forumId)) map.set(p.forumId, { id: p.forumId, name: p.forumName, chainMap: new Map(), posts: [], recent: 0, prior: 0 });
         const g = map.get(p.forumId);
         g.posts.push(p);
-        // Momentum window: posts this week vs the week before.
+        // Union affected chains across all of the forum's posts (not just the
+        // first) — otherwise chips miss chains only referenced by older posts.
+        for (const c of p.chains) if (!g.chainMap.has(c.chainId)) g.chainMap.set(c.chainId, c);
+        // Momentum window: posts this week vs the week before. `age >= 0`
+        // guards clock-skewed / future feed timestamps from faking "recent".
         if (p.whenMs != null) {
-            if (now - p.whenMs < WEEK) g.recent++;
-            else if (now - p.whenMs < 2 * WEEK) g.prior++;
+            const age = now - p.whenMs;
+            if (age >= 0 && age < WEEK) g.recent++;
+            else if (age >= WEEK && age < 2 * WEEK) g.prior++;
         }
     }
     // momentum ∈ [-1, 1]: heating up (recent > prior) → +, cooling → −.
     for (const g of map.values()) {
+        g.chains = [...g.chainMap.values()];
         g.momentum = g.prior > 0 ? clampMomentum((g.recent - g.prior) / g.prior)
             : g.recent > 0 ? 1 : 0;
     }
@@ -1147,7 +1155,7 @@ function squarifyTreemap(children, x, y, w, h) {
 }
 
 function renderForumTreemap() {
-    const wrap = document.getElementById('forumHeatmap'); if (!wrap) return;
+    const wrap = document.getElementById('forumTreemap'); if (!wrap) return;
     wrap.textContent = '';
     if (!forum.byForum.size) return;
     const width = wrap.clientWidth || 900;
@@ -1615,11 +1623,8 @@ async function loadForumNews(chainId, box, row) {
         const res = await fetch(`${FORUM_NEWS_BASE}/news?chainId=${chainId}&limit=4`, { headers: { accept: 'application/json' }, signal: ctrl.signal });
         if (!res.ok) return;
         let posts = (await res.json()).news || [];
-        // The feed can carry the same thread twice (two registry entries
-        // tracking one forum; URLs differ only by #post fragment / ?page).
-        // One row per thread is enough for a drawer summary.
-        const threadKey = (u) => { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } };
-        posts = [...new Map(posts.map(p => [threadKey(p.url), p])).values()].slice(0, 4);
+        // One row per thread — the feed can carry the same thread twice.
+        posts = [...new Map(posts.map(p => [forumThreadKey(p.url), p])).values()].slice(0, 4);
         if (openChainId !== chainId || !posts.length) return; // drawer moved on / nothing to show
         box.textContent = '';
         for (const p of posts) {

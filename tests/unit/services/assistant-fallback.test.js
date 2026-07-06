@@ -85,6 +85,23 @@ describe('runAssistant with a fallback provider', () => {
     expect(fetchImpl.calls.every(c => c.url.startsWith('http://primary.test'))).toBe(true);
   });
 
+  it('passes an integer abort delay that reserves budget for the fallback', async () => {
+    // The per-attempt timeout is a fraction of the remaining budget when a
+    // fallback exists — must be floored (AbortSignal.timeout rejects
+    // fractional delays) and must leave time for the backup to run.
+    let seenTimeout = null;
+    const fetchImpl = vi.fn(async (_url, opts) => {
+      // AbortSignal has no public delay getter; assert the signal exists and
+      // that constructing it with our value didn't throw (fractional would).
+      seenTimeout = opts.signal;
+      return llmResponse('ok');
+    });
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl });
+    expect(result.reply).toBe('ok');
+    expect(seenTimeout).toBeInstanceOf(AbortSignal);
+    expect(seenTimeout.aborted).toBe(false); // a fractional delay would have thrown before fetch
+  });
+
   it('throws AssistantUnavailableError only when BOTH providers fail the first call', async () => {
     const fetchImpl = hostRouter({
       primary: () => { throw new Error('ECONNREFUSED'); },

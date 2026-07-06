@@ -19,10 +19,15 @@ import {
   MAX_PARAM_LENGTH,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
-  CORS_ORIGIN,
-  LIVE_INCIDENTS_URL,
-  FORUM_NEWS_URL
+  CORS_ORIGIN
 } from '../../config.js';
+
+// Browser feed origins the /ui dashboard fetches from — kept in lock-step
+// with STATUS_NEWS_BASE / FORUM_NEWS_BASE in public/app.js. http + ws each.
+const DASHBOARD_FEED_ORIGINS = [
+  'https://chains-status-news.johnaverse.cc', 'wss://chains-status-news.johnaverse.cc',
+  'https://chains-forum-news.johnaverse.cc', 'wss://chains-forum-news.johnaverse.cc'
+];
 import { chainsRoutes } from './routes/chains.js';
 import { relationsRoutes } from './routes/relations.js';
 import { endpointsRoutes } from './routes/endpoints.js';
@@ -220,11 +225,12 @@ export async function buildApp(options = {}) {
         // WS + forum news REST) — without these, the API-served copy of the
         // dashboard silently loses those panels (GitHub Pages, which serves
         // the production dashboard, sends no CSP and was never affected).
-        connectSrc: [
-          "'self'",
-          LIVE_INCIDENTS_URL, LIVE_INCIDENTS_URL.replace(/^http/, 'ws'),
-          FORUM_NEWS_URL, FORUM_NEWS_URL.replace(/^http/, 'ws')
-        ],
+        // These are the BROWSER's feed origins and must match the
+        // STATUS_NEWS_BASE / FORUM_NEWS_BASE constants in public/app.js — NOT
+        // the LIVE_INCIDENTS_URL / FORUM_NEWS_URL env vars, which only point
+        // the server-side assistant tools at a feed and never move the static
+        // client (so coupling CSP to them would block the client on override).
+        connectSrc: ["'self'", ...DASHBOARD_FEED_ORIGINS],
         imgSrc: ["'self'", 'data:']
       }
     }

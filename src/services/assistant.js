@@ -176,10 +176,15 @@ function providerHeaders(provider) {
   };
 }
 
-// When another provider remains untried, cap a single attempt so a
-// black-holed primary can't eat the whole request budget before the
-// fallback ever gets a chance.
+// Absolute ceiling for a single attempt when another provider (or the main
+// loop, after the guard) still needs time. Paired with RESERVE_FRACTION below.
 const ATTEMPT_CAP_WITH_FALLBACK_MS = 60000;
+// When a cap applies, also never spend more than this fraction of the
+// remaining budget on one attempt — so the next provider always gets a real
+// try even at a small total budget. (With the default 60s budget, an absolute
+// cap alone would hand the whole budget to the primary and leave the fallback
+// zero — the bug this guards against.)
+const ATTEMPT_RESERVE_FRACTION = 0.6;
 
 /**
  * One chat-completions request against one provider. Throws on any failure;
@@ -188,7 +193,10 @@ const ATTEMPT_CAP_WITH_FALLBACK_MS = 60000;
 async function llmRequest({ provider, payload, deadline, timeoutCapMs, fetchImpl }) {
   const budget = deadline - Date.now();
   if (budget <= 0) { const err = new Error('Assistant deadline exhausted'); err.network = true; throw err; }
-  const timeoutMs = Math.max(1000, timeoutCapMs ? Math.min(budget, timeoutCapMs) : budget);
+  // Must be an integer — AbortSignal.timeout rejects fractional delays.
+  const timeoutMs = Math.floor(timeoutCapMs
+    ? Math.max(1000, Math.min(budget * ATTEMPT_RESERVE_FRACTION, timeoutCapMs))
+    : Math.max(1000, budget));
   let response;
   try {
     response = await fetchImpl(`${provider.url}/v1/chat/completions`, {
