@@ -980,20 +980,33 @@ function connectStatusFeed() {
     // full history always comes from the REST backfill; the WS only streams
     // live updates on top. addIncidents() merges the two by incident key.
     statusFeedBackfill();
+    setFeedLive(false); // red until the socket opens
     const wsUrl = `${STATUS_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=100`;
     let ws;
     try { ws = new WebSocket(wsUrl); } catch { return; }
     incidents.ws = ws;
-    ws.onopen = () => { incidents.retries = 0; setFeedMeta('live'); statusFeedBackfill(); };
+    ws.onopen = () => { incidents.retries = 0; setFeedLive(true); statusFeedBackfill(); };
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } if (m.type === 'status.item' && m.item) addIncidents([m.item]); };
     ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
     ws.onclose = () => {
         incidents.ws = null;
-        if (incidents.retries < 6) { const delay = Math.min(1000 * 2 ** incidents.retries, 20000); incidents.retries++; setFeedMeta('reconnecting…'); setTimeout(connectStatusFeed, delay); }
+        setFeedLive(false); // dropped — not receiving live updates until reconnect
+        if (incidents.retries < 6) { const delay = Math.min(1000 * 2 ** incidents.retries, 20000); incidents.retries++; setTimeout(connectStatusFeed, delay); }
     };
 }
-function setFeedMeta(text) {
-    for (const id of ['incidentsMeta', 'providersMeta']) { const e = document.getElementById(id); if (e) e.textContent = text; }
+function setFeedLive(live) { setLiveDot(['incidentsMeta', 'providersMeta'], live); }
+
+// Render a green (connected, receiving live updates) / red (disconnected) dot
+// next to the "live" label in a feed's status pill.
+function setLiveDot(ids, live) {
+    for (const id of [].concat(ids)) {
+        const e = document.getElementById(id);
+        if (!e) continue;
+        e.className = 'src-pill live-pill';
+        e.textContent = '';
+        e.appendChild(el('span', { class: `live-dot ${live ? 'on' : 'off'}`, title: live ? 'Live — receiving real-time updates' : 'Disconnected from the live feed' }));
+        e.appendChild(document.createTextNode('live'));
+    }
 }
 async function statusFeedBackfill() {
     if (incidents.backfilled || incidents.backfillInFlight) return;
@@ -1015,7 +1028,9 @@ async function statusFeedBackfill() {
 // ─────────────────────────────── Forum activity (treemap by forum) ───────────────────────────────
 // Posts are grouped by forum (one forum can front several chains) and drawn as
 // a squarified treemap: tile area ∝ post volume, colour ∝ weekly momentum.
-const forum = { byForum: new Map(), loaded: false, loading: false, filter: null };
+// threads: canonical thread key → newest normalized post. Seeded from REST,
+// then kept live by the WS. byForum is the grouped view derived from it.
+const forum = { threads: new Map(), byForum: new Map(), loaded: false, loading: false, filter: null, ws: null, retries: 0, rerenderTimer: null };
 const FORUM_TREEMAP_HEIGHT = 520;
 
 // Canonical thread id for a forum post URL — the feed can emit one thread from
@@ -1026,22 +1041,20 @@ function ensureForumView() {
     if (forum.loaded) { renderForumTreemap(); return; } // re-fit to current width
     if (forum.loading) return;
     forum.loading = true;
-    setForumMeta('loading…');
+    setForumLive(false);
     loadForumFeed();
 }
 
-function setForumMeta(text) { const e = document.getElementById('forumMeta'); if (e) e.textContent = text; }
+function setForumLive(live) { setLiveDot('forumMeta', live); }
 
 async function loadForumFeed() {
     try {
         const res = await fetch(`${FORUM_NEWS_BASE}/news?limit=500`, { headers: { accept: 'application/json' } });
         if (!res.ok) throw new Error(res.status);
-        const raw = (await res.json()).news || [];
-        forum.byForum = groupByForum(normalizeForumPosts(raw));
+        for (const p of (await res.json()).news || []) upsertForumPost(p);
+        regroupForum();
         forum.loaded = true;
-        setForumMeta('live');
     } catch {
-        setForumMeta('offline');
         const list = document.getElementById('forumList');
         if (list) { list.textContent = ''; list.appendChild(el('div', { class: 'feed-empty', text: 'Forum feed unavailable (chains-forum-news).' })); }
         return;
@@ -1050,27 +1063,62 @@ async function loadForumFeed() {
     }
     renderForumTreemap();
     renderForumList();
+    connectForumFeed(); // stream live updates on top of the REST seed
 }
 
-// Dedupe per thread (same thread can arrive from two registry entries, URLs
-// differing only by #post fragment / ?page), newest first.
-function normalizeForumPosts(raw) {
-    const byThread = new Map();
-    for (const p of raw) {
-        const whenMs = Date.parse(p.publishedAt || p.updatedAt || '');
-        const item = {
-            title: p.title || '(untitled)',
-            url: p.url || '#',
-            whenMs: Number.isNaN(whenMs) ? null : whenMs,
-            forumId: p.forum?.id || 'unknown',
-            forumName: p.forum?.name || p.forum?.id || 'Forum',
-            chains: Array.isArray(p.chains) ? p.chains.filter(c => c?.chainId != null) : []
-        };
-        const key = forumThreadKey(item.url);
-        const prev = byThread.get(key);
-        if (!prev || (item.whenMs || 0) > (prev.whenMs || 0)) byThread.set(key, item);
-    }
-    return [...byThread.values()].sort((a, b) => (b.whenMs || 0) - (a.whenMs || 0));
+// Live forum feed: same pattern as the status feed — REST seed above, then a
+// WS streams new posts. The dot goes green only while the socket is open.
+function connectForumFeed() {
+    setForumLive(false); // red until the socket opens
+    const wsUrl = `${FORUM_NEWS_BASE.replace(/^http/, 'ws')}/ws?replay=1`;
+    let ws;
+    try { ws = new WebSocket(wsUrl); } catch { return; }
+    forum.ws = ws;
+    ws.onopen = () => { forum.retries = 0; setForumLive(true); };
+    ws.onmessage = ev => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === 'news.item' && m.item && upsertForumPost(m.item)) scheduleForumRerender();
+    };
+    ws.onerror = () => { try { ws.close(); } catch { /* noop */ } };
+    ws.onclose = () => {
+        forum.ws = null;
+        setForumLive(false);
+        if (forum.retries < 6) { const delay = Math.min(1000 * 2 ** forum.retries, 20000); forum.retries++; setTimeout(connectForumFeed, delay); }
+    };
+}
+
+// Merge one raw feed post into the thread store; returns true if it changed
+// anything (new thread or a newer revision of an existing one).
+function upsertForumPost(p) {
+    const whenMs = Date.parse(p.publishedAt || p.updatedAt || '');
+    const item = {
+        title: p.title || '(untitled)',
+        url: p.url || '#',
+        whenMs: Number.isNaN(whenMs) ? null : whenMs,
+        forumId: p.forum?.id || 'unknown',
+        forumName: p.forum?.name || p.forum?.id || 'Forum',
+        chains: Array.isArray(p.chains) ? p.chains.filter(c => c?.chainId != null) : []
+    };
+    const key = forumThreadKey(item.url);
+    const prev = forum.threads.get(key);
+    if (prev && (prev.whenMs || 0) >= (item.whenMs || 0)) return false;
+    forum.threads.set(key, item);
+    return true;
+}
+
+function regroupForum() {
+    const posts = [...forum.threads.values()].sort((a, b) => (b.whenMs || 0) - (a.whenMs || 0));
+    forum.byForum = groupByForum(posts);
+}
+
+// WS replay can burst; coalesce re-renders so a batch of pushes repaints once.
+function scheduleForumRerender() {
+    if (forum.rerenderTimer) return;
+    forum.rerenderTimer = setTimeout(() => {
+        forum.rerenderTimer = null;
+        regroupForum();
+        if (activeView === 'forum') { renderForumTreemap(); renderForumList(); }
+    }, 400);
 }
 
 function groupByForum(posts) {
