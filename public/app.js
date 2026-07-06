@@ -1035,14 +1035,18 @@ function toggleAssistant(open) {
 }
 
 async function probeAssistant() {
+    // The pill only surfaces the offline state — which model backs the
+    // assistant is a server detail the UI doesn't need to advertise.
     const meta = document.getElementById('assistantMeta');
     try {
         const info = await api('/assistant');
         assistant.enabled = !!info.enabled;
-        if (meta) meta.textContent = assistant.enabled ? info.model : 'offline';
     } catch {
         assistant.enabled = false;
-        if (meta) meta.textContent = 'offline';
+    }
+    if (meta) {
+        meta.textContent = assistant.enabled ? '' : 'offline';
+        meta.classList.toggle('hidden', assistant.enabled);
     }
     if (!assistant.enabled) {
         appendChatNotice('The assistant isn’t configured on this server yet (no LLM connected). Everything else on the dashboard works as usual.');
