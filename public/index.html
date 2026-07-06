@@ -195,10 +195,18 @@
             <h2 class="section-title">Forum activity
                 <span class="src-pill" id="forumMeta"></span>
             </h2>
-            <p class="view-lead">Recent posts from official community and governance forums, grouped by network.
-                The heatmap shows posts per day over the last two weeks — click a forum row to filter.</p>
+            <p class="view-lead">Recent posts from official community and governance forums. Each tile is a
+                forum, sized by how much it's being discussed and colored by momentum — green is heating up
+                this week, red is cooling. Click a tile to filter the posts below.</p>
 
-            <div class="forum-heatmap" id="forumHeatmap"></div>
+            <div class="forum-treemap" id="forumHeatmap"></div>
+            <div class="forum-legend">
+                <span>cooling</span>
+                <span class="fl-swatch fl-cool3"></span><span class="fl-swatch fl-cool2"></span><span class="fl-swatch fl-cool1"></span>
+                <span class="fl-swatch fl-flat"></span>
+                <span class="fl-swatch fl-hot1"></span><span class="fl-swatch fl-hot2"></span><span class="fl-swatch fl-hot3"></span>
+                <span>heating up</span>
+            </div>
 
             <div class="toolbar">
                 <span class="toolbar-count" id="forumCount"></span>

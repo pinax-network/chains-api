@@ -258,6 +258,12 @@ function initAppbarHeight() {
     sync();
     window.addEventListener('resize', sync);
     if ('ResizeObserver' in window) new ResizeObserver(sync).observe(bar);
+    // Treemap tiles are absolutely positioned in px — re-fit on width change.
+    let rt;
+    window.addEventListener('resize', () => {
+        if (activeView !== 'forum' || !forum.loaded) return;
+        clearTimeout(rt); rt = setTimeout(renderForumTreemap, 150);
+    });
 }
 
 // ─────────────────────────────── tabs ───────────────────────────────
@@ -1010,10 +1016,11 @@ async function statusFeedBackfill() {
 // Posts are grouped by forum (one forum can front several chains). The heatmap
 // is forum rows × the last 14 days, cells shaded by posts/day.
 const forum = { posts: [], byForum: new Map(), loaded: false, loading: false, filter: null };
-const FORUM_HEATMAP_DAYS = 14;
+const FORUM_TREEMAP_HEIGHT = 520;
 
 function ensureForumView() {
-    if (forum.loaded || forum.loading) return;
+    if (forum.loaded) { renderForumTreemap(); return; } // re-fit to current width
+    if (forum.loading) return;
     forum.loading = true;
     setForumMeta('loading…');
     loadForumFeed();
@@ -1038,7 +1045,7 @@ async function loadForumFeed() {
     } finally {
         forum.loading = false;
     }
-    renderForumHeatmap();
+    renderForumTreemap();
     renderForumList();
 }
 
@@ -1065,59 +1072,113 @@ function normalizeForumPosts(raw) {
 }
 
 function groupByForum(posts) {
+    const now = Date.now();
+    const WEEK = 7 * 86400 * 1000;
     const map = new Map();
     for (const p of posts) {
-        if (!map.has(p.forumId)) map.set(p.forumId, { id: p.forumId, name: p.forumName, chains: p.chains, posts: [] });
-        map.get(p.forumId).posts.push(p);
+        if (!map.has(p.forumId)) map.set(p.forumId, { id: p.forumId, name: p.forumName, chains: p.chains, posts: [], recent: 0, prior: 0 });
+        const g = map.get(p.forumId);
+        g.posts.push(p);
+        // Momentum window: posts this week vs the week before.
+        if (p.whenMs != null) {
+            if (now - p.whenMs < WEEK) g.recent++;
+            else if (now - p.whenMs < 2 * WEEK) g.prior++;
+        }
+    }
+    // momentum ∈ [-1, 1]: heating up (recent > prior) → +, cooling → −.
+    for (const g of map.values()) {
+        g.momentum = g.prior > 0 ? clampMomentum((g.recent - g.prior) / g.prior)
+            : g.recent > 0 ? 1 : 0;
     }
     // Busiest forums first.
     return new Map([...map.entries()].sort((a, b) => b[1].posts.length - a[1].posts.length));
 }
 
-function renderForumHeatmap() {
+function clampMomentum(m) { return Math.max(-1, Math.min(1, m)); }
+
+// Tile fill: red (cooling) → neutral → green (heating), intensity by magnitude.
+function momentumColor(m) {
+    if (m > 0.05) { const t = Math.min(1, m); return `rgba(34,197,94,${0.22 + 0.55 * t})`; }
+    if (m < -0.05) { const t = Math.min(1, -m); return `rgba(239,68,68,${0.22 + 0.55 * t})`; }
+    return 'rgba(130,130,150,0.28)';
+}
+
+// Squarified treemap (Bruls, Huizing & van Wijk) — lays out tiles so each
+// stays close to square, area ∝ value. Pure geometry, no external lib.
+function squarifyTreemap(children, x, y, w, h) {
+    const out = [];
+    const nodes = children.filter(c => c.value > 0).sort((a, b) => b.value - a.value);
+    const total = nodes.reduce((s, c) => s + c.value, 0);
+    if (total <= 0 || w <= 0 || h <= 0) return out;
+    const items = nodes.map(c => ({ ref: c, area: (c.value / total) * (w * h) }));
+
+    const worst = (row, side) => {
+        const sum = row.reduce((s, r) => s + r.area, 0);
+        let mx = -Infinity, mn = Infinity;
+        for (const r of row) { if (r.area > mx) mx = r.area; if (r.area < mn) mn = r.area; }
+        const s2 = sum * sum, l2 = side * side;
+        return Math.max((l2 * mx) / s2, s2 / (l2 * mn));
+    };
+
+    const rect = { x, y, w, h };
+    let i = 0;
+    while (i < items.length) {
+        const side = Math.min(rect.w, rect.h);
+        const row = [items[i]];
+        let j = i + 1;
+        while (j < items.length && worst(row, side) >= worst(row.concat(items[j]), side)) {
+            row.push(items[j]); j++;
+        }
+        const rowArea = row.reduce((s, r) => s + r.area, 0);
+        if (rect.w <= rect.h) {
+            const rh = rowArea / rect.w;
+            let cx = rect.x;
+            for (const r of row) { const rw = r.area / rh; out.push({ ref: r.ref, x: cx, y: rect.y, w: rw, h: rh }); cx += rw; }
+            rect.y += rh; rect.h -= rh;
+        } else {
+            const rw = rowArea / rect.h;
+            let cy = rect.y;
+            for (const r of row) { const rh = r.area / rw; out.push({ ref: r.ref, x: rect.x, y: cy, w: rw, h: rh }); cy += rh; }
+            rect.x += rw; rect.w -= rw;
+        }
+        i = j;
+    }
+    return out;
+}
+
+function renderForumTreemap() {
     const wrap = document.getElementById('forumHeatmap'); if (!wrap) return;
     wrap.textContent = '';
     if (!forum.byForum.size) return;
-
-    // Column day keys: oldest → today (UTC, matches dayKey()).
-    const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-    const days = [];
-    for (let i = FORUM_HEATMAP_DAYS - 1; i >= 0; i--) {
-        const d = new Date(today); d.setUTCDate(today.getUTCDate() - i);
-        days.push(d.toISOString().slice(0, 10));
-    }
-    // Per-forum per-day counts + the busiest single cell (for shading scale).
-    let max = 1;
-    const counts = new Map();
-    for (const [id, g] of forum.byForum) {
-        const perDay = new Map();
-        for (const p of g.posts) { const k = dayKey(p.whenMs); if (k) perDay.set(k, (perDay.get(k) || 0) + 1); }
-        counts.set(id, perDay);
-        for (const n of perDay.values()) if (n > max) max = n;
-    }
-
-    const grid = el('div', { class: 'heat-grid' });
-    // Header row: blank corner + weekday/day ticks (show every other day label).
-    grid.appendChild(el('div', { class: 'heat-corner' }));
-    days.forEach((k, i) => grid.appendChild(el('div', { class: 'heat-col-label', text: i % 2 === 0 ? k.slice(5) : '' })));
-
-    for (const [id, g] of forum.byForum) {
-        const perDay = counts.get(id);
-        const rowActive = forum.filter === id;
-        const label = el('button', {
-            class: `heat-row-label${rowActive ? ' active' : ''}`,
-            title: `${g.name} — ${g.posts.length} posts`,
-            onclick: () => { forum.filter = rowActive ? null : id; renderForumHeatmap(); renderForumList(); }
-        }, [el('span', { text: g.name })]);
-        grid.appendChild(label);
-        for (const k of days) {
-            const n = perDay.get(k) || 0;
-            const cell = el('div', { class: `heat-cell${n ? ' has' : ''}`, title: `${g.name} · ${k}: ${n} post${n === 1 ? '' : 's'}` });
-            if (n) cell.style.background = `rgba(139,92,246,${0.18 + 0.62 * (n / max)})`;
-            grid.appendChild(cell);
+    const width = wrap.clientWidth || 900;
+    const height = FORUM_TREEMAP_HEIGHT;
+    const tiles = squarifyTreemap(
+        [...forum.byForum.values()].map(g => ({ value: g.posts.length, g })),
+        0, 0, width, height
+    );
+    const gap = 2;
+    for (const t of tiles) {
+        const g = t.ref.g;
+        const active = forum.filter === g.id;
+        const tile = el('button', {
+            class: `tm-tile${active ? ' active' : ''}`,
+            title: `${g.name} — ${g.posts.length} posts · ${g.recent} this week${g.momentum > 0.05 ? ' (heating up)' : g.momentum < -0.05 ? ' (cooling)' : ''}`,
+            onclick: () => { forum.filter = active ? null : g.id; renderForumTreemap(); renderForumList(); }
+        });
+        tile.style.left = `${t.x + gap / 2}px`;
+        tile.style.top = `${t.y + gap / 2}px`;
+        tile.style.width = `${Math.max(0, t.w - gap)}px`;
+        tile.style.height = `${Math.max(0, t.h - gap)}px`;
+        tile.style.background = momentumColor(g.momentum);
+        // Label only where it fits; scale name with tile size.
+        if (t.w > 54 && t.h > 26) {
+            const fs = Math.max(10, Math.min(20, Math.round(t.w / 9)));
+            tile.appendChild(el('span', { class: 'tm-name', style: `font-size:${fs}px`, text: g.name }));
+            tile.appendChild(el('span', { class: 'tm-count', text: `${g.posts.length}` }));
         }
+        wrap.appendChild(tile);
     }
-    wrap.appendChild(grid);
+    wrap.style.height = `${height}px`;
 }
 
 function forumMatchesSearch(p, q) {
