@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Guard off here — these tests target the tool loop itself. The guard's own
+// behaviour is covered in assistant-guard.test.js.
+vi.mock('../../../config.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  ASSISTANT_TOPIC_GUARD: false
+}));
+
 vi.mock('../../../mcp-tools.js', () => ({
   getToolDefinitions: vi.fn(() => [
     {
@@ -90,6 +97,8 @@ describe('runAssistant', () => {
     expect(body.stream).toBe(false);
     expect(body.tools.length).toBe(2);
     expect(body.tools[0]).toMatchObject({ type: 'function', function: { name: 'search_chains' } });
+    // No ASSISTANT_LLM_API_KEY configured → no Authorization header sent
+    expect(fetchImpl.mock.calls[0][1].headers.authorization).toBeUndefined();
   });
 
   it('feeds malformed tool args back, then forces an answer after two strikes', async () => {
@@ -188,6 +197,7 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('2026-07-06T12:00:00.000Z');
     expect(prompt).toContain('DISAMBIGUATE NETWORKS');
     expect(prompt).toContain('LIVE vs STATIC');
+    expect(prompt).toContain('STAY ON TOPIC');
     expect(prompt).not.toContain('undefined');
   });
 });

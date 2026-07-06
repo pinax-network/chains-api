@@ -10,7 +10,13 @@ vi.mock('../../../config.js', async (importOriginal) => {
   return {
     ...original,
     get ASSISTANT_ENABLED() { return mocks.assistantEnabled; },
-    ASSISTANT_MODEL: 'test-model'
+    ASSISTANT_MODEL: 'test-model',
+    // Short sync window so async-path tests don't wait 8s
+    ASSISTANT_SYNC_WAIT_MS: 100,
+    ASSISTANT_MAX_CONCURRENT_JOBS: 2,
+    // The whole file shares one inject IP — don't let earlier tests exhaust
+    // the per-IP POST budget for later ones
+    ASSISTANT_RATE_LIMIT_MAX: 1000
   };
 });
 
@@ -20,6 +26,7 @@ vi.mock('../../../src/services/assistant.js', async (importOriginal) => {
 });
 
 import { buildApp } from '../../../index.js';
+import { _resetAssistantJobsForTests } from '../../../src/http/routes/assistant.js';
 
 function chatPayload(overrides = {}) {
   return { messages: [{ role: 'user', content: 'is base healthy?' }], ...overrides };
@@ -37,6 +44,7 @@ describe('assistant routes', () => {
   beforeEach(() => {
     mocks.assistantEnabled = false;
     mocks.runAssistant.mockReset();
+    _resetAssistantJobsForTests();
   });
 
   describe('GET /assistant', () => {
@@ -153,6 +161,70 @@ describe('assistant routes', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json().error).toBe('Last message must be from the user');
       expect(mocks.runAssistant).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('async job flow (slow LLM runs)', () => {
+    function deferred() {
+      let resolve, reject;
+      const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    }
+    const RESULT = { reply: 'done!', toolCalls: [], degraded: false, usage: null };
+
+    it('returns 202 with a jobId when the run outlives the sync window, then serves the result on poll', async () => {
+      mocks.assistantEnabled = true;
+      const d = deferred();
+      mocks.runAssistant.mockReturnValue(d.promise);
+
+      const post = await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
+      expect(post.statusCode).toBe(202);
+      const { jobId, status, pollAfterMs } = post.json();
+      expect(status).toBe('running');
+      expect(pollAfterMs).toBeGreaterThan(0);
+      expect(jobId).toMatch(/^[A-Za-z0-9-]+$/);
+
+      // Still running
+      const pending = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
+      expect(pending.json()).toMatchObject({ status: 'running' });
+
+      d.resolve(RESULT);
+      await d.promise;
+      const done = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
+      expect(done.statusCode).toBe(200);
+      expect(done.json()).toMatchObject({ status: 'done', reply: 'done!' });
+    });
+
+    it('reports errors through the job status', async () => {
+      mocks.assistantEnabled = true;
+      const d = deferred();
+      mocks.runAssistant.mockReturnValue(d.promise);
+      const post = await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
+      const { jobId } = post.json();
+      const { AssistantUnavailableError } = await import('../../../src/services/assistant.js');
+      d.reject(new AssistantUnavailableError('boom'));
+      await d.promise.catch(() => {});
+      const res = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
+      expect(res.json()).toMatchObject({ status: 'error', error: 'Assistant LLM unreachable' });
+    });
+
+    it('404s for unknown job ids and 400s for malformed ones', async () => {
+      const missing = await app.inject({ method: 'GET', url: '/assistant/chat/00000000-0000-0000-0000-000000000000' });
+      expect(missing.statusCode).toBe(404);
+      const malformed = await app.inject({ method: 'GET', url: '/assistant/chat/nope_$$' });
+      expect(malformed.statusCode).toBe(400);
+    });
+
+    it('rejects new chats when the concurrent job cap is reached', async () => {
+      mocks.assistantEnabled = true;
+      const d = deferred();
+      mocks.runAssistant.mockReturnValue(d.promise);
+      await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
+      await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
+      const third = await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
+      expect(third.statusCode).toBe(503);
+      expect(third.json().error).toMatch(/busy/);
+      d.resolve(RESULT);
     });
   });
 

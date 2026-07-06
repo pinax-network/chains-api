@@ -18,6 +18,7 @@ services:
       # enable the /assistant/chat endpoint. For an Ollama running on the
       # Docker host, also uncomment extra_hosts below.
       # - ASSISTANT_LLM_URL=http://host.docker.internal:11434
+      # - ASSISTANT_LLM_API_KEY=          # only for key-protected servers
       # - ASSISTANT_MODEL=qwen3
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"   # host-side Ollama on Linux

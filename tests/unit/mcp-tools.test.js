@@ -122,6 +122,26 @@ vi.mock('../../src/sources/liveIncidents.js', () => ({
   })),
 }));
 
+vi.mock('../../src/sources/forumNews.js', () => ({
+  getForumNews: vi.fn(async () => ({
+    fetchedAt: '2026-07-06T00:00:00.000Z',
+    count: 1,
+    totalMatched: 1,
+    news: [
+      {
+        title: 'Hash-chain RANDAO',
+        url: 'https://ethereum-magicians.org/t/hash-chain-randao/28942',
+        publishedAt: '2026-07-05T22:50:49.481Z',
+        publishedMs: 1783118449481,
+        summary: null,
+        tags: ['postquantum'],
+        forum: { id: 'ethereum', name: 'Ethereum Magicians', url: 'https://ethereum-magicians.org' },
+        chains: [{ chainId: 1, name: 'Ethereum Mainnet' }],
+      },
+    ],
+  })),
+}));
+
 vi.mock('../../priceService.js', () => ({
   getPricesForChains: vi.fn(async (chainIds) => {
     const map = new Map();
@@ -137,6 +157,7 @@ import * as dataService from '../../dataService.js';
 import * as clientsView from '../../clientsView.js';
 import * as priceService from '../../priceService.js';
 import * as liveIncidents from '../../src/sources/liveIncidents.js';
+import * as forumNews from '../../src/sources/forumNews.js';
 import { getToolDefinitions, handleToolCall } from '../../mcp-tools.js';
 
 describe('MCP Tools - Shared Module', () => {
@@ -191,10 +212,10 @@ describe('MCP Tools - Shared Module', () => {
   });
 
   describe('getToolDefinitions', () => {
-    it('should return an array of 21 tools', () => {
+    it('should return an array of 22 tools', () => {
       const tools = getToolDefinitions();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(21);
+      expect(tools.length).toBe(22);
     });
 
     it('should include all expected tool names', () => {
@@ -215,6 +236,7 @@ describe('MCP Tools - Shared Module', () => {
       expect(names).toContain('get_rpc_monitor_by_id');
       expect(names).toContain('get_clients');
       expect(names).toContain('get_live_incidents');
+      expect(names).toContain('get_forum_news');
     });
 
     it('should require chainId for traverse_relations', () => {
@@ -1104,6 +1126,25 @@ describe('MCP Tools - Shared Module', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.error).toBe('Live incident feed unavailable');
       expect(data.message).toBe('down');
+    });
+  });
+
+  describe('handleToolCall - get_forum_news', () => {
+    it('returns forum news with the internal sort key stripped', async () => {
+      const result = await handleToolCall('get_forum_news', { chainId: 1, limit: 5 });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(forumNews.getForumNews).toHaveBeenCalledWith({ chainId: 1, forum: undefined, limit: 5 });
+      expect(data.news[0].title).toBe('Hash-chain RANDAO');
+      expect(data.news[0].forum.id).toBe('ethereum');
+      expect(data.news[0]).not.toHaveProperty('publishedMs');
+    });
+
+    it('returns isError when the feed is unavailable', async () => {
+      vi.mocked(forumNews.getForumNews).mockRejectedValueOnce(new Error('down'));
+      const result = await handleToolCall('get_forum_news', {});
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).error).toBe('Forum news feed unavailable');
     });
   });
 });

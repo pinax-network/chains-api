@@ -24,6 +24,7 @@ import {
   getStatusPageBySymbol,
 } from './src/sources/statusPages.js';
 import { getLiveIncidents } from './src/sources/liveIncidents.js';
+import { getForumNews } from './src/sources/forumNews.js';
 
 /**
  * Get the list of MCP tool definitions (schemas)
@@ -286,6 +287,28 @@ export function getToolDefinitions() {
           limit: {
             type: 'number',
             description: 'Max incidents to return (default 30, max 100)',
+          },
+        },
+      },
+    },
+    {
+      name: 'get_forum_news',
+      description:
+        'Get recent posts from official chain community/governance forums (Ethereum Magicians, Arbitrum DAO, …), keyed by chain ID. Use for questions about governance discussions, proposals, upgrades being debated, or community news. Near-real-time (cached ~60s).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chainId: {
+            type: 'number',
+            description: 'Only posts tied to this chain ID',
+          },
+          forum: {
+            type: 'string',
+            description: 'Only posts from this forum id (e.g. "ethereum", "arbitrum")',
+          },
+          limit: {
+            type: 'number',
+            description: 'Max posts to return (default 15, max 50)',
           },
         },
       },
@@ -651,6 +674,20 @@ function handleGetStatusPageBySymbol(args) {
   return textResponse(page);
 }
 
+async function handleGetForumNews(args) {
+  const { chainId, forum, limit } = args ?? {};
+  try {
+    const result = await getForumNews({ chainId, forum, limit });
+    // publishedMs/freshMs are internal sort/recency keys; drop from tool output
+    return textResponse({
+      ...result,
+      news: result.news.map(({ publishedMs: _publishedMs, freshMs: _freshMs, ...rest }) => rest),
+    });
+  } catch (error) {
+    return errorResponse('Forum news feed unavailable', error.message);
+  }
+}
+
 async function handleGetLiveIncidents(args) {
   const { type, chainId, provider, limit } = args ?? {};
   try {
@@ -687,6 +724,7 @@ const toolHandlers = {
   get_status_page_by_chain: handleGetStatusPageByChain,
   get_status_page_by_symbol: handleGetStatusPageBySymbol,
   get_live_incidents: handleGetLiveIncidents,
+  get_forum_news: handleGetForumNews,
 };
 
 /**

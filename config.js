@@ -131,11 +131,24 @@ export const LIVE_INCIDENTS_URL = parseStringEnv(
 export const LIVE_INCIDENTS_CACHE_TTL_MS = parseIntEnv('LIVE_INCIDENTS_CACHE_TTL_MS', 60000);
 export const LIVE_INCIDENTS_FETCH_TIMEOUT_MS = parseIntEnv('LIVE_INCIDENTS_FETCH_TIMEOUT_MS', 10000);
 
+// Forum/governance news feed (chains-forum-news). Used by the get_forum_news
+// tool so the assistant/MCP can answer governance-discussion questions.
+export const FORUM_NEWS_URL = parseStringEnv(
+  'FORUM_NEWS_URL',
+  'https://chains-forum-news.johnaverse.cc'
+);
+export const FORUM_NEWS_CACHE_TTL_MS = parseIntEnv('FORUM_NEWS_CACHE_TTL_MS', 60000);
+export const FORUM_NEWS_FETCH_TIMEOUT_MS = parseIntEnv('FORUM_NEWS_FETCH_TIMEOUT_MS', 10000);
+
 // Assistant (optional LLM chat over the registry + live incidents).
 // Disabled unless ASSISTANT_LLM_URL points at an OpenAI-compatible server
 // (e.g. Ollama: http://localhost:11434).
 export const ASSISTANT_LLM_URL = parseStringEnv('ASSISTANT_LLM_URL', '');
 export const ASSISTANT_ENABLED = ASSISTANT_LLM_URL !== '';
+// Optional bearer token for key-protected OpenAI-compatible servers
+// (OpenAI, OpenRouter, Groq, or an auth-fronted Ollama). Never logged or
+// exposed via any endpoint.
+export const ASSISTANT_LLM_API_KEY = parseStringEnv('ASSISTANT_LLM_API_KEY', '');
 export const ASSISTANT_MODEL = parseStringEnv('ASSISTANT_MODEL', 'qwen3');
 export const ASSISTANT_MAX_TOOL_ITERATIONS = parseIntEnv('ASSISTANT_MAX_TOOL_ITERATIONS', 6);
 export const ASSISTANT_TIMEOUT_MS = parseIntEnv('ASSISTANT_TIMEOUT_MS', 60000);
@@ -144,3 +157,15 @@ export const ASSISTANT_RATE_LIMIT_MAX = parseIntEnv('ASSISTANT_RATE_LIMIT_MAX', 
 export const ASSISTANT_MAX_MESSAGES = parseIntEnv('ASSISTANT_MAX_MESSAGES', 20);
 export const ASSISTANT_MAX_MESSAGE_LENGTH = parseIntEnv('ASSISTANT_MAX_MESSAGE_LENGTH', 4000);
 export const ASSISTANT_TOOL_RESULT_MAX_CHARS = parseIntEnv('ASSISTANT_TOOL_RESULT_MAX_CHARS', 8000);
+// Async job handling: slow local models exceed reverse-proxy timeouts
+// (observed 15s ingress 504s), so POST /assistant/chat waits at most
+// SYNC_WAIT for the answer and otherwise returns 202 + a job id the client
+// polls. Finished jobs are kept for JOB_TTL; at most MAX_CONCURRENT_JOBS
+// LLM runs are in flight at once.
+// Pre-classification topic guard: a cheap extra LLM call that rejects
+// off-topic questions before the (expensive) tool loop runs. Fails open —
+// classifier trouble never blocks on-topic questions.
+export const ASSISTANT_TOPIC_GUARD = parseBooleanEnv('ASSISTANT_TOPIC_GUARD', true);
+export const ASSISTANT_SYNC_WAIT_MS = parseIntEnv('ASSISTANT_SYNC_WAIT_MS', 8000);
+export const ASSISTANT_JOB_TTL_MS = parseIntEnv('ASSISTANT_JOB_TTL_MS', 600000);
+export const ASSISTANT_MAX_CONCURRENT_JOBS = parseIntEnv('ASSISTANT_MAX_CONCURRENT_JOBS', 4);

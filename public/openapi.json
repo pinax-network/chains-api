@@ -3,7 +3,7 @@
   "info": {
     "title": "Chains API",
     "description": "Aggregated blockchain chain data from five external sources (TheGraph, Chainlist, Chain ID Network, SLIP-0044, L2BEAT): chain metadata, relations, RPC endpoints and health, L2 scaling, and operator status.",
-    "version": "1.6.0"
+    "version": "1.7.0"
   },
   "components": {
     "schemas": {}
@@ -575,7 +575,7 @@
         "tags": [
           "Assistant"
         ],
-        "description": "Chat with the assistant about chains, endpoints, scaling, relations, and live incidents. Stateless: send the full conversation each turn; the assistant may reply with a clarifying question (e.g. mainnet vs testnet) — answer it in a follow-up message.",
+        "description": "Chat with the assistant about chains, endpoints, scaling, relations, live incidents, and forum news. Stateless: send the full conversation each turn; the assistant may reply with a clarifying question (e.g. mainnet vs testnet) — answer it in a follow-up message. Fast answers return 200 directly; slow LLM runs return 202 with a job id to poll at GET /assistant/chat/:jobId (keeps every request under reverse-proxy timeouts).",
         "requestBody": {
           "required": true,
           "content": {
@@ -675,6 +675,124 @@
                       }
                     },
                     "degraded": {
+                      "type": "boolean"
+                    },
+                    "offTopic": {
+                      "type": "boolean"
+                    },
+                    "usage": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "properties": {
+                        "promptTokens": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        },
+                        "completionTokens": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "pollAfterMs": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/chat/{jobId}": {
+      "get": {
+        "tags": [
+          "Assistant"
+        ],
+        "description": "Poll an async assistant job started by POST /assistant/chat (202 response). Returns status running/done/error; done responses carry the full chat result. Finished jobs expire after ~10 minutes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9-]+$",
+              "errorMessage": {
+                "pattern": "Invalid job id"
+              }
+            },
+            "in": "path",
+            "name": "jobId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "pollAfterMs": {
+                      "type": "number"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "reply": {
+                      "type": "string"
+                    },
+                    "toolCalls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "args": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    },
+                    "degraded": {
+                      "type": "boolean"
+                    },
+                    "offTopic": {
                       "type": "boolean"
                     },
                     "usage": {

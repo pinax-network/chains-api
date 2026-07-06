@@ -347,12 +347,15 @@ ASSISTANT_LLM_URL=http://localhost:11434 npm start
 ```
 
 - `ASSISTANT_LLM_URL`: OpenAI-compatible LLM base URL (default: empty = assistant disabled)
+- `ASSISTANT_LLM_API_KEY`: Bearer token for key-protected servers such as OpenAI or OpenRouter (default: empty — not needed for a plain Ollama)
 - `ASSISTANT_MODEL`: Model name passed to `/v1/chat/completions` (default: `qwen3`)
 - `ASSISTANT_MAX_TOOL_ITERATIONS`: Hard cap on LLM round-trips per request (default: 6)
 - `ASSISTANT_TIMEOUT_MS`: Overall per-request deadline (default: 60000)
 - `ASSISTANT_MAX_TOKENS`: `max_tokens` per LLM call (default: 1024)
 - `ASSISTANT_RATE_LIMIT_MAX`: Maximum `/assistant/chat` requests per window per IP (default: 10)
+- `ASSISTANT_TOPIC_GUARD`: Pre-classify each question with a cheap extra LLM call and refuse off-topic ones before the tool loop runs; fails open if the classifier misbehaves (default: `true`)
 - `LIVE_INCIDENTS_URL`: Live incident feed for the `get_live_incidents` tool (default: `https://chains-status-news.johnaverse.cc`)
+- `FORUM_NEWS_URL`: Forum/governance news feed for the `get_forum_news` tool (default: `https://chains-forum-news.johnaverse.cc`)
 
 ### Other
 - `BODY_LIMIT`: Maximum request body size in bytes (default: 1048576 = 1 MB)
@@ -396,6 +399,8 @@ Assistant availability probe: `{"enabled": true, "model": "qwen3"}` (`enabled: f
 
 ### `POST /assistant/chat`
 Chat with the assistant. Stateless — send the full conversation each turn; the assistant may reply with a clarifying question (e.g. mainnet vs testnet) that you answer in a follow-up message.
+
+Fast answers return `200` with the result directly. Runs that outlive the sync window (`ASSISTANT_SYNC_WAIT_MS`, default 8s — typical for large local models) return `202 {"jobId", "status": "running", "pollAfterMs"}`; poll `GET /assistant/chat/:jobId` until `status` is `done` (result fields included) or `error`. This keeps every HTTP request short, so reverse-proxy/CDN timeouts never kill a slow LLM run.
 
 **Request:**
 ```json
