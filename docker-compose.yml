@@ -20,6 +20,10 @@ services:
       # - ASSISTANT_LLM_URL=http://host.docker.internal:11434
       # - ASSISTANT_LLM_API_KEY=          # only for key-protected servers
       # - ASSISTANT_MODEL=qwen3
+      # Optional backup provider — runs switch to it when the primary fails:
+      # - ASSISTANT_FALLBACK_LLM_URL=http://host.docker.internal:11435
+      # - ASSISTANT_FALLBACK_MODEL=qwen3:8b
+      # - ASSISTANT_FALLBACK_LLM_API_KEY=
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"   # host-side Ollama on Linux
     restart: unless-stopped
