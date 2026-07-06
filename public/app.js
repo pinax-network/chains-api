@@ -1069,7 +1069,11 @@ async function sendAssistantMessage(text) {
     const thinking = appendChatThinking();
     try {
         const context = { view: activeView, ...(openChainId != null ? { chainId: openChainId } : {}) };
-        const res = await apiPost('/assistant/chat', { messages: assistant.messages, context });
+        let res = await apiPost('/assistant/chat', { messages: assistant.messages, context });
+        // Slow LLM runs come back as 202 + a job id — poll until the answer is
+        // ready. Each poll is a fast request, so reverse-proxy timeouts that
+        // would kill one long-held request never trigger.
+        if (res.status === 202 && res.data?.jobId) res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs);
         thinking.remove();
         if (res.ok && res.data?.reply != null) {
             assistant.messages.push({ role: 'assistant', content: res.data.reply });
@@ -1077,9 +1081,10 @@ async function sendAssistantMessage(text) {
         } else if (res.status === 429) {
             appendChatNotice('Slow down a little — too many questions in a short time. Try again in a minute.');
         } else if (res.status === 503) {
-            appendChatNotice(res.data?.error === 'Assistant not configured'
-                ? 'The assistant isn’t configured on this server.'
-                : 'The assistant’s language model is unreachable right now. Try again shortly.');
+            const msg = res.data?.error || '';
+            appendChatNotice(msg === 'Assistant not configured' ? 'The assistant isn’t configured on this server.'
+                : msg === 'Assistant LLM unreachable' || msg === 'Assistant failed' ? 'The assistant’s language model is unreachable right now. Try again shortly.'
+                : msg || 'The assistant is unavailable right now. Try again shortly.');
         } else {
             appendChatNotice(res.data?.error || 'Something went wrong. Please try again.');
         }
@@ -1090,6 +1095,27 @@ async function sendAssistantMessage(text) {
         setAssistantBusy(assistant.enabled === false);
         document.getElementById('assistantInput')?.focus();
     }
+}
+
+// Poll an async chat job until it finishes (up to ~5 min). Returns the same
+// {status, ok, data} shape as apiPost so the caller's branching is unchanged.
+async function pollAssistantJob(jobId, pollAfterMs) {
+    const deadline = Date.now() + 5 * 60 * 1000;
+    const delay = Math.max(1000, pollAfterMs || 2000);
+    while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, delay));
+        let res;
+        try {
+            res = await fetch(`${API_BASE}/assistant/chat/${jobId}`, { headers: { accept: 'application/json' } });
+        } catch { continue; } // transient network blip — keep polling
+        if (res.status === 404) return { status: 503, ok: false, data: { error: 'The answer expired before it could be fetched. Please ask again.' } };
+        if (!res.ok) continue;
+        const data = await res.json().catch(() => null);
+        if (data?.status === 'running') continue;
+        if (data?.status === 'error') return { status: 503, ok: false, data: { error: data.error } };
+        if (data?.status === 'done') return { status: 200, ok: true, data };
+    }
+    return { status: 503, ok: false, data: { error: 'The assistant is taking too long. Please try again.' } };
 }
 
 function setAssistantBusy(busy) {

@@ -157,3 +157,11 @@ export const ASSISTANT_RATE_LIMIT_MAX = parseIntEnv('ASSISTANT_RATE_LIMIT_MAX', 
 export const ASSISTANT_MAX_MESSAGES = parseIntEnv('ASSISTANT_MAX_MESSAGES', 20);
 export const ASSISTANT_MAX_MESSAGE_LENGTH = parseIntEnv('ASSISTANT_MAX_MESSAGE_LENGTH', 4000);
 export const ASSISTANT_TOOL_RESULT_MAX_CHARS = parseIntEnv('ASSISTANT_TOOL_RESULT_MAX_CHARS', 8000);
+// Async job handling: slow local models exceed reverse-proxy timeouts
+// (observed 15s ingress 504s), so POST /assistant/chat waits at most
+// SYNC_WAIT for the answer and otherwise returns 202 + a job id the client
+// polls. Finished jobs are kept for JOB_TTL; at most MAX_CONCURRENT_JOBS
+// LLM runs are in flight at once.
+export const ASSISTANT_SYNC_WAIT_MS = parseIntEnv('ASSISTANT_SYNC_WAIT_MS', 8000);
+export const ASSISTANT_JOB_TTL_MS = parseIntEnv('ASSISTANT_JOB_TTL_MS', 600000);
+export const ASSISTANT_MAX_CONCURRENT_JOBS = parseIntEnv('ASSISTANT_MAX_CONCURRENT_JOBS', 4);

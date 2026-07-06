@@ -205,7 +205,8 @@ Services: `chains-api` (port 3000) and `chains-api-mcp` (port 3001). Both have h
 | GET | `/metrics` | Prometheus exposition (counters + gauges) |
 | GET | `/refresher` | Unified refresher cursor + queue depth |
 | GET | `/assistant` | Assistant availability probe (`{enabled, model}`) |
-| POST | `/assistant/chat` | LLM chat over the registry + live incidents (stateless; client sends full history) |
+| POST | `/assistant/chat` | LLM chat over the registry + live incidents (stateless; 200 inline or 202 + job id for slow runs) |
+| GET | `/assistant/chat/:jobId` | Poll an async assistant job (running/done/error) |
 | GET | `/docs` | Interactive API reference (Swagger UI) |
 | GET | `/openapi.json` | OpenAPI 3 specification (machine-readable) |
 | POST | `/reload` | Reload all data sources |

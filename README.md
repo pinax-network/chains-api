@@ -399,6 +399,8 @@ Assistant availability probe: `{"enabled": true, "model": "qwen3"}` (`enabled: f
 ### `POST /assistant/chat`
 Chat with the assistant. Stateless — send the full conversation each turn; the assistant may reply with a clarifying question (e.g. mainnet vs testnet) that you answer in a follow-up message.
 
+Fast answers return `200` with the result directly. Runs that outlive the sync window (`ASSISTANT_SYNC_WAIT_MS`, default 8s — typical for large local models) return `202 {"jobId", "status": "running", "pollAfterMs"}`; poll `GET /assistant/chat/:jobId` until `status` is `done` (result fields included) or `error`. This keeps every HTTP request short, so reverse-proxy/CDN timeouts never kill a slow LLM run.
+
 **Request:**
 ```json
 {
