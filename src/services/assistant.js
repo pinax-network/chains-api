@@ -57,12 +57,16 @@ const GUARD_PROMPT = [
  * @param {object} [params.log] request-scoped pino logger
  * @param {Function} [params.fetchImpl] injectable for tests
  * @param {Function} [params.now] injectable clock for tests
+ * @param {Function} [params.onStep] progress callback (short human-readable labels)
  * @returns {Promise<{reply: string, toolCalls: Array<{name, args}>, degraded: boolean, usage: object|null}>}
  */
-export async function runAssistant({ messages, context, log = logger, fetchImpl = proxyFetch, now = () => new Date() }) {
+export async function runAssistant({ messages, context, log = logger, fetchImpl = proxyFetch, now = () => new Date(), onStep = () => {} }) {
   const startedAt = Date.now();
   const deadline = startedAt + ASSISTANT_TIMEOUT_MS;
+  // Progress reporting must never break the run.
+  const step = (label) => { try { onStep(label); } catch { /* observer's problem */ } };
 
+  if (ASSISTANT_TOPIC_GUARD) step('screening question');
   if (ASSISTANT_TOPIC_GUARD && !(await isOnTopic({ messages, deadline, fetchImpl, log }))) {
     incCounter('chains_api_assistant_requests_total', { outcome: 'off_topic' });
     log.info({ durationMs: Date.now() - startedAt, messageCount: messages.length }, 'assistant request rejected off-topic');
@@ -80,6 +84,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
   for (let iteration = 0; iteration < ASSISTANT_MAX_TOOL_ITERATIONS; iteration++) {
     const firstCall = iteration === 0;
     const forceAnswer = malformedStrikes >= MAX_MALFORMED_STRIKES;
+    step(firstCall ? 'thinking' : 'thinking about the results');
     const body = await callLlm({ convo, tools, toolChoice: forceAnswer ? 'none' : 'auto', deadline, fetchImpl, firstCall, log });
     if (!body) { degraded = true; break; }
     if (body.usage) usage = { promptTokens: body.usage.prompt_tokens ?? null, completionTokens: body.usage.completion_tokens ?? null };
@@ -106,6 +111,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
     convo.push({ role: 'assistant', content: msg.content ?? null, tool_calls: toolCalls });
     for (const call of toolCalls) {
       const name = call.function?.name || 'unknown';
+      step(`using ${name}`);
       let result;
       try {
         const args = JSON.parse(call.function?.arguments || '{}');
@@ -122,6 +128,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
 
   if (reply == null && !degraded) {
     // Iterations exhausted mid-loop — force a final answer from what we have.
+    step('writing the answer');
     const body = await callLlm({ convo, tools, toolChoice: 'none', deadline, fetchImpl, firstCall: false, log });
     reply = (body?.choices?.[0]?.message?.content || '').trim() || null;
     if (reply == null) degraded = true;
@@ -293,6 +300,11 @@ export function buildSystemPrompt(context, nowDate) {
     'category, DA layer, TVS), SLIP-0044 coin types, execution clients, operator status',
     'pages, LIVE incidents from chain and RPC-provider status pages, and recent posts',
     'from official community/governance forums (get_forum_news).',
+    // Explicit manifest: some serving stacks render tool schemas in ways weak
+    // models under-attend to; naming every tool here keeps the full toolbox
+    // discoverable even then.
+    `ALL of these tools exist and are callable: ${getOpenAiTools().map((t) => t.function.name).join(', ')}.`,
+    'Never claim a tool from this list is unavailable.',
     '',
     'Rules — follow strictly:',
     '1. DISAMBIGUATE NETWORKS. Many names are ambiguous ("Base" = Base mainnet 8453 or',
@@ -312,6 +324,11 @@ export function buildSystemPrompt(context, nowDate) {
     '4. NEVER invent chain IDs, endpoint URLs, incident titles, or numbers. Everything',
     '   factual must come from a tool result. If a tool returns nothing or errors, say so',
     '   plainly and suggest what the user could ask instead.',
+    '4b. UNKNOWN is not DOWN. If a health/monitoring tool reports UNKNOWN or has no',
+    '   results for a chain, say the status is unknown — never conclude endpoints or a',
+    '   network are down from missing checks. Only call a network unhealthy from an',
+    '   ACTIVE incident or explicit failing checks; compare incident dates against the',
+    '   current date/time — resolved or old incidents are history, not current status.',
     '5. Use the fewest tool calls that answer the question. Prefer *_by_id tools once you',
     '   know the chain ID.',
     '6. Answer concisely in markdown: short sentences, small bullet lists, `code` for chain',

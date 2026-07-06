@@ -65,9 +65,11 @@ describe('runAssistant', () => {
       llmResponse(toolCallMessage('search_chains', '{"query":"base"}')),
       llmResponse({ role: 'assistant', content: 'Base mainnet is chain `8453`.' }, { prompt_tokens: 100, completion_tokens: 20 })
     ]);
-    const result = await runAssistant({ messages: [{ role: 'user', content: 'what chain id is base?' }], log: noopLog, fetchImpl });
+    const steps = [];
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'what chain id is base?' }], log: noopLog, fetchImpl, onStep: s => steps.push(s) });
 
     expect(result.reply).toBe('Base mainnet is chain `8453`.');
+    expect(steps).toEqual(['thinking', 'using search_chains', 'thinking about the results']);
     expect(result.degraded).toBe(false);
     expect(result.toolCalls).toEqual([{ name: 'search_chains', args: { query: 'base' } }]);
     expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 20 });
@@ -156,6 +158,17 @@ describe('runAssistant', () => {
     ).rejects.toThrow(/500/);
   });
 
+  it('never lets a throwing onStep observer break the run', async () => {
+    const fetchImpl = fetchSequence([llmResponse({ role: 'assistant', content: 'hi' })]);
+    const result = await runAssistant({
+      messages: [{ role: 'user', content: 'hello' }],
+      log: noopLog,
+      fetchImpl,
+      onStep: () => { throw new Error('observer bug'); }
+    });
+    expect(result.reply).toBe('hi');
+  });
+
   it('degrades gracefully when the LLM dies mid-loop', async () => {
     const fetchImpl = fetchSequence([
       llmResponse(toolCallMessage('search_chains', '{"query":"base"}')),
@@ -198,6 +211,13 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('DISAMBIGUATE NETWORKS');
     expect(prompt).toContain('LIVE vs STATIC');
     expect(prompt).toContain('STAY ON TOPIC');
+    expect(prompt).toContain('UNKNOWN is not DOWN');
     expect(prompt).not.toContain('undefined');
+  });
+
+  it('lists every callable tool by name', () => {
+    const prompt = buildSystemPrompt(undefined, new Date('2026-07-06T12:00:00Z'));
+    // The mocked registry has two tools — both must appear in the manifest
+    expect(prompt).toContain('ALL of these tools exist and are callable: search_chains, get_chain_by_id');
   });
 });

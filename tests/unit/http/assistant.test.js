@@ -181,7 +181,8 @@ describe('assistant routes', () => {
     it('returns 202 with a jobId when the run outlives the sync window, then serves the result on poll', async () => {
       mocks.assistantEnabled = true;
       const d = deferred();
-      mocks.runAssistant.mockReturnValue(d.promise);
+      let reportStep;
+      mocks.runAssistant.mockImplementation(({ onStep }) => { reportStep = onStep; return d.promise; });
 
       const post = await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
       expect(post.statusCode).toBe(202);
@@ -191,9 +192,10 @@ describe('assistant routes', () => {
       expect(budgetMs).toBe(60000); // server declares its budget for the client's poll window
       expect(jobId).toMatch(/^[A-Za-z0-9-]+$/);
 
-      // Still running
+      // Still running — and harness progress surfaces on the poll
+      reportStep('using search_chains');
       const pending = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
-      expect(pending.json()).toMatchObject({ status: 'running' });
+      expect(pending.json()).toMatchObject({ status: 'running', step: 'using search_chains' });
 
       d.resolve(RESULT);
       await d.promise;
