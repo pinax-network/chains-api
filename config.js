@@ -121,3 +121,26 @@ export const PROXY_ENABLED = PROXY_URL !== '';
 export const PRICE_CACHE_TTL_MS = parseIntEnv('PRICE_CACHE_TTL_MS', 3600000);
 export const PRICE_NEGATIVE_CACHE_TTL_MS = parseIntEnv('PRICE_NEGATIVE_CACHE_TTL_MS', 300000);
 export const PRICE_FETCH_TIMEOUT_MS = parseIntEnv('PRICE_FETCH_TIMEOUT_MS', 3000);
+
+// Live incidents feed (chains-status-news). Used by the get_live_incidents
+// tool so the assistant/MCP can answer "is X down" questions server-side.
+export const LIVE_INCIDENTS_URL = parseStringEnv(
+  'LIVE_INCIDENTS_URL',
+  'https://chains-status-news.johnaverse.cc'
+);
+export const LIVE_INCIDENTS_CACHE_TTL_MS = parseIntEnv('LIVE_INCIDENTS_CACHE_TTL_MS', 60000);
+export const LIVE_INCIDENTS_FETCH_TIMEOUT_MS = parseIntEnv('LIVE_INCIDENTS_FETCH_TIMEOUT_MS', 10000);
+
+// Assistant (optional LLM chat over the registry + live incidents).
+// Disabled unless ASSISTANT_LLM_URL points at an OpenAI-compatible server
+// (e.g. Ollama: http://localhost:11434).
+export const ASSISTANT_LLM_URL = parseStringEnv('ASSISTANT_LLM_URL', '');
+export const ASSISTANT_ENABLED = ASSISTANT_LLM_URL !== '';
+export const ASSISTANT_MODEL = parseStringEnv('ASSISTANT_MODEL', 'qwen3');
+export const ASSISTANT_MAX_TOOL_ITERATIONS = parseIntEnv('ASSISTANT_MAX_TOOL_ITERATIONS', 6);
+export const ASSISTANT_TIMEOUT_MS = parseIntEnv('ASSISTANT_TIMEOUT_MS', 60000);
+export const ASSISTANT_MAX_TOKENS = parseIntEnv('ASSISTANT_MAX_TOKENS', 1024);
+export const ASSISTANT_RATE_LIMIT_MAX = parseIntEnv('ASSISTANT_RATE_LIMIT_MAX', 10);
+export const ASSISTANT_MAX_MESSAGES = parseIntEnv('ASSISTANT_MAX_MESSAGES', 20);
+export const ASSISTANT_MAX_MESSAGE_LENGTH = parseIntEnv('ASSISTANT_MAX_MESSAGE_LENGTH', 4000);
+export const ASSISTANT_TOOL_RESULT_MAX_CHARS = parseIntEnv('ASSISTANT_TOOL_RESULT_MAX_CHARS', 8000);

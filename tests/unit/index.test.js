@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock config with non-wildcard CORS_ORIGIN to exercise the split/map callback
-vi.mock('../../config.js', () => ({
+// Mock config with non-wildcard CORS_ORIGIN to exercise the split/map callback.
+// Spread the real module first so newly added config exports don't break this
+// mock's whitelist.
+vi.mock('../../config.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   PORT: 3000,
   HOST: '0.0.0.0',
   BODY_LIMIT: 1048576,

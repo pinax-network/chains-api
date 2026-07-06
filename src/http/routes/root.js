@@ -33,6 +33,8 @@ const ENDPOINTS = {
   '/scaling/status': 'Get L2BEAT refresher status (last refresh, source, errors)',
   '/metrics': 'Prometheus exposition format (counters + gauges for source freshness, refreshes, validation)',
   '/refresher': 'Unified rolling refresher status (queue depth, sweep cursor, per-job-type state)',
+  '/assistant': 'Assistant availability probe (enabled flag + model)',
+  '/assistant/chat': 'Chat with the LLM assistant about chains, endpoints, scaling, and live incidents (POST)',
   '/docs': 'Interactive API reference (Swagger UI)',
   '/openapi.json': 'OpenAPI 3 specification (machine-readable)'
 };

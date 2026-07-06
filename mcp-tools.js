@@ -23,6 +23,7 @@ import {
   getStatusPageByChainId,
   getStatusPageBySymbol,
 } from './src/sources/statusPages.js';
+import { getLiveIncidents } from './src/sources/liveIncidents.js';
 
 /**
  * Get the list of MCP tool definitions (schemas)
@@ -260,6 +261,33 @@ export function getToolDefinitions() {
           },
         },
         required: ['symbol'],
+      },
+    },
+    {
+      name: 'get_live_incidents',
+      description:
+        'Get LIVE incidents and scheduled maintenance from chain operator status pages and RPC provider status pages (Infura, QuickNode, dRPC, Pinax). Use for questions like "is X down", "any incidents today", "provider outages". Near-real-time (cached ~60s).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['chain', 'provider', 'all'],
+            description: 'chain = network operator incidents, provider = RPC provider incidents, all = both (default)',
+          },
+          chainId: {
+            type: 'number',
+            description: 'Only incidents affecting this chain ID',
+          },
+          provider: {
+            type: 'string',
+            description: 'Only incidents from this RPC provider id (e.g. "infura", "quicknode")',
+          },
+          limit: {
+            type: 'number',
+            description: 'Max incidents to return (default 30, max 100)',
+          },
+        },
       },
     },
   ];
@@ -623,6 +651,20 @@ function handleGetStatusPageBySymbol(args) {
   return textResponse(page);
 }
 
+async function handleGetLiveIncidents(args) {
+  const { type, chainId, provider, limit } = args ?? {};
+  try {
+    const result = await getLiveIncidents({ type, chainId, provider, limit });
+    // publishedMs is an internal sort key; drop it from tool output
+    return textResponse({
+      ...result,
+      incidents: result.incidents.map(({ publishedMs: _publishedMs, ...rest }) => rest),
+    });
+  } catch (error) {
+    return errorResponse('Live incident feed unavailable', error.message);
+  }
+}
+
 const toolHandlers = {
   get_chains: handleGetChains,
   get_chain_by_id: handleGetChainById,
@@ -644,6 +686,7 @@ const toolHandlers = {
   get_status_pages: handleGetStatusPages,
   get_status_page_by_chain: handleGetStatusPageByChain,
   get_status_page_by_symbol: handleGetStatusPageBySymbol,
+  get_live_incidents: handleGetLiveIncidents,
 };
 
 /**

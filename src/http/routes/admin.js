@@ -17,7 +17,9 @@ import {
   RATE_LIMIT_WINDOW_MS,
   DATA_CACHE_ENABLED,
   DATA_CACHE_FILE,
-  L2BEAT_STALE_AFTER_MS
+  L2BEAT_STALE_AFTER_MS,
+  ASSISTANT_ENABLED,
+  ASSISTANT_MODEL
 } from '../../../config.js';
 import { sendError } from '../util/sendError.js';
 
@@ -96,7 +98,11 @@ export async function adminRoutes(fastify) {
       lastUpdated: cachedData.lastUpdated,
       totalChains: cachedData.indexed ? cachedData.indexed.all.length : 0,
       sources,
-      refreshers
+      refreshers,
+      // Only advertised when configured; an unreachable local LLM must not
+      // degrade the data API's overall status, so it stays out of
+      // deriveOverallStatus and the key is omitted entirely when disabled.
+      ...(ASSISTANT_ENABLED ? { assistant: { enabled: true, model: ASSISTANT_MODEL } } : {})
     };
   });
 

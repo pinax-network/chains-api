@@ -3,7 +3,7 @@
   "info": {
     "title": "Chains API",
     "description": "Aggregated blockchain chain data from five external sources (TheGraph, Chainlist, Chain ID Network, SLIP-0044, L2BEAT): chain metadata, relations, RPC endpoints and health, L2 scaling, and operator status.",
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "components": {
     "schemas": {}
@@ -539,6 +539,172 @@
         }
       }
     },
+    "/assistant": {
+      "get": {
+        "tags": [
+          "Assistant"
+        ],
+        "description": "Assistant availability probe. Reports whether the chat assistant is configured and which model backs it.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "model": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/chat": {
+      "post": {
+        "tags": [
+          "Assistant"
+        ],
+        "description": "Chat with the assistant about chains, endpoints, scaling, relations, and live incidents. Stateless: send the full conversation each turn; the assistant may reply with a clarifying question (e.g. mainnet vs testnet) — answer it in a follow-up message.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant"
+                          ],
+                          "errorMessage": {
+                            "enum": "Message role must be \"user\" or \"assistant\""
+                          }
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4000,
+                          "errorMessage": {
+                            "minLength": "Message content must not be empty",
+                            "maxLength": "Message content too long. Max length: 4000"
+                          }
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "content"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "errorMessage": {
+                      "minItems": "At least one message is required",
+                      "maxItems": "Too many messages. Max: 20"
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "properties": {
+                      "view": {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      "chainId": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "messages"
+                ],
+                "additionalProperties": false,
+                "errorMessage": {
+                  "required": {
+                    "messages": "Field \"messages\" is required"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reply": {
+                      "type": "string"
+                    },
+                    "toolCalls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "args": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    },
+                    "degraded": {
+                      "type": "boolean"
+                    },
+                    "usage": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "properties": {
+                        "promptTokens": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        },
+                        "completionTokens": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/": {
       "get": {
         "tags": [
@@ -614,6 +780,10 @@
     {
       "name": "Admin",
       "description": "Data reload"
+    },
+    {
+      "name": "Assistant",
+      "description": "LLM chat assistant over the chains registry and live incidents"
     },
     {
       "name": "Meta",

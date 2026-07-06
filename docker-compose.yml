@@ -14,6 +14,13 @@ services:
       - HOST=0.0.0.0
       - MCP_PORT=3001
       - MCP_HOST=0.0.0.0
+      # Assistant (optional): point at an OpenAI-compatible LLM server to
+      # enable the /assistant/chat endpoint. For an Ollama running on the
+      # Docker host, also uncomment extra_hosts below.
+      # - ASSISTANT_LLM_URL=http://host.docker.internal:11434
+      # - ASSISTANT_MODEL=qwen3
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"   # host-side Ollama on Linux
     restart: unless-stopped
     healthcheck:
       test:

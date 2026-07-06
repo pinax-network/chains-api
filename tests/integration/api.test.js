@@ -367,6 +367,29 @@ describe('API Endpoints', () => {
     });
   });
 
+  describe('Assistant (disabled in the default test env)', () => {
+    it('GET /assistant reports disabled', async () => {
+      const response = await app.inject({ method: 'GET', url: '/assistant' });
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.payload)).toEqual({ enabled: false, model: null });
+    });
+
+    it('POST /assistant/chat returns 503 when not configured', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/assistant/chat',
+        payload: { messages: [{ role: 'user', content: 'hello' }] }
+      });
+      expect(response.statusCode).toBe(503);
+      expect(JSON.parse(response.payload).error).toBe('Assistant not configured');
+    });
+
+    it('GET /health omits the assistant key when disabled', async () => {
+      const response = await app.inject({ method: 'GET', url: '/health' });
+      expect(JSON.parse(response.payload)).not.toHaveProperty('assistant');
+    });
+  });
+
   describe('GET /metrics', () => {
     it('returns Prometheus exposition format with text/plain content type', async () => {
       const response = await app.inject({ method: 'GET', url: '/metrics' });

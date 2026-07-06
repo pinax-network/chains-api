@@ -95,12 +95,33 @@ async function api(path, { timeoutMs = 25000 } = {}) {
     }
 }
 
+// POST helper for the assistant. Unlike api(), non-2xx responses still carry a
+// useful JSON body ({error}) — return status + body so callers can branch.
+async function apiPost(path, body, { timeoutMs = 70000 } = {}) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+        const res = await fetch(`${API_BASE}${path}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', accept: 'application/json' },
+            body: JSON.stringify(body),
+            signal: ctrl.signal
+        });
+        let data = null;
+        try { data = await res.json(); } catch { /* non-JSON error body */ }
+        return { status: res.status, ok: res.ok, data };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 // ─────────────────────────────── bootstrap ───────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSearch();
     initGraphControls();
     initDrawer();
+    initAssistant();
     initIncidentControls();
     initChainsTableHeader();
     initAppbarHeight();     // keep --appbar-h in sync with the real bar height
@@ -366,7 +387,12 @@ function initSearch() {
     });
     function mark(items) { items.forEach((it, i) => it.classList.toggle('active', i === activeIdx)); items[activeIdx]?.scrollIntoView({ block: 'nearest' }); }
     document.addEventListener('click', e => { if (!e.target.closest('.search-box')) dd.classList.add('hidden'); });
-    document.addEventListener('keydown', e => { if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); } });
+    document.addEventListener('keydown', e => {
+        // "/" focuses global search — unless the user is typing somewhere else
+        // (e.g. the assistant textarea).
+        const tag = document.activeElement?.tagName;
+        if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') { e.preventDefault(); input.focus(); }
+    });
 }
 
 // ─────────────────────────────── graph ───────────────────────────────
@@ -974,6 +1000,162 @@ async function statusFeedBackfill() {
     } finally {
         incidents.backfillInFlight = false;
     }
+}
+
+// ─────────────────────────────── Assistant (floating chat overlay) ───────────────────────────────
+// A corner button opens a chat panel that floats over every view, so the user
+// can ask about whatever they're looking at (the active view + open chain are
+// sent as context). Conversation lives in memory only: persisting it to the
+// URL would leak chat text into shareable links, and localStorage would
+// resurrect stale conversations on a public dashboard.
+const assistant = { messages: [], busy: false, enabled: null, probed: false };
+
+function initAssistant() {
+    document.getElementById('assistantFab')?.addEventListener('click', () => toggleAssistant());
+    document.getElementById('assistantClose')?.addEventListener('click', () => toggleAssistant(false));
+    document.getElementById('assistantForm')?.addEventListener('submit', e => { e.preventDefault(); submitAssistantInput(); });
+    document.getElementById('assistantInput')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAssistantInput(); }
+    });
+    document.querySelectorAll('#assistantChips .chat-chip').forEach(chip =>
+        chip.addEventListener('click', () => sendAssistantMessage(chip.textContent)));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleAssistant(false); });
+}
+
+function toggleAssistant(open) {
+    const overlay = document.getElementById('assistantOverlay');
+    if (!overlay) return;
+    const show = open ?? overlay.classList.contains('hidden');
+    overlay.classList.toggle('hidden', !show);
+    document.getElementById('assistantFab')?.classList.toggle('fab-open', show);
+    if (show) {
+        if (!assistant.probed) { assistant.probed = true; probeAssistant(); }
+        if (assistant.enabled !== false) document.getElementById('assistantInput')?.focus();
+    }
+}
+
+async function probeAssistant() {
+    const meta = document.getElementById('assistantMeta');
+    try {
+        const info = await api('/assistant');
+        assistant.enabled = !!info.enabled;
+        if (meta) meta.textContent = assistant.enabled ? info.model : 'offline';
+    } catch {
+        assistant.enabled = false;
+        if (meta) meta.textContent = 'offline';
+    }
+    if (!assistant.enabled) {
+        appendChatNotice('The assistant isn’t configured on this server yet (no LLM connected). Everything else on the dashboard works as usual.');
+        setAssistantBusy(true); // permanently disable the form
+    }
+}
+
+function submitAssistantInput() {
+    const input = document.getElementById('assistantInput');
+    const text = (input?.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    sendAssistantMessage(text);
+}
+
+async function sendAssistantMessage(text) {
+    if (assistant.busy || assistant.enabled === false) return;
+    document.getElementById('assistantChips')?.classList.add('hidden');
+    assistant.messages.push({ role: 'user', content: text.slice(0, 4000) });
+    // The server caps history at 20 messages; keep the newest turns.
+    if (assistant.messages.length > 20) assistant.messages = assistant.messages.slice(-20);
+    appendChatBubble('user', text);
+    setAssistantBusy(true);
+    const thinking = appendChatThinking();
+    try {
+        const context = { view: activeView, ...(openChainId != null ? { chainId: openChainId } : {}) };
+        const res = await apiPost('/assistant/chat', { messages: assistant.messages, context });
+        thinking.remove();
+        if (res.ok && res.data?.reply != null) {
+            assistant.messages.push({ role: 'assistant', content: res.data.reply });
+            appendChatBubble('assistant', res.data.reply, { toolCalls: res.data.toolCalls, degraded: res.data.degraded });
+        } else if (res.status === 429) {
+            appendChatNotice('Slow down a little — too many questions in a short time. Try again in a minute.');
+        } else if (res.status === 503) {
+            appendChatNotice(res.data?.error === 'Assistant not configured'
+                ? 'The assistant isn’t configured on this server.'
+                : 'The assistant’s language model is unreachable right now. Try again shortly.');
+        } else {
+            appendChatNotice(res.data?.error || 'Something went wrong. Please try again.');
+        }
+    } catch {
+        thinking.remove();
+        appendChatNotice('Network error — the request didn’t reach the server. Please try again.');
+    } finally {
+        setAssistantBusy(assistant.enabled === false);
+        document.getElementById('assistantInput')?.focus();
+    }
+}
+
+function setAssistantBusy(busy) {
+    assistant.busy = busy;
+    const send = document.getElementById('assistantSend');
+    const input = document.getElementById('assistantInput');
+    if (send) send.disabled = busy;
+    if (input) input.disabled = busy;
+}
+
+function appendChatBubble(role, text, { toolCalls, degraded } = {}) {
+    const log = document.getElementById('assistantLog');
+    const body = el('div', { class: 'chat-bubble-body' });
+    body.innerHTML = renderAssistantMarkdown(text);
+    const extras = [];
+    if (degraded) extras.push(el('span', { class: 'chat-degraded', text: 'partial answer' }));
+    if (toolCalls?.length) {
+        const names = [...new Set(toolCalls.map(c => c.name))].join(', ');
+        extras.push(el('div', { class: 'chat-tools', text: `used: ${names}` }));
+    }
+    const bubble = el('div', { class: `chat-bubble ${role}` }, [body, ...extras]);
+    log.appendChild(bubble);
+    log.scrollTop = log.scrollHeight;
+    return bubble;
+}
+
+function appendChatNotice(text) {
+    const log = document.getElementById('assistantLog');
+    const notice = el('div', { class: 'chat-notice', text });
+    log.appendChild(notice);
+    log.scrollTop = log.scrollHeight;
+    return notice;
+}
+
+function appendChatThinking() {
+    const log = document.getElementById('assistantLog');
+    const dots = el('div', { class: 'chat-bubble assistant chat-thinking', 'aria-label': 'Assistant is thinking' },
+        [el('span'), el('span'), el('span')]);
+    log.appendChild(dots);
+    log.scrollTop = log.scrollHeight;
+    return dots;
+}
+
+// Minimal markdown renderer for assistant replies. HTML-escapes FIRST, then
+// layers formatting on the escaped text — so model output can never inject
+// markup. Supports: `code`, **bold**, bullet lists, bare URLs, paragraphs.
+function renderAssistantMarkdown(text) {
+    const escaped = String(text)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const blocks = escaped.split(/\n{2,}/).map(block => {
+        const lines = block.split('\n');
+        const isList = lines.every(l => /^\s*[-*] /.test(l) || l.trim() === '');
+        if (isList && lines.some(l => l.trim())) {
+            const items = lines.filter(l => l.trim()).map(l => `<li>${inlineMd(l.replace(/^\s*[-*] /, ''))}</li>`).join('');
+            return `<ul>${items}</ul>`;
+        }
+        return `<p>${lines.map(inlineMd).join('<br>')}</p>`;
+    });
+    return blocks.join('');
+}
+
+function inlineMd(s) {
+    return s
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
 }
 
 // ─────────────────────────────── Detail drawer ───────────────────────────────
