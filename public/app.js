@@ -1109,6 +1109,7 @@ async function sendAssistantMessage(text) {
 async function pollAssistantJob(jobId, pollAfterMs) {
     const deadline = Date.now() + 5 * 60 * 1000;
     const delay = Math.max(1000, pollAfterMs || 2000);
+    let consecutiveMisses = 0;
     while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, delay));
         // Each poll gets its own abort timeout — a single black-holed response
@@ -1122,7 +1123,18 @@ async function pollAssistantJob(jobId, pollAfterMs) {
             data = res.ok ? await res.json().catch(() => null) : null;
         } catch { continue; } // transient network blip or timeout — keep polling
         finally { clearTimeout(timer); }
-        if (res.status === 404) return { status: 503, ok: false, data: { error: 'The answer expired before it could be fetched. Please ask again.' } };
+        if (res.status === 404) {
+            // Jobs live in ONE server replica's memory: behind a round-robin
+            // load balancer a poll routinely lands on a pod that never heard
+            // of this job. A miss is transient — keep polling, the next one
+            // may hit the owner. Only a long unbroken run of misses means the
+            // job is truly gone (pod restarted, TTL expired).
+            if (++consecutiveMisses >= 15) {
+                return { status: 503, ok: false, data: { error: 'The answer expired before it could be fetched. Please ask again.' } };
+            }
+            continue;
+        }
+        consecutiveMisses = 0;
         if (!res.ok) continue;
         if (data?.status === 'running') continue;
         if (data?.status === 'error') return { status: 503, ok: false, data: { error: data.error } };
