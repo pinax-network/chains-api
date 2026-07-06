@@ -29,16 +29,24 @@ function runningJobCount() {
 function startAssistantJob({ messages, context, log }) {
   const job = { id: randomUUID(), status: 'running', result: null, error: null };
   jobs.set(job.id, job);
+  const jobId = job.id;
   job.promise = runAssistant({ messages, context, log })
     .then((result) => { job.status = 'done'; job.result = result; })
     .catch((err) => {
       job.status = 'error';
-      job.error = err instanceof AssistantUnavailableError ? 'Assistant LLM unreachable' : 'Assistant failed';
-      if (!(err instanceof AssistantUnavailableError)) log.error({ err: err.message }, 'assistant job failed');
+      if (err instanceof AssistantUnavailableError) {
+        job.error = 'Assistant LLM unreachable';
+        log.warn({ err: err.message }, 'assistant LLM unreachable');
+      } else {
+        job.error = 'Assistant failed';
+        // Full error object → pino's err serializer keeps the stack trace.
+        log.error({ err }, 'assistant job failed');
+      }
     })
     .finally(() => {
-      // Finished jobs linger for the poll TTL, then vanish.
-      setTimeout(() => jobs.delete(job.id), ASSISTANT_JOB_TTL_MS).unref?.();
+      // Finished jobs linger for the poll TTL, then vanish. Capture only the
+      // id — closing over `job` would pin every response body for the TTL.
+      setTimeout(() => jobs.delete(jobId), ASSISTANT_JOB_TTL_MS).unref?.();
     });
   return job;
 }

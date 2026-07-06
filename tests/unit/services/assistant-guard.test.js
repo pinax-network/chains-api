@@ -74,6 +74,33 @@ describe('runAssistant topic guard (pre-classification)', () => {
     expect(result.offTopic).toBe(true);
   });
 
+  it('fails open on a completion truncated at max_tokens (finish_reason length)', async () => {
+    const fetchImpl = fetchSequence([
+      { ok: true, json: async () => ({ choices: [{ message: { role: 'assistant', content: '<think>is this live status? no, wait —' }, finish_reason: 'length' }] }) },
+      llmResponse('answer')
+    ]);
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'is base down?' }], log: noopLog, fetchImpl });
+    expect(result.reply).toBe('answer');
+    expect(result.offTopic).toBeUndefined();
+  });
+
+  it('never takes a verdict from an unterminated <think> block', async () => {
+    const fetchImpl = fetchSequence([
+      llmResponse('<think>hmm the user asks about base… no, actually'),
+      llmResponse('answer')
+    ]);
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'is base down?' }], log: noopLog, fetchImpl });
+    expect(result.reply).toBe('answer'); // stray "no" inside truncated thinking ignored → fail open
+  });
+
+  it('keeps the tail of long messages so a trailing question is classified', async () => {
+    const longMessage = `${'x'.repeat(2000)} so is Arbitrum One healthy right now?`;
+    const fetchImpl = fetchSequence([llmResponse('yes'), llmResponse('answer')]);
+    await runAssistant({ messages: [{ role: 'user', content: longMessage }], log: noopLog, fetchImpl });
+    const guardInput = fetchImpl.bodies[0].messages[1].content;
+    expect(guardInput).toContain('so is Arbitrum One healthy right now?');
+  });
+
   it('fails open when the classifier errors or is unparseable', async () => {
     const errored = fetchSequence([new Error('boom'), llmResponse('answer')]);
     expect((await runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl: errored })).reply).toBe('answer');

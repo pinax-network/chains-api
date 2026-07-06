@@ -678,10 +678,10 @@ async function handleGetForumNews(args) {
   const { chainId, forum, limit } = args ?? {};
   try {
     const result = await getForumNews({ chainId, forum, limit });
-    // publishedMs is an internal sort key; drop it from tool output
+    // publishedMs/freshMs are internal sort/recency keys; drop from tool output
     return textResponse({
       ...result,
-      news: result.news.map(({ publishedMs: _publishedMs, ...rest }) => rest),
+      news: result.news.map(({ publishedMs: _publishedMs, freshMs: _freshMs, ...rest }) => rest),
     });
   } catch (error) {
     return errorResponse('Forum news feed unavailable', error.message);

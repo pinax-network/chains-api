@@ -1108,13 +1108,19 @@ async function pollAssistantJob(jobId, pollAfterMs) {
     const delay = Math.max(1000, pollAfterMs || 2000);
     while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, delay));
-        let res;
+        // Each poll gets its own abort timeout — a single black-holed response
+        // must not hang the loop past the deadline and strand the chat in the
+        // busy state (same hazard api()/apiPost() guard against).
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        let res, data;
         try {
-            res = await fetch(`${API_BASE}/assistant/chat/${jobId}`, { headers: { accept: 'application/json' } });
-        } catch { continue; } // transient network blip — keep polling
+            res = await fetch(`${API_BASE}/assistant/chat/${jobId}`, { headers: { accept: 'application/json' }, signal: ctrl.signal });
+            data = res.ok ? await res.json().catch(() => null) : null;
+        } catch { continue; } // transient network blip or timeout — keep polling
+        finally { clearTimeout(timer); }
         if (res.status === 404) return { status: 503, ok: false, data: { error: 'The answer expired before it could be fetched. Please ask again.' } };
         if (!res.ok) continue;
-        const data = await res.json().catch(() => null);
         if (data?.status === 'running') continue;
         if (data?.status === 'error') return { status: 503, ok: false, data: { error: data.error } };
         if (data?.status === 'done') return { status: 200, ok: true, data };

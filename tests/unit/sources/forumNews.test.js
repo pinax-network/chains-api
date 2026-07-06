@@ -122,4 +122,61 @@ describe('getForumNews (REST fallback — WS unreachable)', () => {
     proxyFetch.mockRejectedValue(new Error('ECONNREFUSED'));
     await expect(getForumNews()).rejects.toThrow(/Forum news feed unavailable/);
   });
+
+  it('windows failed refreshes too — a broken feed is retried once per TTL, not per call', async () => {
+    proxyFetch.mockResolvedValueOnce(okResponse([newsItem()]));
+    await getForumNews();
+    vi.advanceTimersByTime(61000);
+    proxyFetch.mockRejectedValue(new Error('boom'));
+    await getForumNews(); // failed refresh, serves store
+    await getForumNews(); // within TTL of the failed ATTEMPT → no new fetch
+    expect(proxyFetch).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(61000);
+    await getForumNews(); // next TTL window → retried
+    expect(proxyFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('throws instantly from the cached error while cold within the TTL', async () => {
+    proxyFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+    await expect(getForumNews()).rejects.toThrow(/unavailable/);
+    await expect(getForumNews()).rejects.toThrow(/unavailable/);
+    expect(proxyFetch).toHaveBeenCalledTimes(1); // second throw came from the negative cache
+  });
+
+  it('never lets an older revision overwrite a newer one (newest wins)', async () => {
+    proxyFetch.mockResolvedValueOnce(okResponse([
+      newsItem({ id: 'same', title: 'Edited revision', publishedAt: '2026-07-05T15:00:00Z' })
+    ]));
+    await getForumNews();
+    vi.advanceTimersByTime(61000);
+    // Lagging snapshot still carries the older revision of the same id
+    proxyFetch.mockResolvedValueOnce(okResponse([
+      newsItem({ id: 'same', title: 'Stale revision', publishedAt: '2026-07-05T14:00:00Z' })
+    ]));
+    const result = await getForumNews();
+    expect(result.news[0].title).toBe('Edited revision');
+  });
+
+  it('treats a bumped updatedAt as newer even when publishedAt is unchanged', async () => {
+    proxyFetch.mockResolvedValueOnce(okResponse([
+      newsItem({ id: 'same', title: 'Original', publishedAt: '2026-07-05T10:00:00Z' })
+    ]));
+    await getForumNews();
+    vi.advanceTimersByTime(61000);
+    proxyFetch.mockResolvedValueOnce(okResponse([
+      newsItem({ id: 'same', title: 'In-place edit', publishedAt: '2026-07-05T10:00:00Z', updatedAt: '2026-07-05T12:00:00Z' })
+    ]));
+    const result = await getForumNews();
+    expect(result.news[0].title).toBe('In-place edit');
+  });
+
+  it('shares one in-flight seed between concurrent callers', async () => {
+    let resolveFetch;
+    proxyFetch.mockReturnValue(new Promise((r) => { resolveFetch = r; }));
+    const calls = [getForumNews(), getForumNews(), getForumNews()];
+    resolveFetch(okResponse([newsItem()]));
+    const results = await Promise.all(calls);
+    expect(proxyFetch).toHaveBeenCalledTimes(1);
+    expect(results.every((r) => r.count === 1)).toBe(true);
+  });
 });

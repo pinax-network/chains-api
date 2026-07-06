@@ -154,7 +154,7 @@ async function isOnTopic({ messages, deadline, fetchImpl, log }) {
   // Last few turns give follow-ups their context without paying for the
   // whole history twice.
   const transcript = messages.slice(-4)
-    .map((m) => `${m.role}: ${m.content.slice(0, 500)}`)
+    .map((m) => `${m.role}: ${truncateForGuard(m.content)}`)
     .join('\n');
   try {
     const response = await fetchImpl(`${ASSISTANT_LLM_URL}/v1/chat/completions`, {
@@ -175,10 +175,15 @@ async function isOnTopic({ messages, deadline, fetchImpl, log }) {
     if (!response.ok) throw new Error(`LLM responded ${response.status}`);
     const body = await response.json();
     incCounter('chains_api_assistant_llm_calls_total', { outcome: 'ok' });
+    // A completion cut off at max_tokens has no trustworthy verdict — the
+    // yes/no we'd find would come from truncated chain-of-thought. Fail open.
+    if (body.choices?.[0]?.finish_reason === 'length') return true;
     // Reasoning models may emit <think>…</think> before the verdict; strip
-    // it and take the LAST yes/no in what remains.
+    // closed blocks AND any unterminated one (nothing after it is a verdict),
+    // then take the LAST yes/no in what remains.
     const text = (body.choices?.[0]?.message?.content || '')
       .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<think>[\s\S]*$/gi, '')
       .toLowerCase();
     const verdicts = text.match(/\b(yes|no)\b/g);
     if (!verdicts) return true; // unparseable → fail open
@@ -188,6 +193,14 @@ async function isOnTopic({ messages, deadline, fetchImpl, log }) {
     log.warn({ err: err.message }, 'assistant topic guard failed; allowing request');
     return true;
   }
+}
+
+// Users may paste long context (logs, errors) before or after their actual
+// question, and the route allows 4000-char messages — keep the head AND the
+// tail so the classifier sees the ask wherever it sits.
+function truncateForGuard(content) {
+  if (content.length <= 1200) return content;
+  return `${content.slice(0, 400)}\n…\n${content.slice(-800)}`;
 }
 
 async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCall, log }) {

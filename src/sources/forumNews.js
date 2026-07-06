@@ -28,17 +28,28 @@ const MAX_SUMMARY_CHARS = 240;
 const MAX_STORE_ITEMS = 1000;
 const WS_MAX_RECONNECT_DELAY_MS = 60000;
 
+// A connection that survives this long is considered stable — only then does
+// a close reset the reconnect backoff. An upstream that accepts the handshake
+// and immediately drops (crash-looping backend) keeps backing off instead of
+// reconnecting every second.
+const WS_STABLE_AFTER_MS = 30000;
+
 // id -> normalized item; shared by WS pushes and REST seeds.
 const store = new Map();
-let restFetchedAt = 0;
+let restAttemptAt = 0;
+let lastRestError = null;
+let restSeedInFlight = null;
 let ws = null;
 let wsOpen = false;
+let wsConnectedAt = 0;
 let wsRetries = 0;
 let wsReconnectTimer = null;
 
 export function _resetForumNewsForTests() {
   store.clear();
-  restFetchedAt = 0;
+  restAttemptAt = 0;
+  lastRestError = null;
+  restSeedInFlight = null;
   stopForumNewsWs();
   wsRetries = 0;
 }
@@ -106,9 +117,14 @@ function connectWs() {
     scheduleWsReconnect();
     return;
   }
+  // unref the underlying socket as soon as it exists: a background feed must
+  // never keep the process alive (the stdio MCP server exits by event-loop
+  // drain when its client closes stdin).
+  ws.on('upgrade', (res) => res.socket?.unref?.());
   ws.on('open', () => {
     wsOpen = true;
-    wsRetries = 0;
+    wsConnectedAt = Date.now();
+    ws._socket?.unref?.();
     logger.info({ url }, 'Forum news WS connected');
   });
   ws.on('message', (data) => {
@@ -121,6 +137,9 @@ function connectWs() {
     logger.warn({ err: err.message }, 'Forum news WS error');
   });
   ws.on('close', () => {
+    // Only a connection that proved stable resets the backoff — an upstream
+    // that opens then immediately drops keeps escalating the delay.
+    if (wsOpen && Date.now() - wsConnectedAt >= WS_STABLE_AFTER_MS) wsRetries = 0;
     wsOpen = false;
     ws = null;
     scheduleWsReconnect();
@@ -139,7 +158,23 @@ function scheduleWsReconnect() {
 // ── REST (seed + fallback) ───────────────────────────────────────────────────
 
 async function restSeed() {
-  if (store.size > 0 && Date.now() - restFetchedAt < FORUM_NEWS_CACHE_TTL_MS) return;
+  // Concurrent callers share one in-flight fetch instead of each firing their
+  // own 500-item request. Must be checked before the TTL window — the attempt
+  // timestamp is stamped when the fetch STARTS.
+  if (restSeedInFlight) return restSeedInFlight;
+  // The TTL windows ATTEMPTS, not just successes — a failing feed is retried
+  // once per TTL instead of blocking every tool call on a doomed fetch.
+  if (Date.now() - restAttemptAt < FORUM_NEWS_CACHE_TTL_MS) {
+    if (store.size > 0) return;
+    if (lastRestError) throw new Error(`Forum news feed unavailable: ${lastRestError}`);
+    return;
+  }
+  restSeedInFlight = doRestSeed().finally(() => { restSeedInFlight = null; });
+  return restSeedInFlight;
+}
+
+async function doRestSeed() {
+  restAttemptAt = Date.now();
   try {
     const response = await proxyFetch(`${FORUM_NEWS_URL}/news?limit=${FEED_FETCH_LIMIT}`, {
       headers: { accept: 'application/json' },
@@ -149,8 +184,9 @@ async function restSeed() {
     const body = await response.json();
     const news = Array.isArray(body?.news) ? body.news : [];
     for (const item of news) upsertItem(item);
-    restFetchedAt = Date.now();
+    lastRestError = null;
   } catch (err) {
+    lastRestError = err.message;
     if (store.size > 0) {
       logger.warn({ err: err.message }, 'Forum news REST fetch failed; serving existing store');
       return;
@@ -163,13 +199,26 @@ async function restSeed() {
 
 function upsertItem(raw) {
   const id = raw.id || `${raw.forum?.id || 'unknown'}|${(raw.title || '').toLowerCase().trim()}`;
-  store.set(id, normalizeItem(raw));
+  const item = normalizeItem(raw);
+  // Newest wins (same rule as liveIncidents): a lagging REST snapshot or a
+  // reconnect replay must never overwrite a fresher revision already stored.
+  // freshMs uses updatedAt-first so in-place edits count as newer.
+  const existing = store.get(id);
+  if (existing && (existing.freshMs ?? 0) >= (item.freshMs ?? 0)) return;
+  store.set(id, item);
   if (store.size > MAX_STORE_ITEMS) evictOldest();
 }
 
+// Called right after a single insert, so the store is over cap by exactly
+// one — a linear min-scan beats sorting all ~1000 entries.
 function evictOldest() {
-  const sorted = [...store.entries()].sort((a, b) => (b[1].publishedMs ?? 0) - (a[1].publishedMs ?? 0));
-  for (const [id] of sorted.slice(MAX_STORE_ITEMS)) store.delete(id);
+  let oldestId = null;
+  let oldestMs = Infinity;
+  for (const [id, item] of store.entries()) {
+    const ms = item.publishedMs ?? 0;
+    if (ms < oldestMs) { oldestMs = ms; oldestId = id; }
+  }
+  if (oldestId != null) store.delete(oldestId);
 }
 
 function normalizeItem(it) {
@@ -177,7 +226,8 @@ function normalizeItem(it) {
     title: it.title || '(untitled)',
     url: it.url || null,
     publishedAt: it.publishedAt || null,
-    publishedMs: parseTime(it),
+    publishedMs: parseTime(it.publishedAt, it.updatedAt),
+    freshMs: parseTime(it.updatedAt, it.publishedAt),
     summary: typeof it.summary === 'string' && it.summary
       ? it.summary.slice(0, MAX_SUMMARY_CHARS)
       : null,
@@ -189,7 +239,7 @@ function normalizeItem(it) {
   };
 }
 
-function parseTime(it) {
-  const t = Date.parse(it.publishedAt || it.updatedAt || '');
+function parseTime(primary, fallback) {
+  const t = Date.parse(primary || fallback || '');
   return Number.isNaN(t) ? null : t;
 }
