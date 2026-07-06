@@ -49,21 +49,21 @@ describe('assistant routes', () => {
   });
 
   describe('GET /assistant', () => {
-    it('reports disabled with null model and reachability', async () => {
+    it('reports disabled with null model, reachability and timeout', async () => {
       const res = await app.inject({ method: 'GET', url: '/assistant' });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ enabled: false, model: null, reachable: null });
+      expect(res.json()).toEqual({ enabled: false, model: null, reachable: null, timeoutMs: null });
       expect(mocks.checkLlmReachable).not.toHaveBeenCalled();
     });
 
-    it('reports enabled with the configured model and live reachability', async () => {
+    it('reports enabled with the configured model, live reachability and effective timeout', async () => {
       mocks.assistantEnabled = true;
       const res = await app.inject({ method: 'GET', url: '/assistant' });
-      expect(res.json()).toEqual({ enabled: true, model: 'test-model', reachable: true });
+      expect(res.json()).toEqual({ enabled: true, model: 'test-model', reachable: true, timeoutMs: 60000 });
 
       mocks.checkLlmReachable.mockResolvedValueOnce(false);
       const down = await app.inject({ method: 'GET', url: '/assistant' });
-      expect(down.json()).toEqual({ enabled: true, model: 'test-model', reachable: false });
+      expect(down.json()).toEqual({ enabled: true, model: 'test-model', reachable: false, timeoutMs: 60000 });
     });
   });
 
@@ -185,9 +185,10 @@ describe('assistant routes', () => {
 
       const post = await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
       expect(post.statusCode).toBe(202);
-      const { jobId, status, pollAfterMs } = post.json();
+      const { jobId, status, pollAfterMs, budgetMs } = post.json();
       expect(status).toBe('running');
       expect(pollAfterMs).toBeGreaterThan(0);
+      expect(budgetMs).toBe(60000); // server declares its budget for the client's poll window
       expect(jobId).toMatch(/^[A-Za-z0-9-]+$/);
 
       // Still running

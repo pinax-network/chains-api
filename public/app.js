@@ -1080,7 +1080,7 @@ async function sendAssistantMessage(text) {
         // Slow LLM runs come back as 202 + a job id — poll until the answer is
         // ready. Each poll is a fast request, so reverse-proxy timeouts that
         // would kill one long-held request never trigger.
-        if (res.status === 202 && res.data?.jobId) res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs);
+        if (res.status === 202 && res.data?.jobId) res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs);
         thinking.remove();
         if (res.ok && res.data?.reply != null) {
             assistant.messages.push({ role: 'assistant', content: res.data.reply });
@@ -1104,10 +1104,15 @@ async function sendAssistantMessage(text) {
     }
 }
 
-// Poll an async chat job until it finishes (up to ~5 min). Returns the same
-// {status, ok, data} shape as apiPost so the caller's branching is unchanged.
-async function pollAssistantJob(jobId, pollAfterMs) {
-    const deadline = Date.now() + 5 * 60 * 1000;
+// Poll an async chat job until it finishes. The window follows the server's
+// declared per-request budget (202 budgetMs) plus a grace minute, capped at
+// 15 min, defaulting to 5 min for older servers that don't send it — so a
+// raised ASSISTANT_TIMEOUT_MS can't silently outlive the client. Returns the
+// same {status, ok, data} shape as apiPost so the caller's branching is
+// unchanged.
+async function pollAssistantJob(jobId, pollAfterMs, budgetMs) {
+    const windowMs = Math.min((budgetMs || 4 * 60 * 1000) + 60 * 1000, 15 * 60 * 1000);
+    const deadline = Date.now() + windowMs;
     const delay = Math.max(1000, pollAfterMs || 2000);
     let consecutiveMisses = 0;
     while (Date.now() < deadline) {

@@ -8,6 +8,7 @@ import {
   ASSISTANT_SYNC_WAIT_MS,
   ASSISTANT_JOB_TTL_MS,
   ASSISTANT_MAX_CONCURRENT_JOBS,
+  ASSISTANT_TIMEOUT_MS,
   RATE_LIMIT_WINDOW_MS
 } from '../../../config.js';
 import { runAssistant, checkLlmReachable, AssistantUnavailableError } from '../../services/assistant.js';
@@ -114,14 +115,15 @@ const chatBodySchema = {
 export async function assistantRoutes(fastify) {
   fastify.get('/assistant', {
     schema: {
-      description: 'Assistant availability probe. Reports whether the chat assistant is configured, which model backs it, and whether the LLM server is currently reachable (checked live, cached ~30s; null when disabled).',
+      description: 'Assistant availability probe. Reports whether the chat assistant is configured, which model backs it, whether the LLM server is currently reachable (checked live, cached ~30s; null when disabled), and the per-request time budget actually in effect — useful to verify a config rollout landed.',
       response: {
         200: {
           type: 'object',
           properties: {
             enabled: { type: 'boolean' },
             model: { type: ['string', 'null'] },
-            reachable: { type: ['boolean', 'null'] }
+            reachable: { type: ['boolean', 'null'] },
+            timeoutMs: { type: ['number', 'null'] }
           }
         }
       }
@@ -129,7 +131,8 @@ export async function assistantRoutes(fastify) {
   }, async () => ({
     enabled: ASSISTANT_ENABLED,
     model: ASSISTANT_ENABLED ? ASSISTANT_MODEL : null,
-    reachable: ASSISTANT_ENABLED ? await checkLlmReachable() : null
+    reachable: ASSISTANT_ENABLED ? await checkLlmReachable() : null,
+    timeoutMs: ASSISTANT_ENABLED ? ASSISTANT_TIMEOUT_MS : null
   }));
 
   const resultSchema = {
@@ -170,7 +173,8 @@ export async function assistantRoutes(fastify) {
           properties: {
             jobId: { type: 'string' },
             status: { type: 'string' },
-            pollAfterMs: { type: 'number' }
+            pollAfterMs: { type: 'number' },
+            budgetMs: { type: 'number' }
           }
         }
       }
@@ -194,7 +198,9 @@ export async function assistantRoutes(fastify) {
       jobs.delete(job.id);
       return sendError(reply, 503, job.error);
     }
-    return reply.code(202).send({ jobId: job.id, status: 'running', pollAfterMs: 2000 });
+    // budgetMs lets the client size its polling window to the server's
+    // actual per-request budget instead of guessing a fixed deadline.
+    return reply.code(202).send({ jobId: job.id, status: 'running', pollAfterMs: 2000, budgetMs: ASSISTANT_TIMEOUT_MS });
   });
 
   fastify.get('/assistant/chat/:jobId', {
