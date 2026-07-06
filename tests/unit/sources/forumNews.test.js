@@ -1,21 +1,23 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getForumNews, _resetForumNewsCacheForTests } from '../../../src/sources/forumNews.js';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import { getForumNews, _resetForumNewsForTests } from '../../../src/sources/forumNews.js';
 import { proxyFetch } from '../../../fetchUtil.js';
 
 vi.mock('../../../fetchUtil.js', () => ({
   proxyFetch: vi.fn()
 }));
 
+// Port 1 refuses connections instantly, so the WS never comes up and every
+// test in this file exercises the REST seed/fallback path.
 vi.mock('../../../config.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  FORUM_NEWS_URL: 'https://forum-news.test',
+  FORUM_NEWS_URL: 'http://127.0.0.1:1',
   FORUM_NEWS_CACHE_TTL_MS: 60000,
   FORUM_NEWS_FETCH_TIMEOUT_MS: 1000
 }));
 
 function newsItem(overrides = {}) {
   return {
-    id: 'ethereum:abc',
+    id: `ethereum:${overrides.title || 'abc'}`,
     title: 'Hash-chain RANDAO',
     url: 'https://ethereum-magicians.org/t/hash-chain-randao/28942',
     summary: null,
@@ -31,9 +33,9 @@ function okResponse(news) {
   return { ok: true, json: async () => ({ count: news.length, news }) };
 }
 
-describe('getForumNews', () => {
+describe('getForumNews (REST fallback — WS unreachable)', () => {
   beforeEach(() => {
-    _resetForumNewsCacheForTests();
+    _resetForumNewsForTests();
     proxyFetch.mockReset();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-06T00:00:00Z'));
@@ -41,17 +43,21 @@ describe('getForumNews', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+  afterAll(() => {
+    _resetForumNewsForTests();
+  });
 
-  it('fetches, normalizes and returns news newest first', async () => {
+  it('seeds from REST, normalizes and returns news newest first', async () => {
     proxyFetch.mockResolvedValue(okResponse([
       newsItem({ title: 'Older', publishedAt: '2026-07-01T00:00:00Z' }),
       newsItem({ title: 'Newer', publishedAt: '2026-07-05T00:00:00Z' })
     ]));
     const result = await getForumNews();
     expect(proxyFetch).toHaveBeenCalledWith(
-      'https://forum-news.test/news?limit=500',
+      'http://127.0.0.1:1/news?limit=500',
       expect.objectContaining({ headers: { accept: 'application/json' } })
     );
+    expect(result.source).toBe('rest');
     expect(result.count).toBe(2);
     expect(result.news[0].title).toBe('Newer');
     expect(result.news[0]).toMatchObject({
@@ -61,7 +67,7 @@ describe('getForumNews', () => {
     });
   });
 
-  it('serves from cache within the TTL and refetches after expiry', async () => {
+  it('serves from the store within the TTL and refetches after expiry', async () => {
     proxyFetch.mockResolvedValue(okResponse([newsItem()]));
     await getForumNews();
     await getForumNews();
@@ -75,6 +81,7 @@ describe('getForumNews', () => {
     proxyFetch.mockResolvedValue(okResponse([
       newsItem(),
       newsItem({
+        id: 'arbitrum:aip99',
         title: 'AIP-99',
         forum: { id: 'arbitrum', name: 'Arbitrum DAO', url: 'https://forum.arbitrum.foundation' },
         chains: [{ chainId: 42161, name: 'Arbitrum One' }]
@@ -96,14 +103,22 @@ describe('getForumNews', () => {
     expect((await getForumNews()).count).toBe(15); // default limit
   });
 
-  it('serves stale cache when a refresh fails, throws when cold', async () => {
+  it('dedupes by item id across refetches', async () => {
+    proxyFetch.mockResolvedValue(okResponse([newsItem({ id: 'same-id' })]));
+    await getForumNews();
+    vi.advanceTimersByTime(61000);
+    await getForumNews();
+    expect((await getForumNews()).totalMatched).toBe(1);
+  });
+
+  it('serves the existing store when a refresh fails, throws when cold', async () => {
     proxyFetch.mockResolvedValueOnce(okResponse([newsItem()]));
     await getForumNews();
     vi.advanceTimersByTime(61000);
     proxyFetch.mockRejectedValueOnce(new Error('boom'));
     expect((await getForumNews()).count).toBe(1);
 
-    _resetForumNewsCacheForTests();
+    _resetForumNewsForTests();
     proxyFetch.mockRejectedValue(new Error('ECONNREFUSED'));
     await expect(getForumNews()).rejects.toThrow(/Forum news feed unavailable/);
   });
