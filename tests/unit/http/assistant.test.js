@@ -192,10 +192,11 @@ describe('assistant routes', () => {
       expect(budgetMs).toBe(60000); // server declares its budget for the client's poll window
       expect(jobId).toMatch(/^[A-Za-z0-9-]+$/);
 
-      // Still running — and harness progress surfaces on the poll
+      // Still running — and the FULL harness step trace surfaces on the poll
+      reportStep('thinking');
       reportStep('using search_chains');
       const pending = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
-      expect(pending.json()).toMatchObject({ status: 'running', step: 'using search_chains' });
+      expect(pending.json()).toMatchObject({ status: 'running', steps: ['thinking', 'using search_chains'] });
 
       d.resolve(RESULT);
       await d.promise;

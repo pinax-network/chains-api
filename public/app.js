@@ -1081,10 +1081,10 @@ async function sendAssistantMessage(text) {
         // Slow LLM runs come back as 202 + a job id — poll until the answer is
         // ready. Each poll is a fast request, so reverse-proxy timeouts that
         // would kill one long-held request never trigger. Poll responses carry
-        // the harness's current step ("using search_chains") — narrate it.
+        // the harness's full step trace ("using search_chains", …) — show it.
         if (res.status === 202 && res.data?.jobId) {
-            thinking.setStep(res.data.step);
-            res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs, thinking.setStep);
+            thinking.setSteps(res.data.steps);
+            res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs, thinking.setSteps);
         }
         thinking.remove();
         if (res.ok && res.data?.reply != null) {
@@ -1146,7 +1146,7 @@ async function pollAssistantJob(jobId, pollAfterMs, budgetMs, onStep = () => {})
         }
         consecutiveMisses = 0;
         if (!res.ok) continue;
-        if (data?.status === 'running') { onStep(data.step); continue; }
+        if (data?.status === 'running') { onStep(data.steps); continue; }
         if (data?.status === 'error') return { status: 503, ok: false, data: { error: data.error } };
         if (data?.status === 'done') return { status: 200, ok: true, data };
     }
@@ -1196,19 +1196,39 @@ function appendChatNotice(text) {
 
 function appendChatThinking() {
     const log = document.getElementById('assistantLog');
-    const stepLabel = el('div', { class: 'chat-step hidden' });
+    const trace = el('div', { class: 'chat-trace hidden' });
+    const elapsed = el('span', { class: 'chat-elapsed' });
     const bubble = el('div', { class: 'chat-bubble assistant chat-thinking', 'aria-label': 'Assistant is thinking' }, [
-        el('div', { class: 'chat-dots' }, [el('span'), el('span'), el('span')]),
-        stepLabel
+        el('div', { class: 'chat-dots-row' }, [
+            el('div', { class: 'chat-dots' }, [el('span'), el('span'), el('span')]),
+            elapsed
+        ]),
+        trace
     ]);
     log.appendChild(bubble);
     log.scrollTop = log.scrollHeight;
-    // Narrates the harness's current step ("using search_chains…") while the
-    // job runs; updated from poll responses.
-    bubble.setStep = (step) => {
-        if (!step) return;
-        stepLabel.textContent = `${step}…`;
-        stepLabel.classList.remove('hidden');
+
+    // Elapsed timer ticks while the bubble is in the document.
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+        if (!document.contains(bubble)) { clearInterval(timer); return; }
+        elapsed.textContent = `${Math.round((Date.now() - startedAt) / 1000)}s`;
+    }, 1000);
+
+    // Renders the harness's full step trace: finished steps get a check, the
+    // current one an arrow + animated ellipsis. Poll responses carry the whole
+    // history, so brief steps (fast tool calls) are never missed.
+    bubble.setSteps = (steps) => {
+        if (!Array.isArray(steps) || steps.length === 0) return;
+        trace.textContent = '';
+        steps.forEach((label, i) => {
+            const current = i === steps.length - 1;
+            trace.appendChild(el('div', { class: `chat-trace-step${current ? ' active' : ' done'}` }, [
+                el('span', { class: 'chat-trace-mark', text: current ? '›' : '✓' }),
+                el('span', { text: current ? `${label}…` : label })
+            ]));
+        });
+        trace.classList.remove('hidden');
         log.scrollTop = log.scrollHeight;
     };
     return bubble;
