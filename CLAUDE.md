@@ -4,7 +4,7 @@
 
 Chains API is a Node.js service that aggregates blockchain chain data from five external sources, maintains an in-memory index, and exposes it via a REST API (Fastify), MCP stdio server, and MCP HTTP server. No database — data is fetched from remote JSON/Markdown sources, indexed in memory, and optionally cached to disk for stale-first startup.
 
-**Single data source per container:** `server.js` runs the REST API and the MCP HTTP server in **one process** (default `npm start` / Docker `CMD`). Both surfaces read the same module-level in-memory store (`src/store/`), and only the REST side starts the refreshers — so a container never refreshes the same public RPC endpoint twice. `index.js` (REST only) and `mcp-server-http.js` (MCP only) remain runnable standalone for local/dev use. The MCP tool surface in `mcp-tools.js` mirrors the REST read endpoints (chains, search, relations, endpoints, clients, scaling, slip44, status-pages, stats, keywords, rpc-monitor, refresher, validate, live-incidents).
+**Single data source per container:** `server.js` runs the REST API and the MCP HTTP server in **one process** (default `npm start` / Docker `CMD`). Both surfaces read the same module-level in-memory store (`src/store/`), and only the REST side starts the refreshers — so a container never refreshes the same public RPC endpoint twice. `index.js` (REST only) and `mcp-server-http.js` (MCP only) remain runnable standalone for local/dev use. The MCP tool surface in `mcp-tools.js` mirrors the REST read endpoints (chains, search, relations, endpoints, clients, scaling, slip44, status-pages, stats, keywords, rpc-monitor, refresher, validate, live-incidents, forum-news).
 
 **Assistant (optional):** `POST /assistant/chat` runs an LLM tool-use loop (`src/services/assistant.js`) over the same tool registry, against any OpenAI-compatible server (Ollama). Disabled unless `ASSISTANT_LLM_URL` is set. The dashboard consumes it via a floating chat overlay (corner button, available on every view); the harness disambiguates mainnet/testnet and live-vs-static questions, asking the user back when unclear.
 
@@ -144,8 +144,10 @@ Copy `.env.example` to `.env` for local configuration. Key variables:
 | `SOURCE_FETCH_RETRY_BASE_MS` | `500` | Backoff base for source-fetch retries (`base × 2^(attempt-1)`) |
 | `SOURCE_REFRESH_INTERVAL_MS` | `900000` | Self-heal interval: re-fetch sources if any failed to load (0 disables) |
 | `ASSISTANT_LLM_URL` | (empty) | OpenAI-compatible LLM server (e.g. Ollama `http://localhost:11434`); empty disables the assistant |
+| `ASSISTANT_LLM_API_KEY` | (empty) | Bearer token for key-protected LLM servers (OpenAI, OpenRouter, …) |
 | `ASSISTANT_MODEL` | `qwen3` | Model name for `/v1/chat/completions` |
 | `LIVE_INCIDENTS_URL` | `https://chains-status-news.johnaverse.cc` | Live incident feed used by the `get_live_incidents` tool |
+| `FORUM_NEWS_URL` | `https://chains-forum-news.johnaverse.cc` | Forum/governance news feed used by the `get_forum_news` tool |
 
 See `config.js` and `.env.example` for the full list.
 

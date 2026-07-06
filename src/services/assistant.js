@@ -1,5 +1,6 @@
 import {
   ASSISTANT_LLM_URL,
+  ASSISTANT_LLM_API_KEY,
   ASSISTANT_MODEL,
   ASSISTANT_MAX_TOOL_ITERATIONS,
   ASSISTANT_TIMEOUT_MS,
@@ -115,7 +116,10 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
   try {
     const response = await fetchImpl(`${ASSISTANT_LLM_URL}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(ASSISTANT_LLM_API_KEY ? { authorization: `Bearer ${ASSISTANT_LLM_API_KEY}` } : {})
+      },
       body: JSON.stringify({
         model: ASSISTANT_MODEL,
         messages: convo,
@@ -148,7 +152,8 @@ export function buildSystemPrompt(context, nowDate) {
     '(~3000 EVM networks: metadata, chain IDs, tags), RPC endpoints and their live health',
     'checks, chain relations (L2-of, testnet-of, parent), L2BEAT scaling data (stage,',
     'category, DA layer, TVS), SLIP-0044 coin types, execution clients, operator status',
-    'pages, and LIVE incidents from chain and RPC-provider status pages.',
+    'pages, LIVE incidents from chain and RPC-provider status pages, and recent posts',
+    'from official community/governance forums (get_forum_news).',
     '',
     'Rules — follow strictly:',
     '1. DISAMBIGUATE NETWORKS. Many names are ambiguous ("Base" = Base mainnet 8453 or',
@@ -158,9 +163,11 @@ export function buildSystemPrompt(context, nowDate) {
     '   chain IDs instead of guessing. If exactly one match is plausible, proceed and',
     '   state which network (name + chain ID) you assumed.',
     '2. LIVE vs STATIC. Decide whether the user wants live status (incidents, RPC endpoint',
-    '   health — use get_live_incidents, get_rpc_monitor_by_id) or static registry data',
-    '   (metadata, endpoints list, relations, scaling, SLIP-44). Words like "down",',
-    '   "outage", "right now", "incident", "healthy" mean live. If genuinely unclear, ask.',
+    '   health — use get_live_incidents, get_rpc_monitor_by_id; governance/community',
+    '   discussion — use get_forum_news) or static registry data (metadata, endpoints',
+    '   list, relations, scaling, SLIP-44). Words like "down", "outage", "right now",',
+    '   "incident", "healthy" mean live status; "proposal", "discussion", "governance",',
+    '   "news" mean forum news. If genuinely unclear, ask.',
     '3. When a question is ambiguous in any other way, ask ONE short clarifying question',
     '   rather than answering the wrong thing. Do not ask when the answer is clear.',
     '4. NEVER invent chain IDs, endpoint URLs, incident titles, or numbers. Everything',

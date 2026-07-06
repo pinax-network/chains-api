@@ -19,7 +19,7 @@ describe('getOpenAiTools', () => {
   it('converts every MCP tool to the OpenAI function format', () => {
     const tools = getOpenAiTools();
     expect(tools.length).toBe(getToolDefinitions().length);
-    expect(tools.length).toBe(21);
+    expect(tools.length).toBe(22);
     for (const tool of tools) {
       expect(tool.type).toBe('function');
       expect(tool.function.name).toBeTruthy();

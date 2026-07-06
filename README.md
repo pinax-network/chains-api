@@ -347,12 +347,14 @@ ASSISTANT_LLM_URL=http://localhost:11434 npm start
 ```
 
 - `ASSISTANT_LLM_URL`: OpenAI-compatible LLM base URL (default: empty = assistant disabled)
+- `ASSISTANT_LLM_API_KEY`: Bearer token for key-protected servers such as OpenAI or OpenRouter (default: empty — not needed for a plain Ollama)
 - `ASSISTANT_MODEL`: Model name passed to `/v1/chat/completions` (default: `qwen3`)
 - `ASSISTANT_MAX_TOOL_ITERATIONS`: Hard cap on LLM round-trips per request (default: 6)
 - `ASSISTANT_TIMEOUT_MS`: Overall per-request deadline (default: 60000)
 - `ASSISTANT_MAX_TOKENS`: `max_tokens` per LLM call (default: 1024)
 - `ASSISTANT_RATE_LIMIT_MAX`: Maximum `/assistant/chat` requests per window per IP (default: 10)
 - `LIVE_INCIDENTS_URL`: Live incident feed for the `get_live_incidents` tool (default: `https://chains-status-news.johnaverse.cc`)
+- `FORUM_NEWS_URL`: Forum/governance news feed for the `get_forum_news` tool (default: `https://chains-forum-news.johnaverse.cc`)
 
 ### Other
 - `BODY_LIMIT`: Maximum request body size in bytes (default: 1048576 = 1 MB)

@@ -90,6 +90,8 @@ describe('runAssistant', () => {
     expect(body.stream).toBe(false);
     expect(body.tools.length).toBe(2);
     expect(body.tools[0]).toMatchObject({ type: 'function', function: { name: 'search_chains' } });
+    // No ASSISTANT_LLM_API_KEY configured → no Authorization header sent
+    expect(fetchImpl.mock.calls[0][1].headers.authorization).toBeUndefined();
   });
 
   it('feeds malformed tool args back, then forces an answer after two strikes', async () => {
