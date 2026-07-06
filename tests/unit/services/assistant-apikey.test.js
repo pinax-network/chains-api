@@ -5,6 +5,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../../config.js', async (importOriginal) => ({
   ...(await importOriginal()),
   ASSISTANT_LLM_URL: 'http://llm.test:11434',
+  // Derived flag must be overridden too — the original computes it from the
+  // real (empty) env, not from the mocked URL above.
+  ASSISTANT_ENABLED: true,
   ASSISTANT_LLM_API_KEY: 'sk-test-key',
   ASSISTANT_TOPIC_GUARD: false
 }));
