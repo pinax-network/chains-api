@@ -190,6 +190,7 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('2026-07-06T12:00:00.000Z');
     expect(prompt).toContain('DISAMBIGUATE NETWORKS');
     expect(prompt).toContain('LIVE vs STATIC');
+    expect(prompt).toContain('STAY ON TOPIC');
     expect(prompt).not.toContain('undefined');
   });
 });
