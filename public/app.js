@@ -1178,11 +1178,11 @@ function renderForumTreemap() {
         tile.style.width = `${Math.max(0, t.w - gap)}px`;
         tile.style.height = `${Math.max(0, t.h - gap)}px`;
         tile.style.background = momentumColor(g.momentum);
-        // Label only where it fits; scale name with tile size.
-        if (t.w > 54 && t.h > 26) {
+        // Label with the chain name (fall back to the forum name for forums
+        // that map to no chain), centred; scale with tile size.
+        if (t.w > 40 && t.h > 22) {
             const fs = Math.max(10, Math.min(20, Math.round(t.w / 9)));
-            tile.appendChild(el('span', { class: 'tm-name', style: `font-size:${fs}px`, text: g.name }));
-            tile.appendChild(el('span', { class: 'tm-count', text: `${g.posts.length}` }));
+            tile.appendChild(el('span', { class: 'tm-name', style: `font-size:${fs}px`, text: g.chains[0]?.name || g.name }));
         }
         wrap.appendChild(tile);
     }
