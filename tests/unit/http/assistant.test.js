@@ -186,23 +186,45 @@ describe('assistant routes', () => {
 
       const post = await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
       expect(post.statusCode).toBe(202);
-      const { jobId, status, pollAfterMs, budgetMs } = post.json();
+      const { jobId, status, pollAfterMs, budgetMs, steps } = post.json();
       expect(status).toBe('running');
       expect(pollAfterMs).toBeGreaterThan(0);
       expect(budgetMs).toBe(60000); // server declares its budget for the client's poll window
+      expect(steps).toEqual([]); // trace field present from the first response
       expect(jobId).toMatch(/^[A-Za-z0-9-]+$/);
 
-      // Still running — and the FULL harness step trace surfaces on the poll
+      // Still running — and the FULL harness step trace surfaces on the poll,
+      // each step timestamped for duration display
       reportStep('thinking');
       reportStep('using search_chains');
       const pending = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
-      expect(pending.json()).toMatchObject({ status: 'running', steps: ['thinking', 'using search_chains'] });
+      const body = pending.json();
+      expect(body.status).toBe('running');
+      expect(body.steps.map((s) => s.label)).toEqual(['thinking', 'using search_chains']);
+      for (const s of body.steps) expect(s.at).toBeTypeOf('number');
 
       d.resolve(RESULT);
       await d.promise;
       const done = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
       expect(done.statusCode).toBe(200);
       expect(done.json()).toMatchObject({ status: 'done', reply: 'done!' });
+    });
+
+    it('keeps the NEWEST steps at the cap so the current step stays truthful', async () => {
+      mocks.assistantEnabled = true;
+      const d = deferred();
+      let reportStep;
+      mocks.runAssistant.mockImplementation(({ onStep }) => { reportStep = onStep; return d.promise; });
+      const post = await app.inject({ method: 'POST', url: '/assistant/chat', payload: chatPayload() });
+      const { jobId } = post.json();
+
+      for (let i = 1; i <= 45; i++) reportStep(`step ${i}`);
+      const res = await app.inject({ method: 'GET', url: `/assistant/chat/${jobId}` });
+      const labels = res.json().steps.map((s) => s.label);
+      expect(labels).toHaveLength(40);
+      expect(labels[0]).toBe('step 6');      // oldest five dropped
+      expect(labels[39]).toBe('step 45');    // newest always last — the UI's "active" step
+      d.resolve(RESULT);
     });
 
     it('reports errors through the job status', async () => {

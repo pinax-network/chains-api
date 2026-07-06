@@ -36,7 +36,13 @@ function startAssistantJob({ messages, context, log }) {
   // Harness progress labels ("using search_chains", "thinking…") accumulate
   // on the job so poll responses carry the FULL trace — a 2s poll cadence
   // would otherwise sample past brief steps like fast tool executions.
-  const onStep = (label) => { if (job.steps.length < MAX_JOB_STEPS) job.steps.push(label); };
+  // Timestamps let the UI show per-step durations. At the cap the OLDEST
+  // entry is dropped: the last element is the UI's "currently running" step,
+  // so it must always be the newest label, never a frozen stale one.
+  const onStep = (label) => {
+    if (job.steps.length >= MAX_JOB_STEPS) job.steps.shift();
+    job.steps.push({ label, at: Date.now() });
+  };
   job.promise = runAssistant({ messages, context, log, onStep })
     .then((result) => { job.status = 'done'; job.result = result; })
     .catch((err) => {
@@ -181,7 +187,7 @@ export async function assistantRoutes(fastify) {
             status: { type: 'string' },
             pollAfterMs: { type: 'number' },
             budgetMs: { type: 'number' },
-            steps: { type: 'array', items: { type: 'string' } }
+            steps: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, at: { type: 'number' } } } }
           }
         }
       }
@@ -234,7 +240,7 @@ export async function assistantRoutes(fastify) {
             jobId: { type: 'string' },
             status: { type: 'string' },
             pollAfterMs: { type: 'number' },
-            steps: { type: 'array', items: { type: 'string' } },
+            steps: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, at: { type: 'number' } } } },
             error: { type: 'string' },
             ...resultSchema
           }

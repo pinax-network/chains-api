@@ -739,7 +739,15 @@
                     "steps": {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "number"
+                          }
+                        }
                       }
                     }
                   }
@@ -792,7 +800,15 @@
                     "steps": {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "number"
+                          }
+                        }
                       }
                     },
                     "error": {

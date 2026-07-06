@@ -1083,7 +1083,7 @@ async function sendAssistantMessage(text) {
         // would kill one long-held request never trigger. Poll responses carry
         // the harness's full step trace ("using search_chains", …) — show it.
         if (res.status === 202 && res.data?.jobId) {
-            thinking.setSteps(res.data.steps);
+            thinking.setSteps(assistantStepsFrom(res.data));
             res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs, thinking.setSteps);
         }
         thinking.remove();
@@ -1146,7 +1146,7 @@ async function pollAssistantJob(jobId, pollAfterMs, budgetMs, onStep = () => {})
         }
         consecutiveMisses = 0;
         if (!res.ok) continue;
-        if (data?.status === 'running') { onStep(data.steps); continue; }
+        if (data?.status === 'running') { onStep(assistantStepsFrom(data)); continue; }
         if (data?.status === 'error') return { status: 503, ok: false, data: { error: data.error } };
         if (data?.status === 'done') return { status: 200, ok: true, data };
     }
@@ -1194,6 +1194,15 @@ function appendChatNotice(text) {
     return notice;
 }
 
+// Normalize a chat/poll payload's step trace across server versions: current
+// servers send steps: [{label, at}], pre-1.7.4 send a single step string —
+// during a Pages-before-API deploy window the new frontend must still narrate.
+function assistantStepsFrom(data) {
+    if (Array.isArray(data?.steps)) return data.steps.map(s => (typeof s === 'string' ? { label: s } : s));
+    if (data?.step) return [{ label: data.step }];
+    return null;
+}
+
 function appendChatThinking() {
     const log = document.getElementById('assistantLog');
     const trace = el('div', { class: 'chat-trace hidden' });
@@ -1208,28 +1217,45 @@ function appendChatThinking() {
     log.appendChild(bubble);
     log.scrollTop = log.scrollHeight;
 
-    // Elapsed timer ticks while the bubble is in the document.
+    // Elapsed timer; cleared deterministically by wrapping remove() — every
+    // exit path in sendAssistantMessage goes through thinking.remove().
     const startedAt = Date.now();
     const timer = setInterval(() => {
-        if (!document.contains(bubble)) { clearInterval(timer); return; }
         elapsed.textContent = `${Math.round((Date.now() - startedAt) / 1000)}s`;
     }, 1000);
+    const baseRemove = bubble.remove.bind(bubble);
+    bubble.remove = () => { clearInterval(timer); baseRemove(); };
 
-    // Renders the harness's full step trace: finished steps get a check, the
-    // current one an arrow + animated ellipsis. Poll responses carry the whole
-    // history, so brief steps (fast tool calls) are never missed.
+    // Renders the harness's full step trace: finished steps get a check and
+    // their duration, the current one an arrow + animated ellipsis. Poll
+    // responses carry the whole history, so brief steps are never missed.
+    let renderedKey = null;
     bubble.setSteps = (steps) => {
         if (!Array.isArray(steps) || steps.length === 0) return;
+        const last = steps[steps.length - 1];
+        // Skip the rebuild when nothing changed — most polls during a long
+        // "thinking" stretch. Rebuilding anyway would destroy text selection
+        // in the trace for no reason.
+        const key = `${steps.length}|${last.at ?? ''}|${last.label}`;
+        if (key === renderedKey) return;
+        renderedKey = key;
+        // Only auto-scroll if the user is already at the bottom — never yank
+        // them away from history they scrolled up to read.
+        const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
         trace.textContent = '';
-        steps.forEach((label, i) => {
+        steps.forEach((s, i) => {
             const current = i === steps.length - 1;
+            const durMs = !current && s.at != null && steps[i + 1]?.at != null ? steps[i + 1].at - s.at : null;
+            const text = current ? `${s.label}…`
+                : durMs != null && durMs >= 100 ? `${s.label} (${(durMs / 1000).toFixed(1)}s)`
+                : s.label;
             trace.appendChild(el('div', { class: `chat-trace-step${current ? ' active' : ' done'}` }, [
                 el('span', { class: 'chat-trace-mark', text: current ? '›' : '✓' }),
-                el('span', { text: current ? `${label}…` : label })
+                el('span', { text })
             ]));
         });
         trace.classList.remove('hidden');
-        log.scrollTop = log.scrollHeight;
+        if (nearBottom) log.scrollTop = log.scrollHeight;
     };
     return bubble;
 }
