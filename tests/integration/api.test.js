@@ -371,7 +371,7 @@ describe('API Endpoints', () => {
     it('GET /assistant reports disabled', async () => {
       const response = await app.inject({ method: 'GET', url: '/assistant' });
       expect(response.statusCode).toBe(200);
-      expect(JSON.parse(response.payload)).toEqual({ enabled: false, model: null });
+      expect(JSON.parse(response.payload)).toEqual({ enabled: false, model: null, reachable: null });
     });
 
     it('POST /assistant/chat returns 503 when not configured', async () => {

@@ -544,7 +544,7 @@
         "tags": [
           "Assistant"
         ],
-        "description": "Assistant availability probe. Reports whether the chat assistant is configured and which model backs it.",
+        "description": "Assistant availability probe. Reports whether the chat assistant is configured, which model backs it, and whether the LLM server is currently reachable (checked live, cached ~30s; null when disabled).",
         "responses": {
           "200": {
             "description": "Default Response",
@@ -560,6 +560,12 @@
                       "type": [
                         "null",
                         "string"
+                      ]
+                    },
+                    "reachable": {
+                      "type": [
+                        "null",
+                        "boolean"
                       ]
                     }
                   }

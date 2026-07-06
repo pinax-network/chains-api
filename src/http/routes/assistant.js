@@ -10,7 +10,7 @@ import {
   ASSISTANT_MAX_CONCURRENT_JOBS,
   RATE_LIMIT_WINDOW_MS
 } from '../../../config.js';
-import { runAssistant, AssistantUnavailableError } from '../../services/assistant.js';
+import { runAssistant, checkLlmReachable, AssistantUnavailableError } from '../../services/assistant.js';
 import { sendError } from '../util/sendError.js';
 
 // Async job handling. A reverse proxy in front of the API (ingress /
@@ -114,18 +114,23 @@ const chatBodySchema = {
 export async function assistantRoutes(fastify) {
   fastify.get('/assistant', {
     schema: {
-      description: 'Assistant availability probe. Reports whether the chat assistant is configured and which model backs it.',
+      description: 'Assistant availability probe. Reports whether the chat assistant is configured, which model backs it, and whether the LLM server is currently reachable (checked live, cached ~30s; null when disabled).',
       response: {
         200: {
           type: 'object',
           properties: {
             enabled: { type: 'boolean' },
-            model: { type: ['string', 'null'] }
+            model: { type: ['string', 'null'] },
+            reachable: { type: ['boolean', 'null'] }
           }
         }
       }
     }
-  }, async () => ({ enabled: ASSISTANT_ENABLED, model: ASSISTANT_ENABLED ? ASSISTANT_MODEL : null }));
+  }, async () => ({
+    enabled: ASSISTANT_ENABLED,
+    model: ASSISTANT_ENABLED ? ASSISTANT_MODEL : null,
+    reachable: ASSISTANT_ENABLED ? await checkLlmReachable() : null
+  }));
 
   const resultSchema = {
     reply: { type: 'string' },

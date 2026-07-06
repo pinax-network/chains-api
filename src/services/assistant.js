@@ -1,4 +1,5 @@
 import {
+  ASSISTANT_ENABLED,
   ASSISTANT_LLM_URL,
   ASSISTANT_LLM_API_KEY,
   ASSISTANT_MODEL,
@@ -140,6 +141,35 @@ function llmHeaders() {
     'content-type': 'application/json',
     ...(ASSISTANT_LLM_API_KEY ? { authorization: `Bearer ${ASSISTANT_LLM_API_KEY}` } : {})
   };
+}
+
+// Reachability probe for the availability endpoint / dashboard status pill.
+// GET /v1/models is the cheapest call every OpenAI-compatible server answers.
+const REACHABLE_CACHE_TTL_MS = 30000;
+const REACHABLE_PROBE_TIMEOUT_MS = 3000;
+let reachableCache = { at: 0, value: null };
+
+export async function checkLlmReachable({ fetchImpl = proxyFetch } = {}) {
+  if (!ASSISTANT_ENABLED) return false;
+  if (reachableCache.value !== null && Date.now() - reachableCache.at < REACHABLE_CACHE_TTL_MS) {
+    return reachableCache.value;
+  }
+  let value = false;
+  try {
+    const response = await fetchImpl(`${ASSISTANT_LLM_URL}/v1/models`, {
+      headers: llmHeaders(),
+      signal: AbortSignal.timeout(REACHABLE_PROBE_TIMEOUT_MS)
+    });
+    value = response.ok;
+  } catch {
+    value = false;
+  }
+  reachableCache = { at: Date.now(), value };
+  return value;
+}
+
+export function _resetReachableCacheForTests() {
+  reachableCache = { at: 0, value: null };
 }
 
 /**
