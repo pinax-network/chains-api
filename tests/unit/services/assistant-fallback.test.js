@@ -35,12 +35,16 @@ function llmResponse(content) {
   return { ok: true, json: async () => ({ choices: [{ message: { role: 'assistant', content } }] }) };
 }
 
+// Exact host match (not a startsWith substring — that would also match a
+// spoofed host like primary.test.evil.com, which CodeQL rightly flags).
+const hostOf = (u) => new URL(u).host;
+
 // Routes requests by host: primary.test uses `primary`, backup.test uses `backup`.
 function hostRouter({ primary, backup }) {
   const calls = [];
   const impl = vi.fn(async (url, options) => {
     calls.push({ url, body: options.body ? JSON.parse(options.body) : null, headers: options.headers });
-    const handler = url.startsWith('http://primary.test') ? primary : backup;
+    const handler = hostOf(url) === 'primary.test' ? primary : backup;
     const next = typeof handler === 'function' ? handler() : handler.shift();
     if (next instanceof Error) throw next;
     return next;
@@ -67,7 +71,7 @@ describe('runAssistant with a fallback provider', () => {
     // First attempt hit the primary; everything after the switch stays on backup
     const urls = fetchImpl.calls.map(c => c.url);
     expect(urls[0]).toBe('http://primary.test/v1/chat/completions');
-    expect(urls.slice(1).every(u => u.startsWith('http://backup.test'))).toBe(true);
+    expect(urls.slice(1).every(u => hostOf(u) === 'backup.test')).toBe(true);
     // Backup requests carry the fallback model and its own key
     const backupCall = fetchImpl.calls[1];
     expect(backupCall.body.model).toBe('backup-model');
@@ -82,7 +86,7 @@ describe('runAssistant with a fallback provider', () => {
     const result = await runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl });
     expect(result.reply).toBe('primary answer');
     expect(result.viaFallback).toBeUndefined();
-    expect(fetchImpl.calls.every(c => c.url.startsWith('http://primary.test'))).toBe(true);
+    expect(fetchImpl.calls.every(c => hostOf(c.url) === 'primary.test')).toBe(true);
   });
 
   it('passes an integer abort delay that reserves budget for the fallback', async () => {
@@ -132,7 +136,7 @@ describe('checkLlmReachable with a fallback provider', () => {
   it('reports reachable when only the backup answers', async () => {
     _resetReachableCacheForTests();
     const fetchImpl = vi.fn(async (url) => {
-      if (url.startsWith('http://primary.test')) throw new Error('ECONNREFUSED');
+      if (hostOf(url) === 'primary.test') throw new Error('ECONNREFUSED');
       return { ok: true };
     });
     expect(await checkLlmReachable({ fetchImpl })).toBe(true);
