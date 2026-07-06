@@ -57,12 +57,16 @@ const GUARD_PROMPT = [
  * @param {object} [params.log] request-scoped pino logger
  * @param {Function} [params.fetchImpl] injectable for tests
  * @param {Function} [params.now] injectable clock for tests
+ * @param {Function} [params.onStep] progress callback (short human-readable labels)
  * @returns {Promise<{reply: string, toolCalls: Array<{name, args}>, degraded: boolean, usage: object|null}>}
  */
-export async function runAssistant({ messages, context, log = logger, fetchImpl = proxyFetch, now = () => new Date() }) {
+export async function runAssistant({ messages, context, log = logger, fetchImpl = proxyFetch, now = () => new Date(), onStep = () => {} }) {
   const startedAt = Date.now();
   const deadline = startedAt + ASSISTANT_TIMEOUT_MS;
+  // Progress reporting must never break the run.
+  const step = (label) => { try { onStep(label); } catch { /* observer's problem */ } };
 
+  if (ASSISTANT_TOPIC_GUARD) step('screening question');
   if (ASSISTANT_TOPIC_GUARD && !(await isOnTopic({ messages, deadline, fetchImpl, log }))) {
     incCounter('chains_api_assistant_requests_total', { outcome: 'off_topic' });
     log.info({ durationMs: Date.now() - startedAt, messageCount: messages.length }, 'assistant request rejected off-topic');
@@ -80,6 +84,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
   for (let iteration = 0; iteration < ASSISTANT_MAX_TOOL_ITERATIONS; iteration++) {
     const firstCall = iteration === 0;
     const forceAnswer = malformedStrikes >= MAX_MALFORMED_STRIKES;
+    step(firstCall ? 'thinking' : 'thinking about the results');
     const body = await callLlm({ convo, tools, toolChoice: forceAnswer ? 'none' : 'auto', deadline, fetchImpl, firstCall, log });
     if (!body) { degraded = true; break; }
     if (body.usage) usage = { promptTokens: body.usage.prompt_tokens ?? null, completionTokens: body.usage.completion_tokens ?? null };
@@ -106,6 +111,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
     convo.push({ role: 'assistant', content: msg.content ?? null, tool_calls: toolCalls });
     for (const call of toolCalls) {
       const name = call.function?.name || 'unknown';
+      step(`using ${name}`);
       let result;
       try {
         const args = JSON.parse(call.function?.arguments || '{}');
@@ -122,6 +128,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
 
   if (reply == null && !degraded) {
     // Iterations exhausted mid-loop — force a final answer from what we have.
+    step('writing the answer');
     const body = await callLlm({ convo, tools, toolChoice: 'none', deadline, fetchImpl, firstCall: false, log });
     reply = (body?.choices?.[0]?.message?.content || '').trim() || null;
     if (reply == null) degraded = true;

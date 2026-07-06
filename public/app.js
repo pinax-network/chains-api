@@ -1013,6 +1013,7 @@ const assistant = { messages: [], busy: false, enabled: null, disabledNoticeShow
 function initAssistant() {
     document.getElementById('assistantFab')?.addEventListener('click', () => toggleAssistant());
     document.getElementById('assistantClose')?.addEventListener('click', () => toggleAssistant(false));
+    document.getElementById('assistantNew')?.addEventListener('click', () => resetAssistantChat());
     document.getElementById('assistantForm')?.addEventListener('submit', e => { e.preventDefault(); submitAssistantInput(); });
     document.getElementById('assistantInput')?.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAssistantInput(); }
@@ -1079,8 +1080,12 @@ async function sendAssistantMessage(text) {
         let res = await apiPost('/assistant/chat', { messages: assistant.messages, context });
         // Slow LLM runs come back as 202 + a job id — poll until the answer is
         // ready. Each poll is a fast request, so reverse-proxy timeouts that
-        // would kill one long-held request never trigger.
-        if (res.status === 202 && res.data?.jobId) res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs);
+        // would kill one long-held request never trigger. Poll responses carry
+        // the harness's current step ("using search_chains") — narrate it.
+        if (res.status === 202 && res.data?.jobId) {
+            thinking.setStep(res.data.step);
+            res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs, thinking.setStep);
+        }
         thinking.remove();
         if (res.ok && res.data?.reply != null) {
             assistant.messages.push({ role: 'assistant', content: res.data.reply });
@@ -1110,7 +1115,7 @@ async function sendAssistantMessage(text) {
 // raised ASSISTANT_TIMEOUT_MS can't silently outlive the client. Returns the
 // same {status, ok, data} shape as apiPost so the caller's branching is
 // unchanged.
-async function pollAssistantJob(jobId, pollAfterMs, budgetMs) {
+async function pollAssistantJob(jobId, pollAfterMs, budgetMs, onStep = () => {}) {
     const windowMs = Math.min((budgetMs || 4 * 60 * 1000) + 60 * 1000, 15 * 60 * 1000);
     const deadline = Date.now() + windowMs;
     const delay = Math.max(1000, pollAfterMs || 2000);
@@ -1141,7 +1146,7 @@ async function pollAssistantJob(jobId, pollAfterMs, budgetMs) {
         }
         consecutiveMisses = 0;
         if (!res.ok) continue;
-        if (data?.status === 'running') continue;
+        if (data?.status === 'running') { onStep(data.step); continue; }
         if (data?.status === 'error') return { status: 503, ok: false, data: { error: data.error } };
         if (data?.status === 'done') return { status: 200, ok: true, data };
     }
@@ -1150,10 +1155,19 @@ async function pollAssistantJob(jobId, pollAfterMs, budgetMs) {
 
 function setAssistantBusy(busy) {
     assistant.busy = busy;
-    const send = document.getElementById('assistantSend');
-    const input = document.getElementById('assistantInput');
-    if (send) send.disabled = busy;
-    if (input) input.disabled = busy;
+    for (const id of ['assistantSend', 'assistantInput', 'assistantNew']) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = busy;
+    }
+}
+
+function resetAssistantChat() {
+    if (assistant.busy) return; // a run is in flight — its reply would land in the fresh chat
+    assistant.messages = [];
+    const log = document.getElementById('assistantLog');
+    if (log) log.textContent = '';
+    document.getElementById('assistantChips')?.classList.remove('hidden');
+    document.getElementById('assistantInput')?.focus();
 }
 
 function appendChatBubble(role, text, { toolCalls, degraded } = {}) {
@@ -1182,11 +1196,22 @@ function appendChatNotice(text) {
 
 function appendChatThinking() {
     const log = document.getElementById('assistantLog');
-    const dots = el('div', { class: 'chat-bubble assistant chat-thinking', 'aria-label': 'Assistant is thinking' },
-        [el('span'), el('span'), el('span')]);
-    log.appendChild(dots);
+    const stepLabel = el('div', { class: 'chat-step hidden' });
+    const bubble = el('div', { class: 'chat-bubble assistant chat-thinking', 'aria-label': 'Assistant is thinking' }, [
+        el('div', { class: 'chat-dots' }, [el('span'), el('span'), el('span')]),
+        stepLabel
+    ]);
+    log.appendChild(bubble);
     log.scrollTop = log.scrollHeight;
-    return dots;
+    // Narrates the harness's current step ("using search_chains…") while the
+    // job runs; updated from poll responses.
+    bubble.setStep = (step) => {
+        if (!step) return;
+        stepLabel.textContent = `${step}…`;
+        stepLabel.classList.remove('hidden');
+        log.scrollTop = log.scrollHeight;
+    };
+    return bubble;
 }
 
 // Minimal markdown renderer for assistant replies. HTML-escapes FIRST, then

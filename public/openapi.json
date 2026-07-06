@@ -735,6 +735,12 @@
                     },
                     "budgetMs": {
                       "type": "number"
+                    },
+                    "step": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
                     }
                   }
                 }
@@ -782,6 +788,12 @@
                     },
                     "pollAfterMs": {
                       "type": "number"
+                    },
+                    "step": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
                     },
                     "error": {
                       "type": "string"

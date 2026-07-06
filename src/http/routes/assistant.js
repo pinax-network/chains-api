@@ -28,10 +28,13 @@ function runningJobCount() {
 }
 
 function startAssistantJob({ messages, context, log }) {
-  const job = { id: randomUUID(), status: 'running', result: null, error: null };
+  const job = { id: randomUUID(), status: 'running', result: null, error: null, step: null };
   jobs.set(job.id, job);
   const jobId = job.id;
-  job.promise = runAssistant({ messages, context, log })
+  // Harness progress labels ("using search_chains", "thinking…") surface on
+  // the poll responses so the UI can narrate long runs.
+  const onStep = (label) => { job.step = label; };
+  job.promise = runAssistant({ messages, context, log, onStep })
     .then((result) => { job.status = 'done'; job.result = result; })
     .catch((err) => {
       job.status = 'error';
@@ -174,7 +177,8 @@ export async function assistantRoutes(fastify) {
             jobId: { type: 'string' },
             status: { type: 'string' },
             pollAfterMs: { type: 'number' },
-            budgetMs: { type: 'number' }
+            budgetMs: { type: 'number' },
+            step: { type: ['string', 'null'] }
           }
         }
       }
@@ -200,7 +204,7 @@ export async function assistantRoutes(fastify) {
     }
     // budgetMs lets the client size its polling window to the server's
     // actual per-request budget instead of guessing a fixed deadline.
-    return reply.code(202).send({ jobId: job.id, status: 'running', pollAfterMs: 2000, budgetMs: ASSISTANT_TIMEOUT_MS });
+    return reply.code(202).send({ jobId: job.id, status: 'running', pollAfterMs: 2000, budgetMs: ASSISTANT_TIMEOUT_MS, step: job.step });
   });
 
   fastify.get('/assistant/chat/:jobId', {
@@ -227,6 +231,7 @@ export async function assistantRoutes(fastify) {
             jobId: { type: 'string' },
             status: { type: 'string' },
             pollAfterMs: { type: 'number' },
+            step: { type: ['string', 'null'] },
             error: { type: 'string' },
             ...resultSchema
           }
@@ -236,7 +241,7 @@ export async function assistantRoutes(fastify) {
   }, async (request, reply) => {
     const job = jobs.get(request.params.jobId);
     if (!job) return sendError(reply, 404, 'Job not found or expired');
-    if (job.status === 'running') return { jobId: job.id, status: 'running', pollAfterMs: 2000 };
+    if (job.status === 'running') return { jobId: job.id, status: 'running', pollAfterMs: 2000, step: job.step };
     if (job.status === 'error') return { jobId: job.id, status: 'error', error: job.error };
     return { jobId: job.id, status: 'done', ...job.result };
   });
