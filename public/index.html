@@ -45,6 +45,7 @@
             <button class="tab" data-view="graph" role="tab">Relationships</button>
             <button class="tab" data-view="incidents" role="tab">Incidents</button>
             <button class="tab" data-view="providers" role="tab">Providers</button>
+            <button class="tab" data-view="forum" role="tab">Forum</button>
         </nav>
     </header>
 
@@ -185,6 +186,24 @@
                 <span class="toolbar-count" id="providersCount"></span>
             </div>
             <div id="providersList" class="incidents-list"><div class="feed-empty">Connecting to live status feed…</div></div>
+        </div>
+    </section>
+
+    <!-- ─── View: Forum (governance/community posts by chain) ─── -->
+    <section id="view-forum" class="view scroll-view">
+        <div class="view-inner">
+            <h2 class="section-title">Forum activity
+                <span class="src-pill" id="forumMeta"></span>
+            </h2>
+            <p class="view-lead">Recent posts from official community and governance forums, grouped by network.
+                The heatmap shows posts per day over the last two weeks — click a forum row to filter.</p>
+
+            <div class="forum-heatmap" id="forumHeatmap"></div>
+
+            <div class="toolbar">
+                <span class="toolbar-count" id="forumCount"></span>
+            </div>
+            <div id="forumList" class="incidents-list"><div class="feed-empty">Loading forum activity…</div></div>
         </div>
     </section>
 

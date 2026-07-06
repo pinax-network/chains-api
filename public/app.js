@@ -277,7 +277,7 @@ function initTabs() {
 // separate, shareable, reloadable page (e.g. ?view=incidents&q=base).
 // Networks is the default landing view: info-dense and cheap to render —
 // the 3D graph (1.2 MB lib + physics warmup) only loads when visited.
-const VIEWS = ['networks', 'graph', 'incidents', 'providers'];
+const VIEWS = ['networks', 'graph', 'incidents', 'providers', 'forum'];
 const DEFAULT_VIEW = 'networks';
 let activeView = DEFAULT_VIEW;
 let searchQuery = '';
@@ -291,6 +291,7 @@ function switchView(view, opts = {}) {
     document.getElementById(`view-${view}`).classList.add('active');
     document.body.classList.toggle('graph-active', view === 'graph');
     if (view === 'graph') ensureGraphView();
+    if (view === 'forum') ensureForumView();
     updateSearchPlaceholder();
     applySearch();
     if (!opts.fromUrl) updateUrl({ push: true });
@@ -301,6 +302,7 @@ function updateSearchPlaceholder() {
     if (input) input.placeholder = activeView === 'networks' ? 'Filter networks — id or name…'
         : activeView === 'incidents' ? 'Filter incidents — network or title…'
         : activeView === 'providers' ? 'Filter provider incidents — provider, chain or title…'
+        : activeView === 'forum' ? 'Filter forum posts — network, forum or title…'
         : 'Find a network — id or name…';
 }
 
@@ -309,6 +311,7 @@ function applySearch() {
     if (activeView === 'networks') { chainShown = CHAIN_PAGE; renderChainsView(); }
     else if (activeView === 'incidents') renderIncidentList();
     else if (activeView === 'providers') renderProviderList();
+    else if (activeView === 'forum') renderForumList();
 }
 
 function updateUrl({ push = false } = {}) {
@@ -1001,6 +1004,157 @@ async function statusFeedBackfill() {
     } finally {
         incidents.backfillInFlight = false;
     }
+}
+
+// ─────────────────────────────── Forum activity (by chain, heatmap) ───────────────────────────────
+// Posts are grouped by forum (one forum can front several chains). The heatmap
+// is forum rows × the last 14 days, cells shaded by posts/day.
+const forum = { posts: [], byForum: new Map(), loaded: false, loading: false, filter: null };
+const FORUM_HEATMAP_DAYS = 14;
+
+function ensureForumView() {
+    if (forum.loaded || forum.loading) return;
+    forum.loading = true;
+    setForumMeta('loading…');
+    loadForumFeed();
+}
+
+function setForumMeta(text) { const e = document.getElementById('forumMeta'); if (e) e.textContent = text; }
+
+async function loadForumFeed() {
+    try {
+        const res = await fetch(`${FORUM_NEWS_BASE}/news?limit=500`, { headers: { accept: 'application/json' } });
+        if (!res.ok) throw new Error(res.status);
+        const raw = (await res.json()).news || [];
+        forum.posts = normalizeForumPosts(raw);
+        forum.byForum = groupByForum(forum.posts);
+        forum.loaded = true;
+        setForumMeta('live');
+    } catch {
+        setForumMeta('offline');
+        const list = document.getElementById('forumList');
+        if (list) { list.textContent = ''; list.appendChild(el('div', { class: 'feed-empty', text: 'Forum feed unavailable (chains-forum-news).' })); }
+        return;
+    } finally {
+        forum.loading = false;
+    }
+    renderForumHeatmap();
+    renderForumList();
+}
+
+// Dedupe per thread (same thread can arrive from two registry entries, URLs
+// differing only by #post fragment / ?page), newest first.
+function normalizeForumPosts(raw) {
+    const threadKey = (u) => { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } };
+    const byThread = new Map();
+    for (const p of raw) {
+        const whenMs = Date.parse(p.publishedAt || p.updatedAt || '');
+        const item = {
+            title: p.title || '(untitled)',
+            url: p.url || '#',
+            whenMs: Number.isNaN(whenMs) ? null : whenMs,
+            forumId: p.forum?.id || 'unknown',
+            forumName: p.forum?.name || p.forum?.id || 'Forum',
+            chains: Array.isArray(p.chains) ? p.chains.filter(c => c?.chainId != null) : []
+        };
+        const key = threadKey(item.url);
+        const prev = byThread.get(key);
+        if (!prev || (item.whenMs || 0) > (prev.whenMs || 0)) byThread.set(key, item);
+    }
+    return [...byThread.values()].sort((a, b) => (b.whenMs || 0) - (a.whenMs || 0));
+}
+
+function groupByForum(posts) {
+    const map = new Map();
+    for (const p of posts) {
+        if (!map.has(p.forumId)) map.set(p.forumId, { id: p.forumId, name: p.forumName, chains: p.chains, posts: [] });
+        map.get(p.forumId).posts.push(p);
+    }
+    // Busiest forums first.
+    return new Map([...map.entries()].sort((a, b) => b[1].posts.length - a[1].posts.length));
+}
+
+function renderForumHeatmap() {
+    const wrap = document.getElementById('forumHeatmap'); if (!wrap) return;
+    wrap.textContent = '';
+    if (!forum.byForum.size) return;
+
+    // Column day keys: oldest → today (UTC, matches dayKey()).
+    const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+    const days = [];
+    for (let i = FORUM_HEATMAP_DAYS - 1; i >= 0; i--) {
+        const d = new Date(today); d.setUTCDate(today.getUTCDate() - i);
+        days.push(d.toISOString().slice(0, 10));
+    }
+    // Per-forum per-day counts + the busiest single cell (for shading scale).
+    let max = 1;
+    const counts = new Map();
+    for (const [id, g] of forum.byForum) {
+        const perDay = new Map();
+        for (const p of g.posts) { const k = dayKey(p.whenMs); if (k) perDay.set(k, (perDay.get(k) || 0) + 1); }
+        counts.set(id, perDay);
+        for (const n of perDay.values()) if (n > max) max = n;
+    }
+
+    const grid = el('div', { class: 'heat-grid' });
+    // Header row: blank corner + weekday/day ticks (show every other day label).
+    grid.appendChild(el('div', { class: 'heat-corner' }));
+    days.forEach((k, i) => grid.appendChild(el('div', { class: 'heat-col-label', text: i % 2 === 0 ? k.slice(5) : '' })));
+
+    for (const [id, g] of forum.byForum) {
+        const perDay = counts.get(id);
+        const rowActive = forum.filter === id;
+        const label = el('button', {
+            class: `heat-row-label${rowActive ? ' active' : ''}`,
+            title: `${g.name} — ${g.posts.length} posts`,
+            onclick: () => { forum.filter = rowActive ? null : id; renderForumHeatmap(); renderForumList(); }
+        }, [el('span', { text: g.name })]);
+        grid.appendChild(label);
+        for (const k of days) {
+            const n = perDay.get(k) || 0;
+            const cell = el('div', { class: `heat-cell${n ? ' has' : ''}`, title: `${g.name} · ${k}: ${n} post${n === 1 ? '' : 's'}` });
+            if (n) cell.style.background = `rgba(139,92,246,${0.18 + 0.62 * (n / max)})`;
+            grid.appendChild(cell);
+        }
+    }
+    wrap.appendChild(grid);
+}
+
+function forumMatchesSearch(p, q) {
+    if (p.title.toLowerCase().includes(q) || p.forumName.toLowerCase().includes(q)) return true;
+    return p.chains.some(c => String(c.chainId).includes(q) || (c.name || '').toLowerCase().includes(q));
+}
+
+function renderForumList() {
+    const list = document.getElementById('forumList'); if (!list) return;
+    if (!forum.loaded) return;
+    const groups = [...forum.byForum.values()].filter(g => !forum.filter || g.id === forum.filter);
+    const count = document.getElementById('forumCount');
+
+    let shown = 0;
+    list.textContent = '';
+    for (const g of groups) {
+        const posts = g.posts.filter(p => !searchQuery || forumMatchesSearch(p, searchQuery));
+        if (!posts.length) continue;
+        shown += posts.length;
+        const chainChips = g.chains.slice(0, 6).map(c =>
+            el('span', { class: 'chain-chip', onclick: () => openChainDetail(c.chainId), text: c.name || `Chain ${c.chainId}` }));
+        list.appendChild(el('div', { class: 'forum-group-head' }, [
+            el('span', { class: 'cell-name', text: g.name }),
+            el('span', { class: 'muted', text: `${posts.length} post${posts.length === 1 ? '' : 's'}` }),
+            el('div', { class: 'affected-chains', style: 'margin:0' }, chainChips)
+        ]));
+        for (const p of posts.slice(0, 20)) {
+            list.appendChild(el('a', { class: 'incident-card', href: p.url, target: '_blank', rel: 'noopener' }, [
+                el('div', { class: 'incident-body' }, [
+                    el('div', { class: 'incident-title' }, [el('span', { text: p.title })]),
+                    el('div', { class: 'incident-meta', text: [p.forumName, p.whenMs ? relTime(new Date(p.whenMs).toISOString()) : null].filter(Boolean).join(' · ') })
+                ])
+            ]));
+        }
+    }
+    if (count) count.textContent = `${shown} post${shown === 1 ? '' : 's'}${forum.filter ? ` · ${forum.byForum.get(forum.filter)?.name || ''}` : ''}${searchQuery ? ` · “${searchQuery}”` : ''}`;
+    if (!shown) list.appendChild(el('div', { class: 'feed-empty', text: 'Nothing matches.' }));
 }
 
 // ─────────────────────────────── Assistant (floating chat overlay) ───────────────────────────────
