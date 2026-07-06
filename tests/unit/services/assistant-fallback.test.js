@@ -130,6 +130,21 @@ describe('runAssistant with a fallback provider', () => {
     expect(result.viaFallback).toBe(true);
     expect(result.degraded).toBe(false);
   });
+
+  it('switches to the backup when the primary leaks tool-call syntax (HTTP 200 garbage)', async () => {
+    // The real failure mode: server returns 200 but leaks the tool call into
+    // content instead of parsing it. Must fail over, not burn strikes.
+    const steps = [];
+    const fetchImpl = hostRouter({
+      primary: () => llmResponse('get_chain_by_id to=functions.get_chain_by_id'),
+      backup: () => llmResponse('Base mainnet is chain `8453`.')
+    });
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl, onStep: s => steps.push(s) });
+    expect(result.reply).toBe('Base mainnet is chain `8453`.');
+    expect(result.viaFallback).toBe(true);
+    expect(steps).toContain('switching to backup model');
+    expect(fetchImpl.calls.filter(c => hostOf(c.url) === 'primary.test').length).toBe(1); // tried once, then switched
+  });
 });
 
 describe('checkLlmReachable with a fallback provider', () => {
