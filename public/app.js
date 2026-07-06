@@ -11,6 +11,7 @@ const SAME_ORIGIN_API =
     location.port === '3000' || location.hostname === 'chains-api.johnaverse.cc';
 const API_BASE = SAME_ORIGIN_API ? '' : 'https://chains-api.johnaverse.cc';
 const STATUS_NEWS_BASE = 'https://chains-status-news.johnaverse.cc';
+const FORUM_NEWS_BASE = 'https://chains-forum-news.johnaverse.cc';
 
 const COLORS = {
     Mainnet: '#10b981', L2: '#8b5cf6', Testnet: '#f59e0b', Beacon: '#ec4899', Default: '#6b7280'
@@ -1339,7 +1340,14 @@ function openChainDetail(chainId, opts = {}) {
         el('span', { class: 'strong', text: fmtUsd(l2b.tvs) }), l2b.daLayer ? el('span', { class: 'muted', text: `DA: ${l2b.daLayer}` }) : null
     ])));
     if (sp) { const host = safeHost(sp.url); content.appendChild(detailRow('Status page', el('a', { href: sp.url, target: '_blank', rel: 'noopener', text: host || sp.name }))); }
+    // Forum news row stays hidden unless this chain's forum actually has
+    // recent posts — only ~60 of ~3000 chains have a tracked forum.
+    const forumBox = el('div', { class: 'd-forum' });
+    const forumRow = detailRow('Forum news', forumBox);
+    forumRow.classList.add('hidden');
+    content.appendChild(forumRow);
     loadChainDetail(chainId, extraBox, badges);
+    loadForumNews(chainId, forumBox, forumRow);
 
     const headCell = el('span', { class: 'mono', text: '…' });
     content.appendChild(detailRow('Block head', headCell));
@@ -1369,7 +1377,45 @@ async function loadChainDetail(chainId, box, badges) {
     if (d.status && !badges.querySelector('.pill')) badges.appendChild(statusBadge(d.status));
     if (d.explorers?.length) box.appendChild(detailRow('Explorers', d.explorers.slice(0, 6).map(x => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name || safeHost(x.url) }))));
     if (d.infoURL) { const host = safeHost(d.infoURL); box.appendChild(detailRow('Website', host ? el('a', { href: d.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: d.infoURL }))); }
+    if (d.forumUrl) { const host = safeHost(d.forumUrl); box.appendChild(detailRow('Forum', el('a', { href: d.forumUrl, target: '_blank', rel: 'noopener', text: host || d.forumUrl }))); }
     if (d.slip44 != null) box.appendChild(detailRow('SLIP-44', el('span', { class: 'mono', text: String(d.slip44) })));
+}
+
+// "2026-07-05T…" → "3h ago" / "2d ago"
+function relTime(iso) {
+    const t = Date.parse(iso || '');
+    if (Number.isNaN(t)) return '';
+    const s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+    if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+}
+
+// Recent community/governance posts for this chain from chains-forum-news.
+// The row is revealed only when posts exist; any failure just leaves it hidden.
+async function loadForumNews(chainId, box, row) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+        const res = await fetch(`${FORUM_NEWS_BASE}/news?chainId=${chainId}&limit=4`, { headers: { accept: 'application/json' }, signal: ctrl.signal });
+        if (!res.ok) return;
+        let posts = (await res.json()).news || [];
+        // The feed can carry the same thread twice (two registry entries
+        // tracking one forum; URLs differ only by #post fragment / ?page).
+        // One row per thread is enough for a drawer summary.
+        const threadKey = (u) => { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } };
+        posts = [...new Map(posts.map(p => [threadKey(p.url), p])).values()].slice(0, 4);
+        if (openChainId !== chainId || !posts.length) return; // drawer moved on / nothing to show
+        box.textContent = '';
+        for (const p of posts) {
+            box.appendChild(el('div', { class: 'forum-post' }, [
+                el('a', { href: p.url, target: '_blank', rel: 'noopener', text: p.title }),
+                el('span', { class: 'muted forum-when', text: relTime(p.publishedAt) })
+            ]));
+        }
+        row.classList.remove('hidden');
+    } catch { /* row stays hidden */ }
+    finally { clearTimeout(timer); }
 }
 
 // "Geth/v1.13.0/linux/go1.21" → "Geth v1.13.0"

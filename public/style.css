@@ -358,6 +358,12 @@ a:hover { text-decoration: underline; }
 .chat-new-btn:disabled { opacity: 0.4; cursor: default; }
 @keyframes chat-pulse { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
 
+/* ─── Drawer forum news ─── */
+.d-forum { display: flex; flex-direction: column; gap: 6px; }
+.forum-post { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 12px; }
+.forum-post a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.forum-when { flex-shrink: 0; font-size: 11px; }
+
 /* ─── Responsive ─── */
 @media (max-width: 860px) {
     /* Fallback until JS measures the real bar height (initAppbarHeight sets

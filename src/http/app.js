@@ -19,7 +19,9 @@ import {
   MAX_PARAM_LENGTH,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
-  CORS_ORIGIN
+  CORS_ORIGIN,
+  LIVE_INCIDENTS_URL,
+  FORUM_NEWS_URL
 } from '../../config.js';
 import { chainsRoutes } from './routes/chains.js';
 import { relationsRoutes } from './routes/relations.js';
@@ -214,7 +216,15 @@ export async function buildApp(options = {}) {
         scriptSrc: ["'self'"],
         styleSrc: ["'self'"],
         fontSrc: ["'self'"],
-        connectSrc: ["'self'"],
+        // The /ui dashboard talks to the first-party live feeds (incidents
+        // WS + forum news REST) — without these, the API-served copy of the
+        // dashboard silently loses those panels (GitHub Pages, which serves
+        // the production dashboard, sends no CSP and was never affected).
+        connectSrc: [
+          "'self'",
+          LIVE_INCIDENTS_URL, LIVE_INCIDENTS_URL.replace(/^http/, 'ws'),
+          FORUM_NEWS_URL, FORUM_NEWS_URL.replace(/^http/, 'ws')
+        ],
         imgSrc: ["'self'", 'data:']
       }
     }
