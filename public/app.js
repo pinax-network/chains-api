@@ -121,6 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSearch();
     initGraphControls();
     initDrawer();
+    initAssistant();
     initIncidentControls();
     initChainsTableHeader();
     initAppbarHeight();     // keep --appbar-h in sync with the real bar height
@@ -275,7 +276,7 @@ function initTabs() {
 // separate, shareable, reloadable page (e.g. ?view=incidents&q=base).
 // Networks is the default landing view: info-dense and cheap to render —
 // the 3D graph (1.2 MB lib + physics warmup) only loads when visited.
-const VIEWS = ['networks', 'graph', 'incidents', 'providers', 'assistant'];
+const VIEWS = ['networks', 'graph', 'incidents', 'providers'];
 const DEFAULT_VIEW = 'networks';
 let activeView = DEFAULT_VIEW;
 let searchQuery = '';
@@ -289,7 +290,6 @@ function switchView(view, opts = {}) {
     document.getElementById(`view-${view}`).classList.add('active');
     document.body.classList.toggle('graph-active', view === 'graph');
     if (view === 'graph') ensureGraphView();
-    if (view === 'assistant') ensureAssistantView();
     updateSearchPlaceholder();
     applySearch();
     if (!opts.fromUrl) updateUrl({ push: true });
@@ -1002,22 +1002,36 @@ async function statusFeedBackfill() {
     }
 }
 
-// ─────────────────────────────── Assistant (LLM chat) ───────────────────────────────
-// Conversation lives in memory only: persisting it to the URL would leak chat
-// text into shareable links, and localStorage would resurrect stale
-// conversations on a public dashboard. ?view=assistant alone stays shareable.
-const assistant = { messages: [], busy: false, enabled: null, inited: false };
+// ─────────────────────────────── Assistant (floating chat overlay) ───────────────────────────────
+// A corner button opens a chat panel that floats over every view, so the user
+// can ask about whatever they're looking at (the active view + open chain are
+// sent as context). Conversation lives in memory only: persisting it to the
+// URL would leak chat text into shareable links, and localStorage would
+// resurrect stale conversations on a public dashboard.
+const assistant = { messages: [], busy: false, enabled: null, probed: false };
 
-function ensureAssistantView() {
-    if (assistant.inited) return;
-    assistant.inited = true;
+function initAssistant() {
+    document.getElementById('assistantFab')?.addEventListener('click', () => toggleAssistant());
+    document.getElementById('assistantClose')?.addEventListener('click', () => toggleAssistant(false));
     document.getElementById('assistantForm')?.addEventListener('submit', e => { e.preventDefault(); submitAssistantInput(); });
     document.getElementById('assistantInput')?.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAssistantInput(); }
     });
     document.querySelectorAll('#assistantChips .chat-chip').forEach(chip =>
         chip.addEventListener('click', () => sendAssistantMessage(chip.textContent)));
-    probeAssistant();
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleAssistant(false); });
+}
+
+function toggleAssistant(open) {
+    const overlay = document.getElementById('assistantOverlay');
+    if (!overlay) return;
+    const show = open ?? overlay.classList.contains('hidden');
+    overlay.classList.toggle('hidden', !show);
+    document.getElementById('assistantFab')?.classList.toggle('fab-open', show);
+    if (show) {
+        if (!assistant.probed) { assistant.probed = true; probeAssistant(); }
+        if (assistant.enabled !== false) document.getElementById('assistantInput')?.focus();
+    }
 }
 
 async function probeAssistant() {

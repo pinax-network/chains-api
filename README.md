@@ -339,7 +339,7 @@ Each tool returns JSON data that can be used by AI assistants to answer question
 - `DATA_CACHE_FILE`: Snapshot file path used for stale-first startup (default: `.cache/chains-api-data.json`)
 
 ### Assistant (Optional)
-An LLM chat assistant over the whole registry plus live incidents, exposed at `POST /assistant/chat` and consumed by the dashboard's **Assistant** tab. It runs a tool-use loop against any OpenAI-compatible server (Ollama, vLLM, LM Studio) and stays disabled until configured:
+An LLM chat assistant over the whole registry plus live incidents, exposed at `POST /assistant/chat` and consumed by the dashboard's floating **chat overlay** (corner button, available on every view). It runs a tool-use loop against any OpenAI-compatible server (Ollama, vLLM, LM Studio) and stays disabled until configured:
 
 ```bash
 ollama pull qwen3
