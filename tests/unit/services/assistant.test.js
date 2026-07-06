@@ -26,7 +26,7 @@ vi.mock('../../../mcp-tools.js', () => ({
 }));
 
 import { handleToolCall } from '../../../mcp-tools.js';
-import { runAssistant, buildSystemPrompt, AssistantUnavailableError } from '../../../src/services/assistant.js';
+import { runAssistant, buildSystemPrompt, sanitizeReply, looksLikeLeakedToolCall, AssistantUnavailableError } from '../../../src/services/assistant.js';
 import { _resetAssistantToolsForTests } from '../../../src/services/assistantTools.js';
 
 const noopLog = { info: () => {}, warn: () => {} };
@@ -101,6 +101,25 @@ describe('runAssistant', () => {
     expect(body.tools[0]).toMatchObject({ type: 'function', function: { name: 'search_chains' } });
     // No ASSISTANT_LLM_API_KEY configured → no Authorization header sent
     expect(fetchImpl.mock.calls[0][1].headers.authorization).toBeUndefined();
+  });
+
+  it('treats leaked tool-call text as a failed turn and retries instead of returning garbage', async () => {
+    const fetchImpl = fetchSequence([
+      // Server leaked the model's tool call into content with no tool_calls.
+      llmResponse({ role: 'assistant', content: 'get_chain_by_id to=functions.get_chain_by_id  base' }),
+      llmResponse({ role: 'assistant', content: 'Base mainnet is chain `8453`.' })
+    ]);
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'what chain id is base?' }], log: noopLog, fetchImpl });
+    expect(result.reply).toBe('Base mainnet is chain `8453`.');
+    expect(result.reply).not.toMatch(/to=|get_chain_by_id/);
+  });
+
+  it('sanitizes a repeated/garbled final answer before returning it', async () => {
+    const fetchImpl = fetchSequence([
+      llmResponse({ role: 'assistant', content: 'Base is healthy.\n\nBase is healthy.\n\nBase is healthy.' })
+    ]);
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl });
+    expect(result.reply).toBe('Base is healthy.');
   });
 
   it('feeds malformed tool args back, then forces an answer after two strikes', async () => {
@@ -219,5 +238,43 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt(undefined, new Date('2026-07-06T12:00:00Z'));
     // The mocked registry has two tools — both must appear in the manifest
     expect(prompt).toContain('ALL of these tools exist and are callable: search_chains, get_chain_by_id');
+  });
+});
+
+describe('sanitizeReply', () => {
+  it('collapses degenerate repeated paragraphs and lines', () => {
+    const junk = 'Base mainnet (8453) is healthy.\n\nBase mainnet (8453) is healthy.\n\nBase mainnet (8453) is healthy.';
+    expect(sanitizeReply(junk)).toBe('Base mainnet (8453) is healthy.');
+  });
+
+  it('strips leaked tool-call / channel syntax', () => {
+    const leaked = 'get_chain_by_id to=functions.get_chain_by_id <|channel|> Base is 8453.';
+    const out = sanitizeReply(leaked);
+    expect(out).not.toMatch(/to=/);
+    expect(out).not.toMatch(/<\|/);
+    expect(out).toContain('Base is 8453.');
+  });
+
+  it('leaves a clean reply untouched (aside from trimming)', () => {
+    expect(sanitizeReply('  Arbitrum One is chain `42161`.  ')).toBe('Arbitrum One is chain `42161`.');
+  });
+
+  it('returns empty string for falsy input', () => {
+    expect(sanitizeReply('')).toBe('');
+    expect(sanitizeReply(null)).toBe('');
+  });
+});
+
+describe('looksLikeLeakedToolCall', () => {
+  it('detects Harmony channel + name({...}) leaks', () => {
+    expect(looksLikeLeakedToolCall('get_chain_by_id to=0x2105')).toBe(true);
+    expect(looksLikeLeakedToolCall('to=functions.search_chains')).toBe(true);
+    expect(looksLikeLeakedToolCall('search_chains({"query":"base"})')).toBe(true);
+    expect(looksLikeLeakedToolCall('<|channel|>commentary')).toBe(true);
+  });
+
+  it('does not flag ordinary prose that mentions a tool concept', () => {
+    expect(looksLikeLeakedToolCall('Base mainnet is chain 8453 and looks healthy.')).toBe(false);
+    expect(looksLikeLeakedToolCall('I checked the RPC endpoints for you.')).toBe(false);
   });
 });

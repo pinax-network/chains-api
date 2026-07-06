@@ -1399,6 +1399,15 @@ function appendChatBubble(role, text, { toolCalls, degraded, viaFallback } = {})
     const body = el('div', { class: 'chat-bubble-body' });
     body.innerHTML = renderAssistantMarkdown(text);
     const extras = [];
+    // Clarifying questions list options as "- Name: chainId" lines (per the
+    // system prompt) — turn them into one-tap quick-reply buttons.
+    if (role === 'assistant') {
+        const opts = parseChatOptions(text);
+        if (opts.length) {
+            extras.push(el('div', { class: 'chat-quick' },
+                opts.map(o => el('button', { class: 'chip chat-quick-btn', text: o.label, onclick: () => sendAssistantMessage(o.reply) }))));
+        }
+    }
     if (degraded) extras.push(el('span', { class: 'chat-degraded', text: 'partial answer' }));
     if (viaFallback) extras.push(el('span', { class: 'chat-degraded', text: 'backup model' }));
     if (toolCalls?.length) {
@@ -1409,6 +1418,19 @@ function appendChatBubble(role, text, { toolCalls, degraded, viaFallback } = {})
     log.appendChild(bubble);
     log.scrollTop = log.scrollHeight;
     return bubble;
+}
+
+// Extract "- Name: 8453" style option lines from a clarifying reply. The
+// button label is the name; clicking sends "Name (8453)" so the follow-up is
+// unambiguous to the model. Capped so a stray colon-list can't flood the UI.
+function parseChatOptions(text) {
+    const opts = [];
+    for (const line of String(text).split('\n')) {
+        const m = line.match(/^\s*[-*]?\s*(.{1,48}?):\s*`?(\d{1,7})`?\s*$/);
+        if (m) opts.push({ label: m[1].trim(), reply: `${m[1].trim()} (${m[2]})` });
+        if (opts.length >= 6) break;
+    }
+    return opts;
 }
 
 function appendChatNotice(text) {

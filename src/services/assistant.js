@@ -106,7 +106,17 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
     // model emits anyway — some local servers don't honour tool_choice.
     const toolCalls = !forceAnswer && Array.isArray(msg.tool_calls) ? msg.tool_calls.slice(0, MAX_TOOL_CALLS_PER_TURN) : [];
     if (toolCalls.length === 0) {
-      const content = (msg.content || '').trim();
+      const content = sanitizeReply(msg.content || '');
+      // Some servers fail to parse a model's tool call and leak its raw
+      // syntax into the text ("get_x to=functions.x …"). That's a failed
+      // tool turn, not an answer — strike and retry rather than show garbage.
+      if (content && !forceAnswer && looksLikeLeakedToolCall(msg.content || '')) {
+        malformedStrikes++;
+        convo.push({ role: 'assistant', content: msg.content });
+        convo.push({ role: 'user', content: 'Do not write tool-call syntax as text. Either call the tool properly or answer in plain prose.' });
+        if (malformedStrikes > MAX_MALFORMED_STRIKES) { degraded = true; break; }
+        continue;
+      }
       if (content) { reply = content; break; }
       // Empty final message — one retry, then give up.
       malformedStrikes++;
@@ -136,7 +146,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
     // Iterations exhausted mid-loop — force a final answer from what we have.
     step('writing the answer');
     const body = await callLlm({ convo, tools, toolChoice: 'none', deadline, fetchImpl, firstCall: false, log, run });
-    reply = (body?.choices?.[0]?.message?.content || '').trim() || null;
+    reply = sanitizeReply(body?.choices?.[0]?.message?.content || '') || null;
     if (reply == null) degraded = true;
   }
   if (reply == null) reply = DEGRADED_REPLY;
@@ -367,6 +377,50 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
   }
 }
 
+// Names of every tool, for detecting leaked tool-call syntax in prose.
+const TOOL_NAME_RE = /\b(get|search|traverse|validate)_[a-z_]+/;
+
+/**
+ * True when the model wrote a tool call as TEXT instead of emitting a
+ * structured tool_call — e.g. a server that failed to parse the Harmony
+ * `to=functions.x` channel and dumped it into content. Such a "reply" is a
+ * failed tool turn, not an answer.
+ */
+export function looksLikeLeakedToolCall(text) {
+  if (!text) return false;
+  return /\bto=(functions\.)?[a-z_]+/i.test(text)          // Harmony channel leak
+    || /<\|[a-z_]+\|>/i.test(text)                          // control tokens
+    || (TOOL_NAME_RE.test(text) && /\(\s*\{|\bto=/.test(text)); // name({...}) / name to=
+}
+
+/**
+ * Defensive cleanup of a model reply before it reaches the user. Strips
+ * leaked tool-call / control-token syntax and collapses the degenerate
+ * repetition weaker local models produce (same line or paragraph emitted
+ * many times). A serving-layer problem this can only paper over — the real
+ * fix is the LLM server's tool-call parser.
+ */
+export function sanitizeReply(text) {
+  if (!text) return '';
+  let t = text
+    .replace(/\bto=(functions\.)?[a-z_]+/gi, ' ')
+    .replace(/<\|[a-z_]+\|>/gi, ' ')
+    .replace(/\b(get|search|traverse|validate)_[a-z_]+\s*\(\s*\{[^}]*\}\s*\)/gi, ' ');
+  // Collapse consecutive duplicate paragraphs, then consecutive duplicate lines.
+  const dedupeConsecutive = (parts) => {
+    const out = [];
+    for (const p of parts) {
+      const norm = p.trim();
+      if (norm && out.length && out[out.length - 1].trim() === norm) continue;
+      out.push(p);
+    }
+    return out;
+  };
+  t = dedupeConsecutive(t.split(/\n{2,}/)).join('\n\n');
+  t = dedupeConsecutive(t.split('\n')).join('\n');
+  return t.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function buildSystemPrompt(context, nowDate) {
   const lines = [
     'You are the Chains API assistant, embedded in a blockchain network dashboard.',
@@ -388,9 +442,10 @@ export function buildSystemPrompt(context, nowDate) {
     '1. DISAMBIGUATE NETWORKS. Many names are ambiguous ("Base" = Base mainnet 8453 or',
     '   Base Sepolia 84532). When the user names a network without a chain ID, call',
     '   search_chains first. If multiple plausible matches exist and the user did not',
-    '   specify mainnet/testnet, ASK a short clarifying question listing the options with',
-    '   chain IDs instead of guessing. If exactly one match is plausible, proceed and',
-    '   state which network (name + chain ID) you assumed.',
+    '   specify mainnet/testnet, ASK a short clarifying question. List each option on its',
+    '   OWN line in the exact form "- Name: chainId" (e.g. "- Base mainnet: 8453") and',
+    '   nothing else after them — the UI turns those lines into clickable buttons. If',
+    '   exactly one match is plausible, proceed and state which network (name + ID) you assumed.',
     '2. LIVE vs STATIC. Decide whether the user wants live status (incidents, RPC endpoint',
     '   health — use get_live_incidents, get_rpc_monitor_by_id; governance/community',
     '   discussion — use get_forum_news) or static registry data (metadata, endpoints',
@@ -409,8 +464,12 @@ export function buildSystemPrompt(context, nowDate) {
     '   current date/time — resolved or old incidents are history, not current status.',
     '5. Use the fewest tool calls that answer the question. Prefer *_by_id tools once you',
     '   know the chain ID.',
-    '6. Answer concisely in markdown: short sentences, small bullet lists, `code` for chain',
-    '   IDs and URLs. No preamble. If the user asked a yes/no question, lead with the answer.',
+    '6. Answer concisely in markdown: at most ~100 words, short sentences, small bullet',
+    '   lists, `code` for chain IDs and URLs. No preamble. Lead with the answer for yes/no',
+    '   questions. NEVER repeat a sentence or line — say each thing once.',
+    '6b. Reply in plain prose ONLY. Never write tool-call syntax, function names, `to=...`,',
+    '   or channel markers in your reply — call the tool through the proper mechanism or',
+    '   answer in words. If you cannot call a tool, answer with what you know and say so.',
     '7. You have no memory beyond this conversation and cannot modify anything; all tools',
     '   are read-only.',
     '8. STAY ON TOPIC. You only discuss blockchain networks and the data your tools expose',
