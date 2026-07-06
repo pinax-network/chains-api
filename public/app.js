@@ -1008,7 +1008,7 @@ async function statusFeedBackfill() {
 // sent as context). Conversation lives in memory only: persisting it to the
 // URL would leak chat text into shareable links, and localStorage would
 // resurrect stale conversations on a public dashboard.
-const assistant = { messages: [], busy: false, enabled: null, probed: false };
+const assistant = { messages: [], busy: false, enabled: null, disabledNoticeShown: false };
 
 function initAssistant() {
     document.getElementById('assistantFab')?.addEventListener('click', () => toggleAssistant());
@@ -1029,26 +1029,29 @@ function toggleAssistant(open) {
     overlay.classList.toggle('hidden', !show);
     document.getElementById('assistantFab')?.classList.toggle('fab-open', show);
     if (show) {
-        if (!assistant.probed) { assistant.probed = true; probeAssistant(); }
+        probeAssistant(); // refresh the online/offline pill on every open (server caches ~30s)
         if (assistant.enabled !== false) document.getElementById('assistantInput')?.focus();
     }
 }
 
 async function probeAssistant() {
-    // The pill only surfaces the offline state — which model backs the
-    // assistant is a server detail the UI doesn't need to advertise.
+    // The pill shows live reachability (server pings the LLM, cached ~30s) —
+    // not just whether the assistant is configured. No model info exposed.
     const meta = document.getElementById('assistantMeta');
+    let online = false;
     try {
         const info = await api('/assistant');
         assistant.enabled = !!info.enabled;
+        online = assistant.enabled && info.reachable !== false;
     } catch {
         assistant.enabled = false;
     }
     if (meta) {
-        meta.textContent = assistant.enabled ? '' : 'offline';
-        meta.classList.toggle('hidden', assistant.enabled);
+        meta.textContent = online ? 'online' : 'offline';
+        meta.className = `src-pill ${online ? 'pill-online' : 'pill-offline'}`;
     }
-    if (!assistant.enabled) {
+    if (!assistant.enabled && !assistant.disabledNoticeShown) {
+        assistant.disabledNoticeShown = true;
         appendChatNotice('The assistant isn’t configured on this server yet (no LLM connected). Everything else on the dashboard works as usual.');
         setAssistantBusy(true); // permanently disable the form
     }

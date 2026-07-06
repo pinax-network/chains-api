@@ -1,4 +1,5 @@
 import {
+  ASSISTANT_ENABLED,
   ASSISTANT_LLM_URL,
   ASSISTANT_LLM_API_KEY,
   ASSISTANT_MODEL,
@@ -142,6 +143,43 @@ function llmHeaders() {
   };
 }
 
+// Reachability signal for the availability endpoint / dashboard status pill.
+// "Reachable" means the server ANSWERS — any HTTP response counts, because
+// some OpenAI-compatible servers don't implement GET /v1/models and a 404
+// from a live server must not read as down. Only network errors/timeouts
+// mean unreachable. Real chat traffic also feeds the cache (noteLlmOutcome),
+// so the pill tracks actual outcomes between probes.
+const REACHABLE_CACHE_TTL_MS = 30000;
+const REACHABLE_PROBE_TIMEOUT_MS = 3000;
+let reachableCache = { at: 0, value: null };
+
+function noteLlmOutcome(reachable) {
+  reachableCache = { at: Date.now(), value: reachable };
+}
+
+export async function checkLlmReachable({ fetchImpl = proxyFetch } = {}) {
+  if (!ASSISTANT_ENABLED) return false;
+  if (reachableCache.value !== null && Date.now() - reachableCache.at < REACHABLE_CACHE_TTL_MS) {
+    return reachableCache.value;
+  }
+  let value = false;
+  try {
+    await fetchImpl(`${ASSISTANT_LLM_URL}/v1/models`, {
+      headers: llmHeaders(),
+      signal: AbortSignal.timeout(REACHABLE_PROBE_TIMEOUT_MS)
+    });
+    value = true; // the server answered — status code irrelevant
+  } catch {
+    value = false;
+  }
+  noteLlmOutcome(value);
+  return value;
+}
+
+export function _resetReachableCacheForTests() {
+  reachableCache = { at: 0, value: null };
+}
+
 /**
  * Pre-classification topic guard: one cheap LLM call deciding whether the
  * latest user message belongs on this dashboard at all. Fails OPEN on any
@@ -156,6 +194,7 @@ async function isOnTopic({ messages, deadline, fetchImpl, log }) {
   const transcript = messages.slice(-4)
     .map((m) => `${m.role}: ${truncateForGuard(m.content)}`)
     .join('\n');
+  let gotResponse = false;
   try {
     const response = await fetchImpl(`${ASSISTANT_LLM_URL}/v1/chat/completions`, {
       method: 'POST',
@@ -172,6 +211,8 @@ async function isOnTopic({ messages, deadline, fetchImpl, log }) {
       }),
       signal: AbortSignal.timeout(Math.max(1000, budget))
     });
+    gotResponse = true;
+    noteLlmOutcome(true);
     if (!response.ok) throw new Error(`LLM responded ${response.status}`);
     const body = await response.json();
     incCounter('chains_api_assistant_llm_calls_total', { outcome: 'ok' });
@@ -189,6 +230,7 @@ async function isOnTopic({ messages, deadline, fetchImpl, log }) {
     if (!verdicts) return true; // unparseable → fail open
     return verdicts[verdicts.length - 1] === 'yes';
   } catch (err) {
+    if (!gotResponse) noteLlmOutcome(false);
     incCounter('chains_api_assistant_llm_calls_total', { outcome: 'error' });
     log.warn({ err: err.message }, 'assistant topic guard failed; allowing request');
     return true;
@@ -209,6 +251,7 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
     if (firstCall) throw new AssistantUnavailableError('Assistant deadline exhausted');
     return null;
   }
+  let gotResponse = false;
   try {
     const response = await fetchImpl(`${ASSISTANT_LLM_URL}/v1/chat/completions`, {
       method: 'POST',
@@ -224,11 +267,14 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
       }),
       signal: AbortSignal.timeout(Math.max(1000, budget))
     });
+    gotResponse = true;
+    noteLlmOutcome(true);
     if (!response.ok) throw new Error(`LLM responded ${response.status}`);
     const body = await response.json();
     incCounter('chains_api_assistant_llm_calls_total', { outcome: 'ok' });
     return body;
   } catch (err) {
+    if (!gotResponse) noteLlmOutcome(false);
     incCounter('chains_api_assistant_llm_calls_total', { outcome: 'error' });
     if (firstCall) throw new AssistantUnavailableError(err.message);
     log.warn({ err: err.message }, 'assistant LLM call failed mid-loop');

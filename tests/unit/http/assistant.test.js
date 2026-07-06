@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vites
 
 const mocks = vi.hoisted(() => ({
   assistantEnabled: false,
-  runAssistant: vi.fn()
+  runAssistant: vi.fn(),
+  checkLlmReachable: vi.fn(async () => true)
 }));
 
 vi.mock('../../../config.js', async (importOriginal) => {
@@ -22,7 +23,7 @@ vi.mock('../../../config.js', async (importOriginal) => {
 
 vi.mock('../../../src/services/assistant.js', async (importOriginal) => {
   const original = await importOriginal();
-  return { ...original, runAssistant: mocks.runAssistant };
+  return { ...original, runAssistant: mocks.runAssistant, checkLlmReachable: mocks.checkLlmReachable };
 });
 
 import { buildApp } from '../../../index.js';
@@ -48,16 +49,21 @@ describe('assistant routes', () => {
   });
 
   describe('GET /assistant', () => {
-    it('reports disabled with a null model', async () => {
+    it('reports disabled with null model and reachability', async () => {
       const res = await app.inject({ method: 'GET', url: '/assistant' });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ enabled: false, model: null });
+      expect(res.json()).toEqual({ enabled: false, model: null, reachable: null });
+      expect(mocks.checkLlmReachable).not.toHaveBeenCalled();
     });
 
-    it('reports enabled with the configured model', async () => {
+    it('reports enabled with the configured model and live reachability', async () => {
       mocks.assistantEnabled = true;
       const res = await app.inject({ method: 'GET', url: '/assistant' });
-      expect(res.json()).toEqual({ enabled: true, model: 'test-model' });
+      expect(res.json()).toEqual({ enabled: true, model: 'test-model', reachable: true });
+
+      mocks.checkLlmReachable.mockResolvedValueOnce(false);
+      const down = await app.inject({ method: 'GET', url: '/assistant' });
+      expect(down.json()).toEqual({ enabled: true, model: 'test-model', reachable: false });
     });
   });
 
