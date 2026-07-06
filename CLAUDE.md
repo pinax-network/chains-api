@@ -147,6 +147,7 @@ Copy `.env.example` to `.env` for local configuration. Key variables:
 | `ASSISTANT_LLM_API_KEY` | (empty) | Bearer token for key-protected LLM servers (OpenAI, OpenRouter, …) |
 | `ASSISTANT_MODEL` | `qwen3` | Model name for `/v1/chat/completions` |
 | `ASSISTANT_TOPIC_GUARD` | `true` | Pre-classification call that refuses off-topic questions before the tool loop |
+| `ASSISTANT_FALLBACK_LLM_URL` | (empty) | Optional backup LLM server; runs switch to it (sticky) when the primary fails |
 | `LIVE_INCIDENTS_URL` | `https://chains-status-news.johnaverse.cc` | Live incident feed used by the `get_live_incidents` tool |
 | `FORUM_NEWS_URL` | `https://chains-forum-news.johnaverse.cc` | Forum/governance news feed used by the `get_forum_news` tool |
 

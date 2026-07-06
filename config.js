@@ -150,6 +150,12 @@ export const ASSISTANT_ENABLED = ASSISTANT_LLM_URL !== '';
 // exposed via any endpoint.
 export const ASSISTANT_LLM_API_KEY = parseStringEnv('ASSISTANT_LLM_API_KEY', '');
 export const ASSISTANT_MODEL = parseStringEnv('ASSISTANT_MODEL', 'qwen3');
+// Optional fallback provider: when the primary LLM fails a call, the run
+// switches here (sticky for the rest of that run). Any OpenAI-compatible
+// server — e.g. a smaller local model, or a hosted API with a key.
+export const ASSISTANT_FALLBACK_LLM_URL = parseStringEnv('ASSISTANT_FALLBACK_LLM_URL', '');
+export const ASSISTANT_FALLBACK_LLM_API_KEY = parseStringEnv('ASSISTANT_FALLBACK_LLM_API_KEY', '');
+export const ASSISTANT_FALLBACK_MODEL = parseStringEnv('ASSISTANT_FALLBACK_MODEL', '');
 export const ASSISTANT_MAX_TOOL_ITERATIONS = parseIntEnv('ASSISTANT_MAX_TOOL_ITERATIONS', 6);
 export const ASSISTANT_TIMEOUT_MS = parseIntEnv('ASSISTANT_TIMEOUT_MS', 60000);
 export const ASSISTANT_MAX_TOKENS = parseIntEnv('ASSISTANT_MAX_TOKENS', 1024);

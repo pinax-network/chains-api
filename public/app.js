@@ -1089,7 +1089,7 @@ async function sendAssistantMessage(text) {
         thinking.remove();
         if (res.ok && res.data?.reply != null) {
             assistant.messages.push({ role: 'assistant', content: res.data.reply });
-            appendChatBubble('assistant', res.data.reply, { toolCalls: res.data.toolCalls, degraded: res.data.degraded });
+            appendChatBubble('assistant', res.data.reply, { toolCalls: res.data.toolCalls, degraded: res.data.degraded, viaFallback: res.data.viaFallback });
         } else if (res.status === 429) {
             appendChatNotice('Slow down a little — too many questions in a short time. Try again in a minute.');
         } else if (res.status === 503) {
@@ -1170,12 +1170,13 @@ function resetAssistantChat() {
     document.getElementById('assistantInput')?.focus();
 }
 
-function appendChatBubble(role, text, { toolCalls, degraded } = {}) {
+function appendChatBubble(role, text, { toolCalls, degraded, viaFallback } = {}) {
     const log = document.getElementById('assistantLog');
     const body = el('div', { class: 'chat-bubble-body' });
     body.innerHTML = renderAssistantMarkdown(text);
     const extras = [];
     if (degraded) extras.push(el('span', { class: 'chat-degraded', text: 'partial answer' }));
+    if (viaFallback) extras.push(el('span', { class: 'chat-degraded', text: 'backup model' }));
     if (toolCalls?.length) {
         const names = [...new Set(toolCalls.map(c => c.name))].join(', ');
         extras.push(el('div', { class: 'chat-tools', text: `used: ${names}` }));

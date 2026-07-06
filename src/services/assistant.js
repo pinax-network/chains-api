@@ -3,6 +3,9 @@ import {
   ASSISTANT_LLM_URL,
   ASSISTANT_LLM_API_KEY,
   ASSISTANT_MODEL,
+  ASSISTANT_FALLBACK_LLM_URL,
+  ASSISTANT_FALLBACK_LLM_API_KEY,
+  ASSISTANT_FALLBACK_MODEL,
   ASSISTANT_MAX_TOOL_ITERATIONS,
   ASSISTANT_TIMEOUT_MS,
   ASSISTANT_MAX_TOKENS,
@@ -65,9 +68,12 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
   const deadline = startedAt + ASSISTANT_TIMEOUT_MS;
   // Progress reporting must never break the run.
   const step = (label) => { try { onStep(label); } catch { /* observer's problem */ } };
+  // Provider state for this run: starts on the primary, switches (sticky)
+  // to the fallback when a call fails.
+  const run = { providers: buildProviders(), index: 0, step };
 
   if (ASSISTANT_TOPIC_GUARD) step('screening question');
-  if (ASSISTANT_TOPIC_GUARD && !(await isOnTopic({ messages, deadline, fetchImpl, log }))) {
+  if (ASSISTANT_TOPIC_GUARD && !(await isOnTopic({ messages, deadline, fetchImpl, log, run }))) {
     incCounter('chains_api_assistant_requests_total', { outcome: 'off_topic' });
     log.info({ durationMs: Date.now() - startedAt, messageCount: messages.length }, 'assistant request rejected off-topic');
     return { reply: OFF_TOPIC_REPLY, toolCalls: [], degraded: false, usage: null, offTopic: true };
@@ -85,7 +91,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
     const firstCall = iteration === 0;
     const forceAnswer = malformedStrikes >= MAX_MALFORMED_STRIKES;
     step(firstCall ? 'thinking' : 'thinking about the results');
-    const body = await callLlm({ convo, tools, toolChoice: forceAnswer ? 'none' : 'auto', deadline, fetchImpl, firstCall, log });
+    const body = await callLlm({ convo, tools, toolChoice: forceAnswer ? 'none' : 'auto', deadline, fetchImpl, firstCall, log, run });
     if (!body) { degraded = true; break; }
     if (body.usage) usage = { promptTokens: body.usage.prompt_tokens ?? null, completionTokens: body.usage.completion_tokens ?? null };
 
@@ -129,7 +135,7 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
   if (reply == null && !degraded) {
     // Iterations exhausted mid-loop — force a final answer from what we have.
     step('writing the answer');
-    const body = await callLlm({ convo, tools, toolChoice: 'none', deadline, fetchImpl, firstCall: false, log });
+    const body = await callLlm({ convo, tools, toolChoice: 'none', deadline, fetchImpl, firstCall: false, log, run });
     reply = (body?.choices?.[0]?.message?.content || '').trim() || null;
     if (reply == null) degraded = true;
   }
@@ -140,14 +146,65 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
     { durationMs: Date.now() - startedAt, tools: executedCalls.map((c) => c.name), degraded, messageCount: messages.length },
     'assistant request completed'
   );
-  return { reply, toolCalls: executedCalls, degraded, usage };
+  return { reply, toolCalls: executedCalls, degraded, usage, ...(run.index > 0 ? { viaFallback: true } : {}) };
 }
 
-function llmHeaders() {
+// ── Providers ────────────────────────────────────────────────────────────────
+// The primary LLM plus an optional fallback. A run starts on the primary and
+// switches (sticky, once) when a call fails — a crashed local model no longer
+// takes the assistant down if a backup is configured.
+
+function buildProviders() {
+  const providers = [
+    { name: 'primary', url: ASSISTANT_LLM_URL, key: ASSISTANT_LLM_API_KEY, model: ASSISTANT_MODEL }
+  ];
+  if (ASSISTANT_FALLBACK_LLM_URL) {
+    providers.push({
+      name: 'fallback',
+      url: ASSISTANT_FALLBACK_LLM_URL,
+      key: ASSISTANT_FALLBACK_LLM_API_KEY,
+      model: ASSISTANT_FALLBACK_MODEL || ASSISTANT_MODEL
+    });
+  }
+  return providers;
+}
+
+function providerHeaders(provider) {
   return {
     'content-type': 'application/json',
-    ...(ASSISTANT_LLM_API_KEY ? { authorization: `Bearer ${ASSISTANT_LLM_API_KEY}` } : {})
+    ...(provider.key ? { authorization: `Bearer ${provider.key}` } : {})
   };
+}
+
+// When another provider remains untried, cap a single attempt so a
+// black-holed primary can't eat the whole request budget before the
+// fallback ever gets a chance.
+const ATTEMPT_CAP_WITH_FALLBACK_MS = 60000;
+
+/**
+ * One chat-completions request against one provider. Throws on any failure;
+ * `err.network === true` means the server never answered (vs a bad status).
+ */
+async function llmRequest({ provider, payload, deadline, timeoutCapMs, fetchImpl }) {
+  const budget = deadline - Date.now();
+  if (budget <= 0) { const err = new Error('Assistant deadline exhausted'); err.network = true; throw err; }
+  const timeoutMs = Math.max(1000, timeoutCapMs ? Math.min(budget, timeoutCapMs) : budget);
+  let response;
+  try {
+    response = await fetchImpl(`${provider.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: providerHeaders(provider),
+      body: JSON.stringify({ model: provider.model, ...payload, stream: false }),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch (err) {
+    err.network = true;
+    throw err;
+  }
+  // Any answer means "an LLM provider is up" for the status pill.
+  noteLlmOutcome(true);
+  if (!response.ok) throw new Error(`LLM responded ${response.status}`);
+  return response.json();
 }
 
 // Reachability signal for the availability endpoint / dashboard status pill.
@@ -169,15 +226,20 @@ export async function checkLlmReachable({ fetchImpl = proxyFetch } = {}) {
   if (reachableCache.value !== null && Date.now() - reachableCache.at < REACHABLE_CACHE_TTL_MS) {
     return reachableCache.value;
   }
+  // The assistant is "reachable" when ANY configured provider answers — a
+  // dead primary with a live fallback still serves users.
   let value = false;
-  try {
-    await fetchImpl(`${ASSISTANT_LLM_URL}/v1/models`, {
-      headers: llmHeaders(),
-      signal: AbortSignal.timeout(REACHABLE_PROBE_TIMEOUT_MS)
-    });
-    value = true; // the server answered — status code irrelevant
-  } catch {
-    value = false;
+  for (const provider of buildProviders()) {
+    try {
+      await fetchImpl(`${provider.url}/v1/models`, {
+        headers: providerHeaders(provider),
+        signal: AbortSignal.timeout(REACHABLE_PROBE_TIMEOUT_MS)
+      });
+      value = true; // the server answered — status code irrelevant
+      break;
+    } catch {
+      // try the next provider
+    }
   }
   noteLlmOutcome(value);
   return value;
@@ -193,36 +255,32 @@ export function _resetReachableCacheForTests() {
  * classifier trouble (unreachable server, unparseable verdict) — the main
  * loop's own error handling then decides what the user sees.
  */
-async function isOnTopic({ messages, deadline, fetchImpl, log }) {
-  const budget = deadline - Date.now();
-  if (budget <= 0) return true;
+async function isOnTopic({ messages, deadline, fetchImpl, log, run }) {
+  if (deadline - Date.now() <= 0) return true;
   // Last few turns give follow-ups their context without paying for the
   // whole history twice.
   const transcript = messages.slice(-4)
     .map((m) => `${m.role}: ${truncateForGuard(m.content)}`)
     .join('\n');
-  let gotResponse = false;
+  const provider = run.providers[run.index];
   try {
-    const response = await fetchImpl(`${ASSISTANT_LLM_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: llmHeaders(),
-      body: JSON.stringify({
-        model: ASSISTANT_MODEL,
+    const body = await llmRequest({
+      provider,
+      payload: {
         messages: [
           { role: 'system', content: GUARD_PROMPT },
           { role: 'user', content: transcript }
         ],
         max_tokens: GUARD_MAX_TOKENS,
-        temperature: 0,
-        stream: false
-      }),
-      signal: AbortSignal.timeout(Math.max(1000, budget))
+        temperature: 0
+      },
+      deadline,
+      // The guard is optional — never let it eat the run's budget on a
+      // black-holed server.
+      timeoutCapMs: 15000,
+      fetchImpl
     });
-    gotResponse = true;
-    noteLlmOutcome(true);
-    if (!response.ok) throw new Error(`LLM responded ${response.status}`);
-    const body = await response.json();
-    incCounter('chains_api_assistant_llm_calls_total', { outcome: 'ok' });
+    incCounter('chains_api_assistant_llm_calls_total', { outcome: 'ok', provider: provider.name });
     // A completion cut off at max_tokens has no trustworthy verdict — the
     // yes/no we'd find would come from truncated chain-of-thought. Fail open.
     if (body.choices?.[0]?.finish_reason === 'length') return true;
@@ -237,9 +295,17 @@ async function isOnTopic({ messages, deadline, fetchImpl, log }) {
     if (!verdicts) return true; // unparseable → fail open
     return verdicts[verdicts.length - 1] === 'yes';
   } catch (err) {
-    if (!gotResponse) noteLlmOutcome(false);
-    incCounter('chains_api_assistant_llm_calls_total', { outcome: 'error' });
-    log.warn({ err: err.message }, 'assistant topic guard failed; allowing request');
+    incCounter('chains_api_assistant_llm_calls_total', { outcome: 'error', provider: provider.name });
+    // Fail OPEN — but if the provider never answered and a fallback exists,
+    // start the main loop on the fallback directly instead of paying a
+    // second failed attempt.
+    if (err.network && run.index + 1 < run.providers.length) {
+      run.index++;
+      run.step('switching to backup model');
+      log.warn({ err: err.message }, 'assistant topic guard unreachable; switching to fallback provider');
+    } else {
+      log.warn({ err: err.message }, 'assistant topic guard failed; allowing request');
+    }
     return true;
   }
 }
@@ -252,40 +318,44 @@ function truncateForGuard(content) {
   return `${content.slice(0, 400)}\n…\n${content.slice(-800)}`;
 }
 
-async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCall, log }) {
-  const budget = deadline - Date.now();
-  if (budget <= 0) {
+async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCall, log, run }) {
+  if (deadline - Date.now() <= 0) {
     if (firstCall) throw new AssistantUnavailableError('Assistant deadline exhausted');
     return null;
   }
-  let gotResponse = false;
-  try {
-    const response = await fetchImpl(`${ASSISTANT_LLM_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: llmHeaders(),
-      body: JSON.stringify({
-        model: ASSISTANT_MODEL,
-        messages: convo,
-        tools,
-        tool_choice: toolChoice,
-        max_tokens: ASSISTANT_MAX_TOKENS,
-        temperature: 0.2,
-        stream: false
-      }),
-      signal: AbortSignal.timeout(Math.max(1000, budget))
-    });
-    gotResponse = true;
-    noteLlmOutcome(true);
-    if (!response.ok) throw new Error(`LLM responded ${response.status}`);
-    const body = await response.json();
-    incCounter('chains_api_assistant_llm_calls_total', { outcome: 'ok' });
-    return body;
-  } catch (err) {
-    if (!gotResponse) noteLlmOutcome(false);
-    incCounter('chains_api_assistant_llm_calls_total', { outcome: 'error' });
-    if (firstCall) throw new AssistantUnavailableError(err.message);
-    log.warn({ err: err.message }, 'assistant LLM call failed mid-loop');
-    return null;
+  const payload = {
+    messages: convo,
+    tools,
+    tool_choice: toolChoice,
+    max_tokens: ASSISTANT_MAX_TOKENS,
+    temperature: 0.2
+  };
+  for (;;) {
+    const provider = run.providers[run.index];
+    const hasNext = run.index + 1 < run.providers.length;
+    try {
+      const body = await llmRequest({
+        provider,
+        payload,
+        deadline,
+        timeoutCapMs: hasNext ? ATTEMPT_CAP_WITH_FALLBACK_MS : null,
+        fetchImpl
+      });
+      incCounter('chains_api_assistant_llm_calls_total', { outcome: 'ok', provider: provider.name });
+      return body;
+    } catch (err) {
+      incCounter('chains_api_assistant_llm_calls_total', { outcome: 'error', provider: provider.name });
+      if (hasNext) {
+        run.index++;
+        run.step('switching to backup model');
+        log.warn({ err: err.message, from: provider.name }, 'assistant LLM call failed; switching to fallback provider');
+        continue;
+      }
+      if (err.network) noteLlmOutcome(false); // every provider is unreachable
+      if (firstCall) throw new AssistantUnavailableError(err.message);
+      log.warn({ err: err.message }, 'assistant LLM call failed mid-loop');
+      return null;
+    }
   }
 }
 

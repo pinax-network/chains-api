@@ -692,6 +692,9 @@
                     "offTopic": {
                       "type": "boolean"
                     },
+                    "viaFallback": {
+                      "type": "boolean"
+                    },
                     "usage": {
                       "type": [
                         "null",
@@ -836,6 +839,9 @@
                       "type": "boolean"
                     },
                     "offTopic": {
+                      "type": "boolean"
+                    },
+                    "viaFallback": {
                       "type": "boolean"
                     },
                     "usage": {

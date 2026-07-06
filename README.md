@@ -354,6 +354,7 @@ ASSISTANT_LLM_URL=http://localhost:11434 npm start
 - `ASSISTANT_MAX_TOKENS`: `max_tokens` per LLM call (default: 1024)
 - `ASSISTANT_RATE_LIMIT_MAX`: Maximum `/assistant/chat` requests per window per IP (default: 10)
 - `ASSISTANT_TOPIC_GUARD`: Pre-classify each question with a cheap extra LLM call and refuse off-topic ones before the tool loop runs; fails open if the classifier misbehaves (default: `true`)
+- `ASSISTANT_FALLBACK_LLM_URL` / `ASSISTANT_FALLBACK_MODEL` / `ASSISTANT_FALLBACK_LLM_API_KEY`: Optional backup OpenAI-compatible provider. When the primary fails a call, the run switches to the backup (sticky for that run), emits a "switching to backup model" harness step, and the answer is marked `viaFallback`. The reachability probe counts either provider as online.
 - `LIVE_INCIDENTS_URL`: Live incident feed for the `get_live_incidents` tool (default: `https://chains-status-news.johnaverse.cc`)
 - `FORUM_NEWS_URL`: Forum/governance news feed for the `get_forum_news` tool (default: `https://chains-forum-news.johnaverse.cc`)
 
