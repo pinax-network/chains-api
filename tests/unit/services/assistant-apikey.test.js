@@ -5,7 +5,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../../../config.js', async (importOriginal) => ({
   ...(await importOriginal()),
   ASSISTANT_LLM_URL: 'http://llm.test:11434',
-  ASSISTANT_LLM_API_KEY: 'sk-test-key'
+  ASSISTANT_LLM_API_KEY: 'sk-test-key',
+  ASSISTANT_TOPIC_GUARD: false
 }));
 
 import { runAssistant } from '../../../src/services/assistant.js';

@@ -132,6 +132,7 @@ export async function assistantRoutes(fastify) {
       }
     },
     degraded: { type: 'boolean' },
+    offTopic: { type: 'boolean' },
     usage: {
       type: ['object', 'null'],
       properties: {

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Guard off here — these tests target the tool loop itself. The guard's own
+// behaviour is covered in assistant-guard.test.js.
+vi.mock('../../../config.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  ASSISTANT_TOPIC_GUARD: false
+}));
+
 vi.mock('../../../mcp-tools.js', () => ({
   getToolDefinitions: vi.fn(() => [
     {

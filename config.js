@@ -162,6 +162,10 @@ export const ASSISTANT_TOOL_RESULT_MAX_CHARS = parseIntEnv('ASSISTANT_TOOL_RESUL
 // SYNC_WAIT for the answer and otherwise returns 202 + a job id the client
 // polls. Finished jobs are kept for JOB_TTL; at most MAX_CONCURRENT_JOBS
 // LLM runs are in flight at once.
+// Pre-classification topic guard: a cheap extra LLM call that rejects
+// off-topic questions before the (expensive) tool loop runs. Fails open —
+// classifier trouble never blocks on-topic questions.
+export const ASSISTANT_TOPIC_GUARD = parseBooleanEnv('ASSISTANT_TOPIC_GUARD', true);
 export const ASSISTANT_SYNC_WAIT_MS = parseIntEnv('ASSISTANT_SYNC_WAIT_MS', 8000);
 export const ASSISTANT_JOB_TTL_MS = parseIntEnv('ASSISTANT_JOB_TTL_MS', 600000);
 export const ASSISTANT_MAX_CONCURRENT_JOBS = parseIntEnv('ASSISTANT_MAX_CONCURRENT_JOBS', 4);

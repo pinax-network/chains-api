@@ -677,6 +677,9 @@
                     "degraded": {
                       "type": "boolean"
                     },
+                    "offTopic": {
+                      "type": "boolean"
+                    },
                     "usage": {
                       "type": [
                         "null",
@@ -787,6 +790,9 @@
                       }
                     },
                     "degraded": {
+                      "type": "boolean"
+                    },
+                    "offTopic": {
                       "type": "boolean"
                     },
                     "usage": {
