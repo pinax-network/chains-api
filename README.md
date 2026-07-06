@@ -338,6 +338,22 @@ Each tool returns JSON data that can be used by AI assistants to answer question
 - `DATA_CACHE_ENABLED`: Enable disk-backed startup cache (default: `true`)
 - `DATA_CACHE_FILE`: Snapshot file path used for stale-first startup (default: `.cache/chains-api-data.json`)
 
+### Assistant (Optional)
+An LLM chat assistant over the whole registry plus live incidents, exposed at `POST /assistant/chat` and consumed by the dashboard's **Assistant** tab. It runs a tool-use loop against any OpenAI-compatible server (Ollama, vLLM, LM Studio) and stays disabled until configured:
+
+```bash
+ollama pull qwen3
+ASSISTANT_LLM_URL=http://localhost:11434 npm start
+```
+
+- `ASSISTANT_LLM_URL`: OpenAI-compatible LLM base URL (default: empty = assistant disabled)
+- `ASSISTANT_MODEL`: Model name passed to `/v1/chat/completions` (default: `qwen3`)
+- `ASSISTANT_MAX_TOOL_ITERATIONS`: Hard cap on LLM round-trips per request (default: 6)
+- `ASSISTANT_TIMEOUT_MS`: Overall per-request deadline (default: 60000)
+- `ASSISTANT_MAX_TOKENS`: `max_tokens` per LLM call (default: 1024)
+- `ASSISTANT_RATE_LIMIT_MAX`: Maximum `/assistant/chat` requests per window per IP (default: 10)
+- `LIVE_INCIDENTS_URL`: Live incident feed for the `get_live_incidents` tool (default: `https://chains-status-news.johnaverse.cc`)
+
 ### Other
 - `BODY_LIMIT`: Maximum request body size in bytes (default: 1048576 = 1 MB)
 - `MAX_PARAM_LENGTH`: Maximum URL parameter length (default: 200)
@@ -374,6 +390,32 @@ Health check and data status.
   "totalChains": 1234
 }
 ```
+
+### `GET /assistant`
+Assistant availability probe: `{"enabled": true, "model": "qwen3"}` (`enabled: false` when no LLM is configured).
+
+### `POST /assistant/chat`
+Chat with the assistant. Stateless — send the full conversation each turn; the assistant may reply with a clarifying question (e.g. mainnet vs testnet) that you answer in a follow-up message.
+
+**Request:**
+```json
+{
+  "messages": [{ "role": "user", "content": "is base healthy right now?" }],
+  "context": { "view": "networks", "chainId": 8453 }
+}
+```
+
+**Response:**
+```json
+{
+  "reply": "Base mainnet (`8453`): 5/5 monitored RPC endpoints healthy…",
+  "toolCalls": [{ "name": "get_rpc_monitor_by_id", "args": { "chainId": 8453 } }],
+  "degraded": false,
+  "usage": { "promptTokens": 1874, "completionTokens": 96 }
+}
+```
+
+Errors: `503` when not configured or the LLM is unreachable, `429` on rate limit, `400` on invalid payloads.
 
 ### `GET /rpc-monitor`
 Get RPC endpoint monitoring results for all chains. At startup, a background process validates the health of the indexed RPC endpoints.

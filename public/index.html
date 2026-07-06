@@ -45,6 +45,7 @@
             <button class="tab" data-view="graph" role="tab">Relationships</button>
             <button class="tab" data-view="incidents" role="tab">Incidents</button>
             <button class="tab" data-view="providers" role="tab">Providers</button>
+            <button class="tab" data-view="assistant" role="tab">Assistant</button>
         </nav>
     </header>
 
@@ -185,6 +186,32 @@
                 <span class="toolbar-count" id="providersCount"></span>
             </div>
             <div id="providersList" class="incidents-list"><div class="feed-empty">Connecting to live status feed…</div></div>
+        </div>
+    </section>
+
+    <!-- ─── View: Assistant (LLM chat) ─── -->
+    <section id="view-assistant" class="view scroll-view">
+        <div class="view-inner chat-inner">
+            <h2 class="section-title">Assistant
+                <span class="src-pill" id="assistantMeta"></span>
+            </h2>
+            <p class="view-lead">Ask about any network, its RPC endpoints and health, L2 scaling data, relationships,
+                or live incidents. The assistant will ask back when a name is ambiguous (mainnet vs testnet).</p>
+
+            <div id="assistantLog" class="chat-log" role="log" aria-live="polite"></div>
+
+            <div id="assistantChips" class="chip-row chat-chips">
+                <button class="chip chat-chip">Is Base mainnet healthy right now?</button>
+                <button class="chip chat-chip">Any RPC provider incidents today?</button>
+                <button class="chip chat-chip">What L2BEAT stage is Arbitrum One?</button>
+                <button class="chip chat-chip">Which chain ID is Sepolia?</button>
+            </div>
+
+            <form id="assistantForm" class="chat-form">
+                <textarea id="assistantInput" rows="2" placeholder="Ask about a network, incident, or RPC provider…"
+                    autocomplete="off"></textarea>
+                <button type="submit" id="assistantSend" class="chat-send" aria-label="Send">Send</button>
+            </form>
         </div>
     </section>
 

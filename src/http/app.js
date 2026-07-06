@@ -34,6 +34,7 @@ import { metricsRoute } from './routes/metrics.js';
 import { refresherRoute } from './routes/refresher.js';
 import { summaryRoute } from './routes/summary.js';
 import { rootRoute } from './routes/root.js';
+import { assistantRoutes } from './routes/assistant.js';
 import { prefetchAllPrices } from '../../priceService.js';
 import { logger } from '../util/logger.js';
 
@@ -97,7 +98,8 @@ const TAG_BY_SEGMENT = {
   sources: 'Meta',
   export: 'Meta',
   summary: 'Meta',
-  reload: 'Admin'
+  reload: 'Admin',
+  assistant: 'Assistant'
 };
 
 function tagForUrl(url) {
@@ -131,6 +133,7 @@ const OPENAPI_TAGS = [
   { name: 'Stats', description: 'Aggregate counts' },
   { name: 'Observability', description: 'Prometheus metrics and refresher status' },
   { name: 'Admin', description: 'Data reload' },
+  { name: 'Assistant', description: 'LLM chat assistant over the chains registry and live incidents' },
   { name: 'Meta', description: 'Service info, health, and data sources' }
 ];
 
@@ -275,6 +278,7 @@ export async function buildApp(options = {}) {
   await fastify.register(metricsRoute);
   await fastify.register(refresherRoute);
   await fastify.register(summaryRoute);
+  await fastify.register(assistantRoutes);
   await fastify.register(rootRoute);
 
   // Interactive docs at /docs and the raw machine-readable spec at /openapi.json.

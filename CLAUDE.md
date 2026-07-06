@@ -4,7 +4,9 @@
 
 Chains API is a Node.js service that aggregates blockchain chain data from five external sources, maintains an in-memory index, and exposes it via a REST API (Fastify), MCP stdio server, and MCP HTTP server. No database — data is fetched from remote JSON/Markdown sources, indexed in memory, and optionally cached to disk for stale-first startup.
 
-**Single data source per container:** `server.js` runs the REST API and the MCP HTTP server in **one process** (default `npm start` / Docker `CMD`). Both surfaces read the same module-level in-memory store (`src/store/`), and only the REST side starts the refreshers — so a container never refreshes the same public RPC endpoint twice. `index.js` (REST only) and `mcp-server-http.js` (MCP only) remain runnable standalone for local/dev use. The MCP tool surface in `mcp-tools.js` mirrors the REST read endpoints (chains, search, relations, endpoints, clients, scaling, slip44, status-pages, stats, keywords, rpc-monitor, refresher, validate).
+**Single data source per container:** `server.js` runs the REST API and the MCP HTTP server in **one process** (default `npm start` / Docker `CMD`). Both surfaces read the same module-level in-memory store (`src/store/`), and only the REST side starts the refreshers — so a container never refreshes the same public RPC endpoint twice. `index.js` (REST only) and `mcp-server-http.js` (MCP only) remain runnable standalone for local/dev use. The MCP tool surface in `mcp-tools.js` mirrors the REST read endpoints (chains, search, relations, endpoints, clients, scaling, slip44, status-pages, stats, keywords, rpc-monitor, refresher, validate, live-incidents).
+
+**Assistant (optional):** `POST /assistant/chat` runs an LLM tool-use loop (`src/services/assistant.js`) over the same tool registry, against any OpenAI-compatible server (Ollama). Disabled unless `ASSISTANT_LLM_URL` is set. The dashboard's Assistant tab consumes it; the harness disambiguates mainnet/testnet and live-vs-static questions, asking the user back when unclear.
 
 ## Quick Reference
 
@@ -50,6 +52,8 @@ src/services/                   ← background tasks
   ├─ rpcHealth.js               (RPC liveness checks)
   ├─ l2beatRefresher.js         (legacy shim → chainRefresher)
   ├─ validation.js              (16 cross-source validation rules)
+  ├─ assistant.js               (LLM tool-use harness for /assistant/chat)
+  ├─ assistantTools.js          (mcp-tools → OpenAI tools adapter + AJV arg validation)
   └─ loader.js                  (initial data load)
         ↓
 src/http/                       ← Fastify routes
@@ -139,6 +143,9 @@ Copy `.env.example` to `.env` for local configuration. Key variables:
 | `SOURCE_FETCH_MAX_RETRIES` | `3` | Attempts per source fetch before it's treated as failed |
 | `SOURCE_FETCH_RETRY_BASE_MS` | `500` | Backoff base for source-fetch retries (`base × 2^(attempt-1)`) |
 | `SOURCE_REFRESH_INTERVAL_MS` | `900000` | Self-heal interval: re-fetch sources if any failed to load (0 disables) |
+| `ASSISTANT_LLM_URL` | (empty) | OpenAI-compatible LLM server (e.g. Ollama `http://localhost:11434`); empty disables the assistant |
+| `ASSISTANT_MODEL` | `qwen3` | Model name for `/v1/chat/completions` |
+| `LIVE_INCIDENTS_URL` | `https://chains-status-news.johnaverse.cc` | Live incident feed used by the `get_live_incidents` tool |
 
 See `config.js` and `.env.example` for the full list.
 
@@ -195,6 +202,8 @@ Services: `chains-api` (port 3000) and `chains-api-mcp` (port 3001). Both have h
 | GET | `/export` | Export cached data |
 | GET | `/metrics` | Prometheus exposition (counters + gauges) |
 | GET | `/refresher` | Unified refresher cursor + queue depth |
+| GET | `/assistant` | Assistant availability probe (`{enabled, model}`) |
+| POST | `/assistant/chat` | LLM chat over the registry + live incidents (stateless; client sends full history) |
 | GET | `/docs` | Interactive API reference (Swagger UI) |
 | GET | `/openapi.json` | OpenAPI 3 specification (machine-readable) |
 | POST | `/reload` | Reload all data sources |

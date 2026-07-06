@@ -102,6 +102,26 @@ vi.mock('../../src/sources/statusPages.js', () => ({
   ),
 }));
 
+vi.mock('../../src/sources/liveIncidents.js', () => ({
+  getLiveIncidents: vi.fn(async () => ({
+    fetchedAt: '2026-07-06T00:00:00.000Z',
+    count: 1,
+    totalMatched: 1,
+    incidents: [
+      {
+        title: 'RPC degraded',
+        url: 'https://status.example/1',
+        publishedAt: '2026-07-05T10:00:00.000Z',
+        publishedMs: 1783072800000,
+        statusPage: { id: 'base', name: 'Base', kind: 'chain' },
+        isProvider: false,
+        chains: [{ chainId: 8453, name: 'Base' }],
+        affectedComponents: [],
+      },
+    ],
+  })),
+}));
+
 vi.mock('../../priceService.js', () => ({
   getPricesForChains: vi.fn(async (chainIds) => {
     const map = new Map();
@@ -116,6 +136,7 @@ vi.mock('../../priceService.js', () => ({
 import * as dataService from '../../dataService.js';
 import * as clientsView from '../../clientsView.js';
 import * as priceService from '../../priceService.js';
+import * as liveIncidents from '../../src/sources/liveIncidents.js';
 import { getToolDefinitions, handleToolCall } from '../../mcp-tools.js';
 
 describe('MCP Tools - Shared Module', () => {
@@ -170,10 +191,10 @@ describe('MCP Tools - Shared Module', () => {
   });
 
   describe('getToolDefinitions', () => {
-    it('should return an array of 20 tools', () => {
+    it('should return an array of 21 tools', () => {
       const tools = getToolDefinitions();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(20);
+      expect(tools.length).toBe(21);
     });
 
     it('should include all expected tool names', () => {
@@ -193,6 +214,7 @@ describe('MCP Tools - Shared Module', () => {
       expect(names).toContain('get_rpc_monitor');
       expect(names).toContain('get_rpc_monitor_by_id');
       expect(names).toContain('get_clients');
+      expect(names).toContain('get_live_incidents');
     });
 
     it('should require chainId for traverse_relations', () => {
@@ -1059,6 +1081,29 @@ describe('MCP Tools - Shared Module', () => {
       const result = await handleToolCall('get_status_page_by_symbol', { symbol: 'XYZ' });
       expect(result.isError).toBe(true);
       expect(JSON.parse(result.content[0].text).error).toBe('No status page found for this symbol');
+    });
+  });
+
+  describe('handleToolCall - get_live_incidents', () => {
+    it('returns incidents with the internal sort key stripped', async () => {
+      const result = await handleToolCall('get_live_incidents', { type: 'chain' });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(liveIncidents.getLiveIncidents).toHaveBeenCalledWith({
+        type: 'chain', chainId: undefined, provider: undefined, limit: undefined,
+      });
+      expect(data.count).toBe(1);
+      expect(data.incidents[0].title).toBe('RPC degraded');
+      expect(data.incidents[0]).not.toHaveProperty('publishedMs');
+    });
+
+    it('returns isError when the feed is unavailable', async () => {
+      vi.mocked(liveIncidents.getLiveIncidents).mockRejectedValueOnce(new Error('down'));
+      const result = await handleToolCall('get_live_incidents', {});
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.error).toBe('Live incident feed unavailable');
+      expect(data.message).toBe('down');
     });
   });
 });

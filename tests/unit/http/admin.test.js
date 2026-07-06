@@ -45,7 +45,8 @@ vi.mock('../../../src/services/l2beatRefresher.js', () => ({
   }))
 }));
 
-vi.mock('../../../config.js', () => ({
+vi.mock('../../../config.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   RELOAD_RATE_LIMIT_MAX: 5,
   RATE_LIMIT_WINDOW_MS: 60000,
   DATA_CACHE_ENABLED: false,
