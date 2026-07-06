@@ -6,7 +6,7 @@ Chains API is a Node.js service that aggregates blockchain chain data from five 
 
 **Single data source per container:** `server.js` runs the REST API and the MCP HTTP server in **one process** (default `npm start` / Docker `CMD`). Both surfaces read the same module-level in-memory store (`src/store/`), and only the REST side starts the refreshers — so a container never refreshes the same public RPC endpoint twice. `index.js` (REST only) and `mcp-server-http.js` (MCP only) remain runnable standalone for local/dev use. The MCP tool surface in `mcp-tools.js` mirrors the REST read endpoints (chains, search, relations, endpoints, clients, scaling, slip44, status-pages, stats, keywords, rpc-monitor, refresher, validate, live-incidents, forum-news).
 
-**Assistant (optional):** `POST /assistant/chat` runs an LLM tool-use loop (`src/services/assistant.js`) over the same tool registry, against any OpenAI-compatible server (Ollama). Disabled unless `ASSISTANT_LLM_URL` is set. The dashboard consumes it via a floating chat overlay (corner button, available on every view); the harness disambiguates mainnet/testnet and live-vs-static questions, asking the user back when unclear.
+**Assistant (optional):** `POST /assistant/chat` runs an LLM tool-use loop (`src/services/assistant.js`) over the same tool registry, against any OpenAI-compatible server (Ollama). Disabled unless `ASSISTANT_LLM_URL` is set; an optional fallback provider (`ASSISTANT_FALLBACK_LLM_URL`) takes over mid-run when the primary fails. The dashboard consumes it via a floating chat overlay (corner button, available on every view); the harness disambiguates mainnet/testnet and live-vs-static questions, asking the user back when unclear.
 
 ## Quick Reference
 
@@ -147,6 +147,7 @@ Copy `.env.example` to `.env` for local configuration. Key variables:
 | `ASSISTANT_LLM_API_KEY` | (empty) | Bearer token for key-protected LLM servers (OpenAI, OpenRouter, …) |
 | `ASSISTANT_MODEL` | `qwen3` | Model name for `/v1/chat/completions` |
 | `ASSISTANT_TOPIC_GUARD` | `true` | Pre-classification call that refuses off-topic questions before the tool loop |
+| `ASSISTANT_FALLBACK_LLM_URL` | (empty) | Optional backup LLM server; runs switch to it (sticky) when the primary fails |
 | `LIVE_INCIDENTS_URL` | `https://chains-status-news.johnaverse.cc` | Live incident feed used by the `get_live_incidents` tool |
 | `FORUM_NEWS_URL` | `https://chains-forum-news.johnaverse.cc` | Forum/governance news feed used by the `get_forum_news` tool |
 

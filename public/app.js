@@ -11,6 +11,7 @@ const SAME_ORIGIN_API =
     location.port === '3000' || location.hostname === 'chains-api.johnaverse.cc';
 const API_BASE = SAME_ORIGIN_API ? '' : 'https://chains-api.johnaverse.cc';
 const STATUS_NEWS_BASE = 'https://chains-status-news.johnaverse.cc';
+const FORUM_NEWS_BASE = 'https://chains-forum-news.johnaverse.cc';
 
 const COLORS = {
     Mainnet: '#10b981', L2: '#8b5cf6', Testnet: '#f59e0b', Beacon: '#ec4899', Default: '#6b7280'
@@ -257,6 +258,12 @@ function initAppbarHeight() {
     sync();
     window.addEventListener('resize', sync);
     if ('ResizeObserver' in window) new ResizeObserver(sync).observe(bar);
+    // Treemap tiles are absolutely positioned in px — re-fit on width change.
+    let rt;
+    window.addEventListener('resize', () => {
+        if (activeView !== 'forum' || !forum.loaded) return;
+        clearTimeout(rt); rt = setTimeout(renderForumTreemap, 150);
+    });
 }
 
 // ─────────────────────────────── tabs ───────────────────────────────
@@ -276,7 +283,7 @@ function initTabs() {
 // separate, shareable, reloadable page (e.g. ?view=incidents&q=base).
 // Networks is the default landing view: info-dense and cheap to render —
 // the 3D graph (1.2 MB lib + physics warmup) only loads when visited.
-const VIEWS = ['networks', 'graph', 'incidents', 'providers'];
+const VIEWS = ['networks', 'graph', 'incidents', 'providers', 'forum'];
 const DEFAULT_VIEW = 'networks';
 let activeView = DEFAULT_VIEW;
 let searchQuery = '';
@@ -290,6 +297,7 @@ function switchView(view, opts = {}) {
     document.getElementById(`view-${view}`).classList.add('active');
     document.body.classList.toggle('graph-active', view === 'graph');
     if (view === 'graph') ensureGraphView();
+    if (view === 'forum') ensureForumView();
     updateSearchPlaceholder();
     applySearch();
     if (!opts.fromUrl) updateUrl({ push: true });
@@ -300,6 +308,7 @@ function updateSearchPlaceholder() {
     if (input) input.placeholder = activeView === 'networks' ? 'Filter networks — id or name…'
         : activeView === 'incidents' ? 'Filter incidents — network or title…'
         : activeView === 'providers' ? 'Filter provider incidents — provider, chain or title…'
+        : activeView === 'forum' ? 'Filter forum posts — network, forum or title…'
         : 'Find a network — id or name…';
 }
 
@@ -308,6 +317,7 @@ function applySearch() {
     if (activeView === 'networks') { chainShown = CHAIN_PAGE; renderChainsView(); }
     else if (activeView === 'incidents') renderIncidentList();
     else if (activeView === 'providers') renderProviderList();
+    else if (activeView === 'forum') renderForumList();
 }
 
 function updateUrl({ push = false } = {}) {
@@ -1002,6 +1012,220 @@ async function statusFeedBackfill() {
     }
 }
 
+// ─────────────────────────────── Forum activity (treemap by forum) ───────────────────────────────
+// Posts are grouped by forum (one forum can front several chains) and drawn as
+// a squarified treemap: tile area ∝ post volume, colour ∝ weekly momentum.
+const forum = { byForum: new Map(), loaded: false, loading: false, filter: null };
+const FORUM_TREEMAP_HEIGHT = 520;
+
+// Canonical thread id for a forum post URL — the feed can emit one thread from
+// two registry entries whose URLs differ only by #fragment / ?page.
+function forumThreadKey(u) { try { const x = new URL(u); return x.origin + x.pathname; } catch { return u; } }
+
+function ensureForumView() {
+    if (forum.loaded) { renderForumTreemap(); return; } // re-fit to current width
+    if (forum.loading) return;
+    forum.loading = true;
+    setForumMeta('loading…');
+    loadForumFeed();
+}
+
+function setForumMeta(text) { const e = document.getElementById('forumMeta'); if (e) e.textContent = text; }
+
+async function loadForumFeed() {
+    try {
+        const res = await fetch(`${FORUM_NEWS_BASE}/news?limit=500`, { headers: { accept: 'application/json' } });
+        if (!res.ok) throw new Error(res.status);
+        const raw = (await res.json()).news || [];
+        forum.byForum = groupByForum(normalizeForumPosts(raw));
+        forum.loaded = true;
+        setForumMeta('live');
+    } catch {
+        setForumMeta('offline');
+        const list = document.getElementById('forumList');
+        if (list) { list.textContent = ''; list.appendChild(el('div', { class: 'feed-empty', text: 'Forum feed unavailable (chains-forum-news).' })); }
+        return;
+    } finally {
+        forum.loading = false;
+    }
+    renderForumTreemap();
+    renderForumList();
+}
+
+// Dedupe per thread (same thread can arrive from two registry entries, URLs
+// differing only by #post fragment / ?page), newest first.
+function normalizeForumPosts(raw) {
+    const byThread = new Map();
+    for (const p of raw) {
+        const whenMs = Date.parse(p.publishedAt || p.updatedAt || '');
+        const item = {
+            title: p.title || '(untitled)',
+            url: p.url || '#',
+            whenMs: Number.isNaN(whenMs) ? null : whenMs,
+            forumId: p.forum?.id || 'unknown',
+            forumName: p.forum?.name || p.forum?.id || 'Forum',
+            chains: Array.isArray(p.chains) ? p.chains.filter(c => c?.chainId != null) : []
+        };
+        const key = forumThreadKey(item.url);
+        const prev = byThread.get(key);
+        if (!prev || (item.whenMs || 0) > (prev.whenMs || 0)) byThread.set(key, item);
+    }
+    return [...byThread.values()].sort((a, b) => (b.whenMs || 0) - (a.whenMs || 0));
+}
+
+function groupByForum(posts) {
+    const now = Date.now();
+    const WEEK = 7 * 86400 * 1000;
+    const map = new Map();
+    for (const p of posts) {
+        if (!map.has(p.forumId)) map.set(p.forumId, { id: p.forumId, name: p.forumName, chainMap: new Map(), posts: [], recent: 0, prior: 0 });
+        const g = map.get(p.forumId);
+        g.posts.push(p);
+        // Union affected chains across all of the forum's posts (not just the
+        // first) — otherwise chips miss chains only referenced by older posts.
+        for (const c of p.chains) if (!g.chainMap.has(c.chainId)) g.chainMap.set(c.chainId, c);
+        // Momentum window: posts this week vs the week before. `age >= 0`
+        // guards clock-skewed / future feed timestamps from faking "recent".
+        if (p.whenMs != null) {
+            const age = now - p.whenMs;
+            if (age >= 0 && age < WEEK) g.recent++;
+            else if (age >= WEEK && age < 2 * WEEK) g.prior++;
+        }
+    }
+    // momentum ∈ [-1, 1]: heating up (recent > prior) → +, cooling → −.
+    for (const g of map.values()) {
+        g.chains = [...g.chainMap.values()];
+        g.momentum = g.prior > 0 ? clampMomentum((g.recent - g.prior) / g.prior)
+            : g.recent > 0 ? 1 : 0;
+    }
+    // Busiest forums first.
+    return new Map([...map.entries()].sort((a, b) => b[1].posts.length - a[1].posts.length));
+}
+
+function clampMomentum(m) { return Math.max(-1, Math.min(1, m)); }
+
+// Tile fill: red (cooling) → neutral → green (heating), intensity by magnitude.
+function momentumColor(m) {
+    if (m > 0.05) { const t = Math.min(1, m); return `rgba(34,197,94,${0.22 + 0.55 * t})`; }
+    if (m < -0.05) { const t = Math.min(1, -m); return `rgba(239,68,68,${0.22 + 0.55 * t})`; }
+    return 'rgba(130,130,150,0.28)';
+}
+
+// Squarified treemap (Bruls, Huizing & van Wijk) — lays out tiles so each
+// stays close to square, area ∝ value. Pure geometry, no external lib.
+function squarifyTreemap(children, x, y, w, h) {
+    const out = [];
+    const nodes = children.filter(c => c.value > 0).sort((a, b) => b.value - a.value);
+    const total = nodes.reduce((s, c) => s + c.value, 0);
+    if (total <= 0 || w <= 0 || h <= 0) return out;
+    const items = nodes.map(c => ({ ref: c, area: (c.value / total) * (w * h) }));
+
+    const worst = (row, side) => {
+        const sum = row.reduce((s, r) => s + r.area, 0);
+        let mx = -Infinity, mn = Infinity;
+        for (const r of row) { if (r.area > mx) mx = r.area; if (r.area < mn) mn = r.area; }
+        const s2 = sum * sum, l2 = side * side;
+        return Math.max((l2 * mx) / s2, s2 / (l2 * mn));
+    };
+
+    const rect = { x, y, w, h };
+    let i = 0;
+    while (i < items.length) {
+        const side = Math.min(rect.w, rect.h);
+        const row = [items[i]];
+        let j = i + 1;
+        while (j < items.length && worst(row, side) >= worst(row.concat(items[j]), side)) {
+            row.push(items[j]); j++;
+        }
+        const rowArea = row.reduce((s, r) => s + r.area, 0);
+        if (rect.w <= rect.h) {
+            const rh = rowArea / rect.w;
+            let cx = rect.x;
+            for (const r of row) { const rw = r.area / rh; out.push({ ref: r.ref, x: cx, y: rect.y, w: rw, h: rh }); cx += rw; }
+            rect.y += rh; rect.h -= rh;
+        } else {
+            const rw = rowArea / rect.h;
+            let cy = rect.y;
+            for (const r of row) { const rh = r.area / rw; out.push({ ref: r.ref, x: rect.x, y: cy, w: rw, h: rh }); cy += rh; }
+            rect.x += rw; rect.w -= rw;
+        }
+        i = j;
+    }
+    return out;
+}
+
+function renderForumTreemap() {
+    const wrap = document.getElementById('forumTreemap'); if (!wrap) return;
+    wrap.textContent = '';
+    if (!forum.byForum.size) return;
+    const width = wrap.clientWidth || 900;
+    const height = FORUM_TREEMAP_HEIGHT;
+    const tiles = squarifyTreemap(
+        [...forum.byForum.values()].map(g => ({ value: g.posts.length, g })),
+        0, 0, width, height
+    );
+    const gap = 2;
+    for (const t of tiles) {
+        const g = t.ref.g;
+        const active = forum.filter === g.id;
+        const tile = el('button', {
+            class: `tm-tile${active ? ' active' : ''}`,
+            title: `${g.name} — ${g.posts.length} posts · ${g.recent} this week${g.momentum > 0.05 ? ' (heating up)' : g.momentum < -0.05 ? ' (cooling)' : ''}`,
+            onclick: () => { forum.filter = active ? null : g.id; renderForumTreemap(); renderForumList(); }
+        });
+        tile.style.left = `${t.x + gap / 2}px`;
+        tile.style.top = `${t.y + gap / 2}px`;
+        tile.style.width = `${Math.max(0, t.w - gap)}px`;
+        tile.style.height = `${Math.max(0, t.h - gap)}px`;
+        tile.style.background = momentumColor(g.momentum);
+        // Label only where it fits; scale name with tile size.
+        if (t.w > 54 && t.h > 26) {
+            const fs = Math.max(10, Math.min(20, Math.round(t.w / 9)));
+            tile.appendChild(el('span', { class: 'tm-name', style: `font-size:${fs}px`, text: g.name }));
+            tile.appendChild(el('span', { class: 'tm-count', text: `${g.posts.length}` }));
+        }
+        wrap.appendChild(tile);
+    }
+    wrap.style.height = `${height}px`;
+}
+
+function forumMatchesSearch(p, q) {
+    if (p.title.toLowerCase().includes(q) || p.forumName.toLowerCase().includes(q)) return true;
+    return p.chains.some(c => String(c.chainId).includes(q) || (c.name || '').toLowerCase().includes(q));
+}
+
+function renderForumList() {
+    const list = document.getElementById('forumList'); if (!list) return;
+    if (!forum.loaded) return;
+    const groups = [...forum.byForum.values()].filter(g => !forum.filter || g.id === forum.filter);
+    const count = document.getElementById('forumCount');
+
+    let shown = 0;
+    list.textContent = '';
+    for (const g of groups) {
+        const posts = g.posts.filter(p => !searchQuery || forumMatchesSearch(p, searchQuery));
+        if (!posts.length) continue;
+        shown += posts.length;
+        const chainChips = g.chains.slice(0, 6).map(c =>
+            el('span', { class: 'chain-chip', onclick: () => openChainDetail(c.chainId), text: c.name || `Chain ${c.chainId}` }));
+        list.appendChild(el('div', { class: 'forum-group-head' }, [
+            el('span', { class: 'cell-name', text: g.name }),
+            el('span', { class: 'muted', text: `${posts.length} post${posts.length === 1 ? '' : 's'}` }),
+            el('div', { class: 'affected-chains', style: 'margin:0' }, chainChips)
+        ]));
+        for (const p of posts.slice(0, 20)) {
+            list.appendChild(el('a', { class: 'incident-card', href: p.url, target: '_blank', rel: 'noopener' }, [
+                el('div', { class: 'incident-body' }, [
+                    el('div', { class: 'incident-title' }, [el('span', { text: p.title })]),
+                    el('div', { class: 'incident-meta', text: [p.forumName, p.whenMs ? relTime(new Date(p.whenMs).toISOString()) : null].filter(Boolean).join(' · ') })
+                ])
+            ]));
+        }
+    }
+    if (count) count.textContent = `${shown} post${shown === 1 ? '' : 's'}${forum.filter ? ` · ${forum.byForum.get(forum.filter)?.name || ''}` : ''}${searchQuery ? ` · “${searchQuery}”` : ''}`;
+    if (!shown) list.appendChild(el('div', { class: 'feed-empty', text: 'Nothing matches.' }));
+}
+
 // ─────────────────────────────── Assistant (floating chat overlay) ───────────────────────────────
 // A corner button opens a chat panel that floats over every view, so the user
 // can ask about whatever they're looking at (the active view + open chain are
@@ -1081,15 +1305,15 @@ async function sendAssistantMessage(text) {
         // Slow LLM runs come back as 202 + a job id — poll until the answer is
         // ready. Each poll is a fast request, so reverse-proxy timeouts that
         // would kill one long-held request never trigger. Poll responses carry
-        // the harness's current step ("using search_chains") — narrate it.
+        // the harness's full step trace ("using search_chains", …) — show it.
         if (res.status === 202 && res.data?.jobId) {
-            thinking.setStep(res.data.step);
-            res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs, thinking.setStep);
+            thinking.setSteps(assistantStepsFrom(res.data));
+            res = await pollAssistantJob(res.data.jobId, res.data.pollAfterMs, res.data.budgetMs, thinking.setSteps);
         }
         thinking.remove();
         if (res.ok && res.data?.reply != null) {
             assistant.messages.push({ role: 'assistant', content: res.data.reply });
-            appendChatBubble('assistant', res.data.reply, { toolCalls: res.data.toolCalls, degraded: res.data.degraded });
+            appendChatBubble('assistant', res.data.reply, { toolCalls: res.data.toolCalls, degraded: res.data.degraded, viaFallback: res.data.viaFallback });
         } else if (res.status === 429) {
             appendChatNotice('Slow down a little — too many questions in a short time. Try again in a minute.');
         } else if (res.status === 503) {
@@ -1146,7 +1370,7 @@ async function pollAssistantJob(jobId, pollAfterMs, budgetMs, onStep = () => {})
         }
         consecutiveMisses = 0;
         if (!res.ok) continue;
-        if (data?.status === 'running') { onStep(data.step); continue; }
+        if (data?.status === 'running') { onStep(assistantStepsFrom(data)); continue; }
         if (data?.status === 'error') return { status: 503, ok: false, data: { error: data.error } };
         if (data?.status === 'done') return { status: 200, ok: true, data };
     }
@@ -1170,12 +1394,13 @@ function resetAssistantChat() {
     document.getElementById('assistantInput')?.focus();
 }
 
-function appendChatBubble(role, text, { toolCalls, degraded } = {}) {
+function appendChatBubble(role, text, { toolCalls, degraded, viaFallback } = {}) {
     const log = document.getElementById('assistantLog');
     const body = el('div', { class: 'chat-bubble-body' });
     body.innerHTML = renderAssistantMarkdown(text);
     const extras = [];
     if (degraded) extras.push(el('span', { class: 'chat-degraded', text: 'partial answer' }));
+    if (viaFallback) extras.push(el('span', { class: 'chat-degraded', text: 'backup model' }));
     if (toolCalls?.length) {
         const names = [...new Set(toolCalls.map(c => c.name))].join(', ');
         extras.push(el('div', { class: 'chat-tools', text: `used: ${names}` }));
@@ -1194,22 +1419,68 @@ function appendChatNotice(text) {
     return notice;
 }
 
+// Normalize a chat/poll payload's step trace across server versions: current
+// servers send steps: [{label, at}], pre-1.7.4 send a single step string —
+// during a Pages-before-API deploy window the new frontend must still narrate.
+function assistantStepsFrom(data) {
+    if (Array.isArray(data?.steps)) return data.steps.map(s => (typeof s === 'string' ? { label: s } : s));
+    if (data?.step) return [{ label: data.step }];
+    return null;
+}
+
 function appendChatThinking() {
     const log = document.getElementById('assistantLog');
-    const stepLabel = el('div', { class: 'chat-step hidden' });
+    const trace = el('div', { class: 'chat-trace hidden' });
+    const elapsed = el('span', { class: 'chat-elapsed' });
     const bubble = el('div', { class: 'chat-bubble assistant chat-thinking', 'aria-label': 'Assistant is thinking' }, [
-        el('div', { class: 'chat-dots' }, [el('span'), el('span'), el('span')]),
-        stepLabel
+        el('div', { class: 'chat-dots-row' }, [
+            el('div', { class: 'chat-dots' }, [el('span'), el('span'), el('span')]),
+            elapsed
+        ]),
+        trace
     ]);
     log.appendChild(bubble);
     log.scrollTop = log.scrollHeight;
-    // Narrates the harness's current step ("using search_chains…") while the
-    // job runs; updated from poll responses.
-    bubble.setStep = (step) => {
-        if (!step) return;
-        stepLabel.textContent = `${step}…`;
-        stepLabel.classList.remove('hidden');
-        log.scrollTop = log.scrollHeight;
+
+    // Elapsed timer; cleared deterministically by wrapping remove() — every
+    // exit path in sendAssistantMessage goes through thinking.remove().
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+        elapsed.textContent = `${Math.round((Date.now() - startedAt) / 1000)}s`;
+    }, 1000);
+    const baseRemove = bubble.remove.bind(bubble);
+    bubble.remove = () => { clearInterval(timer); baseRemove(); };
+
+    // Renders the harness's full step trace: finished steps get a check and
+    // their duration, the current one an arrow + animated ellipsis. Poll
+    // responses carry the whole history, so brief steps are never missed.
+    let renderedKey = null;
+    bubble.setSteps = (steps) => {
+        if (!Array.isArray(steps) || steps.length === 0) return;
+        const last = steps[steps.length - 1];
+        // Skip the rebuild when nothing changed — most polls during a long
+        // "thinking" stretch. Rebuilding anyway would destroy text selection
+        // in the trace for no reason.
+        const key = `${steps.length}|${last.at ?? ''}|${last.label}`;
+        if (key === renderedKey) return;
+        renderedKey = key;
+        // Only auto-scroll if the user is already at the bottom — never yank
+        // them away from history they scrolled up to read.
+        const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+        trace.textContent = '';
+        steps.forEach((s, i) => {
+            const current = i === steps.length - 1;
+            const durMs = !current && s.at != null && steps[i + 1]?.at != null ? steps[i + 1].at - s.at : null;
+            const text = current ? `${s.label}…`
+                : durMs != null && durMs >= 100 ? `${s.label} (${(durMs / 1000).toFixed(1)}s)`
+                : s.label;
+            trace.appendChild(el('div', { class: `chat-trace-step${current ? ' active' : ' done'}` }, [
+                el('span', { class: 'chat-trace-mark', text: current ? '›' : '✓' }),
+                el('span', { text })
+            ]));
+        });
+        trace.classList.remove('hidden');
+        if (nearBottom) log.scrollTop = log.scrollHeight;
     };
     return bubble;
 }
@@ -1292,7 +1563,14 @@ function openChainDetail(chainId, opts = {}) {
         el('span', { class: 'strong', text: fmtUsd(l2b.tvs) }), l2b.daLayer ? el('span', { class: 'muted', text: `DA: ${l2b.daLayer}` }) : null
     ])));
     if (sp) { const host = safeHost(sp.url); content.appendChild(detailRow('Status page', el('a', { href: sp.url, target: '_blank', rel: 'noopener', text: host || sp.name }))); }
+    // Forum news row stays hidden unless this chain's forum actually has
+    // recent posts — only ~60 of ~3000 chains have a tracked forum.
+    const forumBox = el('div', { class: 'd-forum' });
+    const forumRow = detailRow('Forum news', forumBox);
+    forumRow.classList.add('hidden');
+    content.appendChild(forumRow);
     loadChainDetail(chainId, extraBox, badges);
+    loadForumNews(chainId, forumBox, forumRow);
 
     const headCell = el('span', { class: 'mono', text: '…' });
     content.appendChild(detailRow('Block head', headCell));
@@ -1322,7 +1600,42 @@ async function loadChainDetail(chainId, box, badges) {
     if (d.status && !badges.querySelector('.pill')) badges.appendChild(statusBadge(d.status));
     if (d.explorers?.length) box.appendChild(detailRow('Explorers', d.explorers.slice(0, 6).map(x => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.name || safeHost(x.url) }))));
     if (d.infoURL) { const host = safeHost(d.infoURL); box.appendChild(detailRow('Website', host ? el('a', { href: d.infoURL, target: '_blank', rel: 'noopener', text: host }) : el('span', { text: d.infoURL }))); }
+    if (d.forumUrl) { const host = safeHost(d.forumUrl); box.appendChild(detailRow('Forum', el('a', { href: d.forumUrl, target: '_blank', rel: 'noopener', text: host || d.forumUrl }))); }
     if (d.slip44 != null) box.appendChild(detailRow('SLIP-44', el('span', { class: 'mono', text: String(d.slip44) })));
+}
+
+// "2026-07-05T…" → "3h ago" / "2d ago"
+function relTime(iso) {
+    const t = Date.parse(iso || '');
+    if (Number.isNaN(t)) return '';
+    const s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+    if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+}
+
+// Recent community/governance posts for this chain from chains-forum-news.
+// The row is revealed only when posts exist; any failure just leaves it hidden.
+async function loadForumNews(chainId, box, row) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+        const res = await fetch(`${FORUM_NEWS_BASE}/news?chainId=${chainId}&limit=4`, { headers: { accept: 'application/json' }, signal: ctrl.signal });
+        if (!res.ok) return;
+        let posts = (await res.json()).news || [];
+        // One row per thread — the feed can carry the same thread twice.
+        posts = [...new Map(posts.map(p => [forumThreadKey(p.url), p])).values()].slice(0, 4);
+        if (openChainId !== chainId || !posts.length) return; // drawer moved on / nothing to show
+        box.textContent = '';
+        for (const p of posts) {
+            box.appendChild(el('div', { class: 'forum-post' }, [
+                el('a', { href: p.url, target: '_blank', rel: 'noopener', text: p.title }),
+                el('span', { class: 'muted forum-when', text: relTime(p.publishedAt) })
+            ]));
+        }
+        row.classList.remove('hidden');
+    } catch { /* row stays hidden */ }
+    finally { clearTimeout(timer); }
 }
 
 // "Geth/v1.13.0/linux/go1.21" → "Geth v1.13.0"

@@ -3,7 +3,7 @@
   "info": {
     "title": "Chains API",
     "description": "Aggregated blockchain chain data from five external sources (TheGraph, Chainlist, Chain ID Network, SLIP-0044, L2BEAT): chain metadata, relations, RPC endpoints and health, L2 scaling, and operator status.",
-    "version": "1.7.3"
+    "version": "1.7.4"
   },
   "components": {
     "schemas": {}
@@ -692,6 +692,9 @@
                     "offTopic": {
                       "type": "boolean"
                     },
+                    "viaFallback": {
+                      "type": "boolean"
+                    },
                     "usage": {
                       "type": [
                         "null",
@@ -736,11 +739,19 @@
                     "budgetMs": {
                       "type": "number"
                     },
-                    "step": {
-                      "type": [
-                        "null",
-                        "string"
-                      ]
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "number"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -789,11 +800,19 @@
                     "pollAfterMs": {
                       "type": "number"
                     },
-                    "step": {
-                      "type": [
-                        "null",
-                        "string"
-                      ]
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "number"
+                          }
+                        }
+                      }
                     },
                     "error": {
                       "type": "string"
@@ -820,6 +839,9 @@
                       "type": "boolean"
                     },
                     "offTopic": {
+                      "type": "boolean"
+                    },
+                    "viaFallback": {
                       "type": "boolean"
                     },
                     "usage": {

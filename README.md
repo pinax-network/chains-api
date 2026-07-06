@@ -354,6 +354,32 @@ ASSISTANT_LLM_URL=http://localhost:11434 npm start
 - `ASSISTANT_MAX_TOKENS`: `max_tokens` per LLM call (default: 1024)
 - `ASSISTANT_RATE_LIMIT_MAX`: Maximum `/assistant/chat` requests per window per IP (default: 10)
 - `ASSISTANT_TOPIC_GUARD`: Pre-classify each question with a cheap extra LLM call and refuse off-topic ones before the tool loop runs; fails open if the classifier misbehaves (default: `true`)
+- `ASSISTANT_FALLBACK_LLM_URL` / `ASSISTANT_FALLBACK_MODEL` / `ASSISTANT_FALLBACK_LLM_API_KEY`: Optional backup provider — see below.
+
+#### Fallback provider (optional)
+
+Configure a second OpenAI-compatible server and the assistant survives the primary going down:
+
+```bash
+# Example 1: big model with a smaller local backup on another port
+ASSISTANT_LLM_URL=http://10.0.0.47:8000        ASSISTANT_MODEL=qwen3-27b \
+ASSISTANT_FALLBACK_LLM_URL=http://localhost:11434 ASSISTANT_FALLBACK_MODEL=qwen3:8b \
+npm start
+
+# Example 2: local primary with a hosted API as the backup
+ASSISTANT_LLM_URL=http://localhost:11434       ASSISTANT_MODEL=qwen3 \
+ASSISTANT_FALLBACK_LLM_URL=https://openrouter.ai/api ASSISTANT_FALLBACK_MODEL=qwen/qwen3-32b \
+ASSISTANT_FALLBACK_LLM_API_KEY=sk-or-... \
+npm start
+```
+
+Behavior:
+- A chat run starts on the primary; if any LLM call fails (connection refused, timeout, HTTP error), the run switches to the backup and **stays on it for the rest of that run**. The next chat tries the primary again — no manual reset needed after recovery.
+- The switch is visible: the thinking trace shows a *"switching to backup model"* step, the answer JSON carries `viaFallback: true`, and the dashboard bubble gets a **backup model** badge.
+- While an untried backup remains, a single primary attempt is capped at 60s so an unresponsive primary can't consume the whole request budget before failover.
+- `GET /assistant` reports `reachable: true` if **either** provider answers, so the dashboard pill stays green during a primary outage.
+- The backup must handle tool/function calling for full functionality; if it's a weaker model, expect simpler answers rather than failures — all the harness defenses (arg validation, iteration caps) apply to it too.
+- `ASSISTANT_FALLBACK_MODEL` defaults to `ASSISTANT_MODEL` when unset, and the key is only needed for auth-protected backups.
 - `LIVE_INCIDENTS_URL`: Live incident feed for the `get_live_incidents` tool (default: `https://chains-status-news.johnaverse.cc`)
 - `FORUM_NEWS_URL`: Forum/governance news feed for the `get_forum_news` tool (default: `https://chains-forum-news.johnaverse.cc`)
 

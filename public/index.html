@@ -45,6 +45,7 @@
             <button class="tab" data-view="graph" role="tab">Relationships</button>
             <button class="tab" data-view="incidents" role="tab">Incidents</button>
             <button class="tab" data-view="providers" role="tab">Providers</button>
+            <button class="tab" data-view="forum" role="tab">Forum</button>
         </nav>
     </header>
 
@@ -185,6 +186,32 @@
                 <span class="toolbar-count" id="providersCount"></span>
             </div>
             <div id="providersList" class="incidents-list"><div class="feed-empty">Connecting to live status feed…</div></div>
+        </div>
+    </section>
+
+    <!-- ─── View: Forum (governance/community posts by chain) ─── -->
+    <section id="view-forum" class="view scroll-view">
+        <div class="view-inner">
+            <h2 class="section-title">Forum activity
+                <span class="src-pill" id="forumMeta"></span>
+            </h2>
+            <p class="view-lead">Recent posts from official community and governance forums. Each tile is a
+                forum, sized by how much it's being discussed and colored by momentum — green is heating up
+                this week, red is cooling. Click a tile to filter the posts below.</p>
+
+            <div class="forum-treemap" id="forumTreemap"></div>
+            <div class="forum-legend">
+                <span>cooling</span>
+                <span class="fl-swatch fl-cool3"></span><span class="fl-swatch fl-cool2"></span><span class="fl-swatch fl-cool1"></span>
+                <span class="fl-swatch fl-flat"></span>
+                <span class="fl-swatch fl-hot1"></span><span class="fl-swatch fl-hot2"></span><span class="fl-swatch fl-hot3"></span>
+                <span>heating up</span>
+            </div>
+
+            <div class="toolbar">
+                <span class="toolbar-count" id="forumCount"></span>
+            </div>
+            <div id="forumList" class="incidents-list"><div class="feed-empty">Loading forum activity…</div></div>
         </div>
     </section>
 

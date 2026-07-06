@@ -27,13 +27,22 @@ function runningJobCount() {
   return n;
 }
 
+const MAX_JOB_STEPS = 40;
+
 function startAssistantJob({ messages, context, log }) {
-  const job = { id: randomUUID(), status: 'running', result: null, error: null, step: null };
+  const job = { id: randomUUID(), status: 'running', result: null, error: null, steps: [] };
   jobs.set(job.id, job);
   const jobId = job.id;
-  // Harness progress labels ("using search_chains", "thinking…") surface on
-  // the poll responses so the UI can narrate long runs.
-  const onStep = (label) => { job.step = label; };
+  // Harness progress labels ("using search_chains", "thinking…") accumulate
+  // on the job so poll responses carry the FULL trace — a 2s poll cadence
+  // would otherwise sample past brief steps like fast tool executions.
+  // Timestamps let the UI show per-step durations. At the cap the OLDEST
+  // entry is dropped: the last element is the UI's "currently running" step,
+  // so it must always be the newest label, never a frozen stale one.
+  const onStep = (label) => {
+    if (job.steps.length >= MAX_JOB_STEPS) job.steps.shift();
+    job.steps.push({ label, at: Date.now() });
+  };
   job.promise = runAssistant({ messages, context, log, onStep })
     .then((result) => { job.status = 'done'; job.result = result; })
     .catch((err) => {
@@ -152,6 +161,7 @@ export async function assistantRoutes(fastify) {
     },
     degraded: { type: 'boolean' },
     offTopic: { type: 'boolean' },
+    viaFallback: { type: 'boolean' },
     usage: {
       type: ['object', 'null'],
       properties: {
@@ -178,7 +188,7 @@ export async function assistantRoutes(fastify) {
             status: { type: 'string' },
             pollAfterMs: { type: 'number' },
             budgetMs: { type: 'number' },
-            step: { type: ['string', 'null'] }
+            steps: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, at: { type: 'number' } } } }
           }
         }
       }
@@ -204,7 +214,7 @@ export async function assistantRoutes(fastify) {
     }
     // budgetMs lets the client size its polling window to the server's
     // actual per-request budget instead of guessing a fixed deadline.
-    return reply.code(202).send({ jobId: job.id, status: 'running', pollAfterMs: 2000, budgetMs: ASSISTANT_TIMEOUT_MS, step: job.step });
+    return reply.code(202).send({ jobId: job.id, status: 'running', pollAfterMs: 2000, budgetMs: ASSISTANT_TIMEOUT_MS, steps: job.steps });
   });
 
   fastify.get('/assistant/chat/:jobId', {
@@ -231,7 +241,7 @@ export async function assistantRoutes(fastify) {
             jobId: { type: 'string' },
             status: { type: 'string' },
             pollAfterMs: { type: 'number' },
-            step: { type: ['string', 'null'] },
+            steps: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, at: { type: 'number' } } } },
             error: { type: 'string' },
             ...resultSchema
           }
@@ -241,7 +251,7 @@ export async function assistantRoutes(fastify) {
   }, async (request, reply) => {
     const job = jobs.get(request.params.jobId);
     if (!job) return sendError(reply, 404, 'Job not found or expired');
-    if (job.status === 'running') return { jobId: job.id, status: 'running', pollAfterMs: 2000, step: job.step };
+    if (job.status === 'running') return { jobId: job.id, status: 'running', pollAfterMs: 2000, steps: job.steps };
     if (job.status === 'error') return { jobId: job.id, status: 'error', error: job.error };
     return { jobId: job.id, status: 'done', ...job.result };
   });
