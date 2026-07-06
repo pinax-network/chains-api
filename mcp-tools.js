@@ -555,14 +555,20 @@ function handleGetRpcMonitorById(args) {
   }
 
   const results = getRpcMonitoringResults();
-  const status = getRpcMonitoringStatus();
   const chainResults = results.results.filter((r) => r.chainId === chainId);
 
   if (chainResults.length === 0) {
-    const notRunYet = results.testedEndpoints === 0 && !status.isMonitoring;
-    const message = notRunYet
-      ? `No monitoring data available yet for chain ${chainId}. Monitoring has not completed a full run.`
-      : `No working RPC endpoints found for chain ${chainId}.`;
+    // No results for this chain means the rolling monitor has not CHECKED it
+    // (recent restart / sweep hasn't reached it) — it must never read as "the
+    // endpoints are down". An earlier message here ("No working RPC endpoints
+    // found") made the assistant declare healthy chains unhealthy.
+    const registered = getEndpointsById(chainId);
+    const rpcCount = registered?.rpc?.length ?? null;
+    const message =
+      `RPC health status for chain ${chainId} is UNKNOWN: the rolling monitor has not checked this chain's endpoints in the current cycle` +
+      ` (it continuously re-checks ~3k chains and restarts empty after a deploy). This does NOT mean the endpoints are down.` +
+      (rpcCount ? ` The registry lists ${rpcCount} RPC endpoint(s) for this chain (see get_endpoints).` : '') +
+      ` Do not report this chain as unhealthy based on this result.`;
     return { content: [{ type: 'text', text: message }] };
   }
 

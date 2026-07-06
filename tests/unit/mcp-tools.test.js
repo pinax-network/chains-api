@@ -715,15 +715,35 @@ describe('MCP Tools - Shared Module', () => {
       expect(result.isError).toBe(true);
     });
 
-    it('should return error when no results for chain', async () => {
+    it('reports UNKNOWN (never "down") when the chain has no results yet', async () => {
+      // Mid-sweep state: other chains tested, this one not reached yet — the
+      // exact state after a deploy that once made the assistant declare a
+      // healthy chain unhealthy.
+      vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
+        lastUpdated: '2024-01-01T00:00:00.000Z', totalEndpoints: 737, testedEndpoints: 737,
+        workingEndpoints: 314, results: [{ chainId: 1, chainName: 'Ethereum', url: 'https://eth.rpc', status: 'working' }],
+      });
+      vi.mocked(dataService.getEndpointsById).mockReturnValue({ chainId: 8453, name: 'Base', rpc: ['https://mainnet.base.org', 'https://developer-access-mainnet.base.org'] });
+
+      const result = await handleToolCall('get_rpc_monitor_by_id', { chainId: 8453 });
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0].text;
+      expect(text).toContain('UNKNOWN');
+      expect(text).toContain('does NOT mean the endpoints are down');
+      expect(text).toContain('2 RPC endpoint(s)');
+      expect(text).not.toMatch(/No working RPC endpoints/);
+    });
+
+    it('reports UNKNOWN when monitoring has produced no results at all', async () => {
       vi.mocked(dataService.getRpcMonitoringResults).mockReturnValue({
         lastUpdated: null, totalEndpoints: 0, testedEndpoints: 0,
         workingEndpoints: 0, results: [],
       });
+      vi.mocked(dataService.getEndpointsById).mockReturnValue(null);
 
       const result = await handleToolCall('get_rpc_monitor_by_id', { chainId: 999 });
       expect(result.isError).toBeUndefined();
-      expect(result.content[0].text).toContain('No monitoring data available yet for chain 999');
+      expect(result.content[0].text).toContain('UNKNOWN');
     });
   });
 
