@@ -259,6 +259,18 @@ describe('sanitizeReply', () => {
     expect(sanitizeReply('  Arbitrum One is chain `42161`.  ')).toBe('Arbitrum One is chain `42161`.');
   });
 
+  it('does not mangle a legitimate to=<value> or a single repeat', () => {
+    // eth block tag — must NOT be stripped
+    expect(sanitizeReply('Query with to=latest for the newest block.')).toBe('Query with to=latest for the newest block.');
+    // a single intentional repeat is preserved (only 3+ runs collapse)
+    expect(sanitizeReply('Done.\n\nDone.')).toBe('Done.\n\nDone.');
+  });
+
+  it('preserves indented / code-block formatting', () => {
+    const md = 'Steps:\n\n- one\n    - nested\n\n```\ntimeout=30\ntimeout=30\n```';
+    expect(sanitizeReply(md)).toBe(md);
+  });
+
   it('returns empty string for falsy input', () => {
     expect(sanitizeReply('')).toBe('');
     expect(sanitizeReply(null)).toBe('');
@@ -266,15 +278,17 @@ describe('sanitizeReply', () => {
 });
 
 describe('looksLikeLeakedToolCall', () => {
-  it('detects Harmony channel + name({...}) leaks', () => {
-    expect(looksLikeLeakedToolCall('get_chain_by_id to=0x2105')).toBe(true);
+  it('detects real tool-call leak syntax', () => {
     expect(looksLikeLeakedToolCall('to=functions.search_chains')).toBe(true);
+    expect(looksLikeLeakedToolCall('get_chain_by_id to=0x2105 to=get_chain_by_id')).toBe(true); // to=<toolname>
     expect(looksLikeLeakedToolCall('search_chains({"query":"base"})')).toBe(true);
     expect(looksLikeLeakedToolCall('<|channel|>commentary')).toBe(true);
   });
 
-  it('does not flag ordinary prose that mentions a tool concept', () => {
+  it('does not flag ordinary prose, tool mentions, or benign to= values', () => {
     expect(looksLikeLeakedToolCall('Base mainnet is chain 8453 and looks healthy.')).toBe(false);
-    expect(looksLikeLeakedToolCall('I checked the RPC endpoints for you.')).toBe(false);
+    expect(looksLikeLeakedToolCall('The get_forum_news tool returns recent posts.')).toBe(false); // mention, no call syntax
+    expect(looksLikeLeakedToolCall('Set the to=latest block tag.')).toBe(false); // benign to=value
+    expect(looksLikeLeakedToolCall('See https://scan.example/tx?to=abcdef')).toBe(false); // URL param
   });
 });

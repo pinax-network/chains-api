@@ -1420,13 +1420,15 @@ function appendChatBubble(role, text, { toolCalls, degraded, viaFallback } = {})
     return bubble;
 }
 
-// Extract "- Name: 8453" style option lines from a clarifying reply. The
+// Extract "- Name: 8453" bullet option lines from a clarifying reply. The
 // button label is the name; clicking sends "Name (8453)" so the follow-up is
-// unambiguous to the model. Capped so a stray colon-list can't flood the UI.
+// unambiguous to the model. The leading bullet ("- "/"* ") is REQUIRED so an
+// ordinary answer line like "Chain ID: 8453" doesn't sprout a button, and the
+// id allows up to 10 digits so 8-digit testnets (e.g. Sepolia 11155111) work.
 function parseChatOptions(text) {
     const opts = [];
     for (const line of String(text).split('\n')) {
-        const m = line.match(/^\s*[-*]?\s*(.{1,48}?):\s*`?(\d{1,7})`?\s*$/);
+        const m = line.match(/^\s*[-*]\s+(.{1,48}?):\s*`?(\d{2,10})`?\s*$/);
         if (m) opts.push({ label: m[1].trim(), reply: `${m[1].trim()} (${m[2]})` });
         if (opts.length >= 6) break;
     }

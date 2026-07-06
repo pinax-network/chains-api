@@ -109,8 +109,17 @@ export async function runAssistant({ messages, context, log = logger, fetchImpl 
       const content = sanitizeReply(msg.content || '');
       // Some servers fail to parse a model's tool call and leak its raw
       // syntax into the text ("get_x to=functions.x …"). That's a failed
-      // tool turn, not an answer — strike and retry rather than show garbage.
-      if (content && !forceAnswer && looksLikeLeakedToolCall(msg.content || '')) {
+      // tool turn, not an answer.
+      if (!forceAnswer && looksLikeLeakedToolCall(msg.content || '')) {
+        // A leak means THIS provider can't parse tool calls. If a fallback
+        // remains, switch to it (once) — retrying the broken one just burns
+        // iterations and degrades. Otherwise strike + nudge and retry.
+        if (run.index + 1 < run.providers.length) {
+          run.index++;
+          run.step('switching to backup model');
+          log.warn('assistant provider leaked tool-call syntax; switching to fallback provider');
+          continue;
+        }
         malformedStrikes++;
         convo.push({ role: 'assistant', content: msg.content });
         convo.push({ role: 'user', content: 'Do not write tool-call syntax as text. Either call the tool properly or answer in plain prose.' });
@@ -377,8 +386,22 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
   }
 }
 
-// Names of every tool, for detecting leaked tool-call syntax in prose.
-const TOOL_NAME_RE = /\b(get|search|traverse|validate)_[a-z_]+/;
+const TOOL_VERB = 'get|search|traverse|validate';
+
+// Signatures of a tool call the serving layer failed to parse and leaked as
+// TEXT (Harmony `to=functions.x` channel, `<|channel|>` control tokens, a tool
+// name in call/channel position). Deliberately NARROW: a bare `to=<value>`
+// (e.g. the eth `to=latest` block tag, a URL `?to=addr`, prose "the to= field")
+// and prose that merely mentions a tool name must NOT match — only tool-call
+// SYNTAX does. The detector and the sanitizer share these so anything flagged
+// is also stripped (no detector/sanitizer divergence).
+const LEAK_PATTERNS = [
+  /<\|[^|]{0,40}\|>/i,                                        // <|channel|> control tokens
+  /\bto=functions\.[a-z_]+/i,                                 // Harmony to=functions.x
+  new RegExp(`\\bfunctions\\.(?:${TOOL_VERB})_[a-z_]+`, 'i'), // functions.get_x
+  new RegExp(`\\bto=(?:${TOOL_VERB})_[a-z_]+`, 'i'),          // to=get_x
+  new RegExp(`\\b(?:${TOOL_VERB})_[a-z_]+\\s*\\(\\s*\\{`, 'i') // get_x({ …
+];
 
 /**
  * True when the model wrote a tool call as TEXT instead of emitting a
@@ -387,38 +410,52 @@ const TOOL_NAME_RE = /\b(get|search|traverse|validate)_[a-z_]+/;
  * failed tool turn, not an answer.
  */
 export function looksLikeLeakedToolCall(text) {
-  if (!text) return false;
-  return /\bto=(functions\.)?[a-z_]+/i.test(text)          // Harmony channel leak
-    || /<\|[a-z_]+\|>/i.test(text)                          // control tokens
-    || (TOOL_NAME_RE.test(text) && /\(\s*\{|\bto=/.test(text)); // name({...}) / name to=
+  return !!text && LEAK_PATTERNS.some((re) => re.test(text));
 }
+
+// Global-flag strippers matching exactly what LEAK_PATTERNS detects; the
+// tool-name-call form strips the whole `name({...})` including args.
+const LEAK_STRIPPERS = [
+  /<\|[^|]{0,40}\|>/gi,
+  /\bto=functions\.[a-z_]+/gi,
+  new RegExp(`\\bfunctions\\.(?:${TOOL_VERB})_[a-z_]+`, 'gi'),
+  new RegExp(`\\bto=(?:${TOOL_VERB})_[a-z_]+`, 'gi'),
+  new RegExp(`\\b(?:${TOOL_VERB})_[a-z_]+\\s*\\([^)]*\\)`, 'gi')
+];
 
 /**
  * Defensive cleanup of a model reply before it reaches the user. Strips
  * leaked tool-call / control-token syntax and collapses the degenerate
- * repetition weaker local models produce (same line or paragraph emitted
- * many times). A serving-layer problem this can only paper over — the real
- * fix is the LLM server's tool-call parser.
+ * repetition weaker local models produce (same paragraph/line emitted many
+ * times). Whitespace/indentation is preserved so legitimate markdown (nested
+ * lists, code blocks) survives. A serving-layer problem this can only paper
+ * over — the real fix is the LLM server's tool-call parser.
  */
 export function sanitizeReply(text) {
   if (!text) return '';
-  let t = text
-    .replace(/\bto=(functions\.)?[a-z_]+/gi, ' ')
-    .replace(/<\|[a-z_]+\|>/gi, ' ')
-    .replace(/\b(get|search|traverse|validate)_[a-z_]+\s*\(\s*\{[^}]*\}\s*\)/gi, ' ');
-  // Collapse consecutive duplicate paragraphs, then consecutive duplicate lines.
-  const dedupeConsecutive = (parts) => {
+  let t = text;
+  for (const re of LEAK_STRIPPERS) t = t.replace(re, ' ');
+  // Collapse only genuinely degenerate repetition: a run of 3+ identical
+  // consecutive parts (the observed failure) becomes one. A single/double
+  // repeat is left alone — it might be intentional (e.g. two identical code
+  // lines), so we don't touch it.
+  const collapseRuns = (parts, sep) => {
     const out = [];
-    for (const p of parts) {
-      const norm = p.trim();
-      if (norm && out.length && out[out.length - 1].trim() === norm) continue;
-      out.push(p);
+    for (let i = 0; i < parts.length;) {
+      let j = i;
+      while (j < parts.length && parts[j].trim() === parts[i].trim()) j++;
+      if (parts[i].trim() && j - i >= 3) out.push(parts[i]);        // degenerate run → one
+      else for (let k = i; k < j; k++) out.push(parts[k]);          // keep as-is
+      i = j;
     }
-    return out;
+    return out.join(sep);
   };
-  t = dedupeConsecutive(t.split(/\n{2,}/)).join('\n\n');
-  t = dedupeConsecutive(t.split('\n')).join('\n');
-  return t.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  t = collapseRuns(t.split(/\n{2,}/), '\n\n');
+  t = collapseRuns(t.split('\n'), '\n');
+  // Collapse only MID-line space runs the leak-strip left behind (lookbehind
+  // \S) — leading indentation and blank lines are preserved so markdown/code
+  // formatting survives.
+  return t.replace(/(?<=\S)[ \t]{2,}/g, ' ').replace(/\n{4,}/g, '\n\n\n').trim();
 }
 
 export function buildSystemPrompt(context, nowDate) {
