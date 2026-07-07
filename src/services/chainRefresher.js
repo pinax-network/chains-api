@@ -170,6 +170,40 @@ export async function processChainRpc(chainId) {
   incCounter('chains_api_rpc_check_total', { outcome: 'completed' }, results.length);
 }
 
+// On-demand checks triggered by /rpc-monitor/:id (and the MCP tool) when the
+// rolling sweep hasn't reached a chain yet — the post-deploy blind window
+// otherwise lasts up to a full sweep (~50 min for ~3k chains). One probe per
+// chain at a time; a chain that yields no usable results (no public HTTP
+// endpoints) is not re-probed for a cooldown so repeated queries can't fan out
+// requests.
+const ON_DEMAND_NO_RESULT_COOLDOWN_MS = 60000;
+let onDemandInFlight = new Map();
+let onDemandNoResultUntil = new Map();
+
+/**
+ * Make sure rpcHealth results exist for a chain, probing its endpoints now if
+ * the sweep hasn't produced any. Resolves true when results are available.
+ */
+export async function ensureChainRpcResults(chainId) {
+  if (cachedData.rpcHealth?.[chainId]?.length) return true;
+  if (!cachedData.indexed?.byChainId?.[chainId]) return false;
+  if ((onDemandNoResultUntil.get(chainId) || 0) > Date.now()) return false;
+
+  let inFlight = onDemandInFlight.get(chainId);
+  if (!inFlight) {
+    incCounter('chains_api_rpc_check_total', { outcome: 'on_demand' });
+    inFlight = processChainRpc(chainId)
+      .catch(err => logger.warn({ chainId, err: err.message }, 'On-demand RPC check failed'))
+      .finally(() => onDemandInFlight.delete(chainId));
+    onDemandInFlight.set(chainId, inFlight);
+  }
+  await inFlight;
+
+  const hasResults = Boolean(cachedData.rpcHealth?.[chainId]?.length);
+  if (!hasResults) onDemandNoResultUntil.set(chainId, Date.now() + ON_DEMAND_NO_RESULT_COOLDOWN_MS);
+  return hasResults;
+}
+
 /**
  * Fetch L2BEAT data and re-merge into the index. Mirrors the previous
  * runL2BeatRefresh contract but lives inside the unified scheduler.
@@ -343,4 +377,6 @@ export function _resetChainRefresherForTests() {
   lastTickJobType = null;
   l2beatState = { lastRefreshAt: null, lastRefreshSource: null, lastRefreshProjectCount: 0, lastRefreshError: null };
   rpcState = { isMonitoring: false, lastSweepCompletedAt: null, endpointsCheckedThisSweep: 0 };
+  onDemandInFlight = new Map();
+  onDemandNoResultUntil = new Map();
 }

@@ -15,6 +15,7 @@ import {
   getRpcMonitoringStatus,
 } from './dataService.js';
 import { getL2BeatRefreshStatus } from './src/services/l2beatRefresher.js';
+import { ensureChainRpcResults } from './src/services/chainRefresher.js';
 import { getClientsByChain } from './clientsView.js';
 import { getPricesForChains, getPriceForChain } from './priceService.js';
 import {
@@ -173,7 +174,7 @@ export function getToolDefinitions() {
     },
     {
       name: 'get_rpc_monitor_by_id',
-      description: 'Get RPC endpoint monitoring results for a specific chain by its chain ID',
+      description: 'Get RPC endpoint monitoring results for a specific chain by its chain ID. If the rolling monitor has not reached the chain yet (e.g. right after a deploy), its endpoints are checked live on demand, so a result is normally available.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -548,25 +549,32 @@ function handleGetRpcMonitor() {
   return { content: [{ type: 'text', text: formatRpcMonitorStatus(status, results) }] };
 }
 
-function handleGetRpcMonitorById(args) {
+async function handleGetRpcMonitorById(args) {
   const { chainId } = args;
   if (!isValidChainId(chainId)) {
     return errorResponse('Invalid chain ID');
   }
 
-  const results = getRpcMonitoringResults();
-  const chainResults = results.results.filter((r) => r.chainId === chainId);
+  let results = getRpcMonitoringResults();
+  let chainResults = results.results.filter((r) => r.chainId === chainId);
+
+  // Post-deploy blind window: the rolling sweep may not have reached this
+  // chain yet. Probe its endpoints on demand instead of answering "nothing".
+  if (chainResults.length === 0 && (await ensureChainRpcResults(chainId))) {
+    results = getRpcMonitoringResults();
+    chainResults = results.results.filter((r) => r.chainId === chainId);
+  }
 
   if (chainResults.length === 0) {
-    // No results for this chain means the rolling monitor has not CHECKED it
-    // (recent restart / sweep hasn't reached it) — it must never read as "the
+    // Still nothing even after the on-demand attempt: the chain is unknown or
+    // has no publicly checkable endpoints — it must never read as "the
     // endpoints are down". An earlier message here ("No working RPC endpoints
     // found") made the assistant declare healthy chains unhealthy.
     const registered = getEndpointsById(chainId);
     const rpcCount = registered?.rpc?.length ?? null;
     const message =
-      `RPC health status for chain ${chainId} is UNKNOWN: the rolling monitor has not checked this chain's endpoints in the current cycle` +
-      ` (it continuously re-checks ~3k chains and restarts empty after a deploy). This does NOT mean the endpoints are down.` +
+      `RPC health status for chain ${chainId} is UNKNOWN: the monitor has no results for this chain` +
+      ` and a live on-demand check found no publicly checkable endpoints. This does NOT mean the endpoints are down.` +
       (rpcCount ? ` The registry lists ${rpcCount} RPC endpoint(s) for this chain (see get_endpoints).` : '') +
       ` Do not report this chain as unhealthy based on this result.`;
     return { content: [{ type: 'text', text: message }] };

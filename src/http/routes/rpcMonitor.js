@@ -1,5 +1,6 @@
 import { getRpcMonitoringResults } from '../../store/queries.js';
 import { getRpcMonitoringStatus } from '../../services/rpcHealth.js';
+import { ensureChainRpcResults } from '../../services/chainRefresher.js';
 import { summarizeChainClients } from '../../../clientsView.js';
 import { parseIntParam } from '../util/parseIntParam.js';
 import { sendError } from '../util/sendError.js';
@@ -28,8 +29,15 @@ export async function rpcMonitorRoutes(fastify) {
   }, async (request, reply) => {
     const chainId = parseIntParam(request.params.id);
 
-    const results = getRpcMonitoringResults();
-    const chainResults = results.results.filter(r => r.chainId === chainId);
+    let results = getRpcMonitoringResults();
+    let chainResults = results.results.filter(r => r.chainId === chainId);
+
+    // Post-deploy blind window: the rolling sweep may not have reached this
+    // chain yet. Probe its endpoints on demand instead of answering "nothing".
+    if (chainResults.length === 0 && await ensureChainRpcResults(chainId)) {
+      results = getRpcMonitoringResults();
+      chainResults = results.results.filter(r => r.chainId === chainId);
+    }
 
     if (chainResults.length === 0) {
       return sendError(reply, 404, 'No monitoring results found for this chain');
