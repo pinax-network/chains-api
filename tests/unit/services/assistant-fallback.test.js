@@ -68,12 +68,14 @@ describe('runAssistant with a fallback provider', () => {
     expect(result.reply).toBe('answer from backup');
     expect(result.viaFallback).toBe(true);
     expect(steps).toContain('switching to backup model');
-    // First attempt hit the primary; everything after the switch stays on backup
+    // The primary gets one transient-blip retry (2 attempts), then everything
+    // after the switch stays on backup
     const urls = fetchImpl.calls.map(c => c.url);
     expect(urls[0]).toBe('http://primary.test/v1/chat/completions');
-    expect(urls.slice(1).every(u => hostOf(u) === 'backup.test')).toBe(true);
+    expect(urls[1]).toBe('http://primary.test/v1/chat/completions');
+    expect(urls.slice(2).every(u => hostOf(u) === 'backup.test')).toBe(true);
     // Backup requests carry the fallback model and its own key
-    const backupCall = fetchImpl.calls[1];
+    const backupCall = fetchImpl.calls[2];
     expect(backupCall.body.model).toBe('backup-model');
     expect(backupCall.headers.authorization).toBe('Bearer sk-backup');
   });
@@ -114,7 +116,27 @@ describe('runAssistant with a fallback provider', () => {
     await expect(
       runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl })
     ).rejects.toThrow(AssistantUnavailableError);
-    expect(fetchImpl.calls.map(c => new URL(c.url).host)).toEqual(['primary.test', 'backup.test']);
+    // Each provider gets one transient-blip retry before the run gives up
+    expect(fetchImpl.calls.map(c => new URL(c.url).host)).toEqual([
+      'primary.test', 'primary.test', 'backup.test', 'backup.test'
+    ]);
+  });
+
+  it('recovers on the primary after a single transient error — no switch, no badge', async () => {
+    // The prod failure mode this guards: the serving layer throws a one-off
+    // 502; the run must retry the primary once and stay there, not demote the
+    // whole conversation to the backup model.
+    const steps = [];
+    const primaryResponses = [new Error('one-off 502'), llmResponse('primary recovered')];
+    const fetchImpl = hostRouter({
+      primary: primaryResponses,
+      backup: () => { throw new Error('should not be called'); }
+    });
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl, onStep: s => steps.push(s) });
+    expect(result.reply).toBe('primary recovered');
+    expect(result.viaFallback).toBeUndefined();
+    expect(steps).not.toContain('switching to backup model');
+    expect(fetchImpl.calls.every(c => hostOf(c.url) === 'primary.test')).toBe(true);
   });
 
   it('switches mid-loop when the primary dies after a tool turn', async () => {

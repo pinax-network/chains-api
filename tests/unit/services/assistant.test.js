@@ -163,18 +163,29 @@ describe('runAssistant', () => {
     expect(fetchImpl.calls[6].body.tool_choice).toBe('none');
   });
 
-  it('throws AssistantUnavailableError when the first LLM call fails', async () => {
-    const fetchImpl = fetchSequence([new Error('ECONNREFUSED')]);
+  it('throws AssistantUnavailableError when the first LLM call fails (after one retry)', async () => {
+    const fetchImpl = fetchSequence([new Error('ECONNREFUSED'), new Error('ECONNREFUSED')]);
     await expect(
       runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl })
     ).rejects.toThrow(AssistantUnavailableError);
+    expect(fetchImpl.calls.length).toBe(2); // transient-blip retry before giving up
   });
 
   it('throws AssistantUnavailableError on a non-2xx first response', async () => {
-    const fetchImpl = fetchSequence([{ ok: false, status: 500 }]);
+    const fetchImpl = fetchSequence([{ ok: false, status: 500 }, { ok: false, status: 500 }]);
     await expect(
       runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl })
     ).rejects.toThrow(/500/);
+  });
+
+  it('recovers from a single transient error without degrading', async () => {
+    const fetchImpl = fetchSequence([
+      new Error('one-off 502'),
+      llmResponse({ role: 'assistant', content: 'answer after retry' })
+    ]);
+    const result = await runAssistant({ messages: [{ role: 'user', content: 'q' }], log: noopLog, fetchImpl });
+    expect(result.reply).toBe('answer after retry');
+    expect(result.degraded).toBe(false);
   });
 
   it('never lets a throwing onStep observer break the run', async () => {
