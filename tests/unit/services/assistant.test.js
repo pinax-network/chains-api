@@ -262,9 +262,34 @@ describe('sanitizeReply', () => {
   });
 
   it('collapses an ABAB multi-block repeat but leaves a non-repeating reply intact', () => {
-    expect(sanitizeReply('A\nB\nA\nB')).toBe('A\nB');
+    const ab = 'Base mainnet: 8453\nBase Sepolia: 84532';
+    expect(sanitizeReply(`${ab}\n${ab}`)).toBe(ab);
     const clean = 'Base mainnet is chain `8453`.\n- 5/5 RPCs healthy\n- no incidents';
     expect(sanitizeReply(clean)).toBe(clean);
+  });
+
+  it('collapses a repeat whose LAST copy is truncated mid-unit (max_tokens cut)', () => {
+    const block = 'Base mainnet (8453) looks healthy: no active incidents and all monitored RPCs are up.';
+    expect(sanitizeReply(block + block + block + block.slice(0, 37))).toBe(block);
+  });
+
+  it('never rewrites short periodic replies (bare chain IDs, tiny lists)', () => {
+    expect(sanitizeReply('2222')).toBe('2222');               // Kava chain id, period 1
+    expect(sanitizeReply('1111')).toBe('1111');               // WEMIX chain id
+    expect(sanitizeReply('Status:\n- up\n- up')).toBe('Status:\n- up\n- up');
+    expect(sanitizeReply('Done. Done.')).toBe('Done. Done.'); // unit below minimum length
+  });
+
+  it('stays fast and unchanged on long near-periodic (not exactly periodic) input', () => {
+    const nearPeriodic = ('The RPC endpoint responded in time. '.repeat(200) + 'All good.').trim();
+    const start = Date.now();
+    expect(sanitizeReply(nearPeriodic)).toBe(nearPeriodic);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  it('collapses a run of 3+ identical lines embedded in a larger reply', () => {
+    const junk = 'Summary:\nAll RPCs are up.\nAll RPCs are up.\nAll RPCs are up.\nNo incidents today.';
+    expect(sanitizeReply(junk)).toBe('Summary:\nAll RPCs are up.\nNo incidents today.');
   });
 
   it('strips leaked tool-call / channel syntax', () => {

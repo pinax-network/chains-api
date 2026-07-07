@@ -60,7 +60,8 @@ const METRIC_HELP = {
   chains_api_rpc_check_total: 'Number of RPC endpoint health checks by outcome',
   chains_api_assistant_requests_total: 'Number of assistant chat requests by outcome (ok, degraded)',
   chains_api_assistant_tool_calls_total: 'Number of assistant tool executions by tool and outcome',
-  chains_api_assistant_llm_calls_total: 'Number of LLM round-trips made by the assistant by outcome'
+  chains_api_assistant_llm_calls_total: 'Number of LLM round-trips made by the assistant by outcome',
+  chains_api_assistant_reply_sanitized_total: 'Number of assistant replies altered by the sanitizer, by kind (leak, whole_repeat)'
 };
 
 /**

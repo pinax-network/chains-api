@@ -1478,10 +1478,11 @@ function parseChatOptions(text) {
     const seen = new Set();
     for (const line of String(text).split('\n')) {
         const m = line.match(/^\s*[-*]\s+(.{1,48}?):\s*`?(\d{2,10})`?\s*$/);
-        // Dedupe by chain id — a repeated option line must not become a
-        // duplicate button.
-        if (m && !seen.has(m[2])) {
-            seen.add(m[2]);
+        // Dedupe by numeric chain id (normalized, so "08453" and "8453" are
+        // one) — a repeated option line must not become a duplicate button.
+        const id = m && String(parseInt(m[2], 10));
+        if (m && !seen.has(id)) {
+            seen.add(id);
             opts.push({ label: m[1].trim(), reply: `${m[1].trim()} (${m[2]})` });
         }
         if (opts.length >= 6) break;
