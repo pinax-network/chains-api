@@ -38,6 +38,7 @@ import {
   processL2BeatBatch,
   tickOnce,
   getChainRefresherStatus,
+  ensureChainRpcResults,
   _resetChainRefresherForTests
 } from '../../../src/services/chainRefresher.js';
 
@@ -98,6 +99,51 @@ describe('chainRefresher', () => {
       // per chain as results are written, not only at sweep completion.
       expect(cachedData.lastRpcCheck).toBe(cachedData.indexed.byChainId[1].lastTested);
     });
+
+  describe('ensureChainRpcResults (on-demand probe)', () => {
+    it('returns true without probing when results already exist', async () => {
+      seedCacheWith([seedChain(1, ['https://rpc-a.example'])]);
+      cachedData.rpcHealth = { 1: [{ url: 'https://rpc-a.example', ok: true }] };
+      expect(await ensureChainRpcResults(1)).toBe(true);
+      expect(jsonRpcCall).not.toHaveBeenCalled();
+    });
+
+    it('probes endpoints on demand when the sweep has not reached the chain', async () => {
+      seedCacheWith([seedChain(8453, ['https://mainnet.base.example'])]);
+      jsonRpcCall.mockResolvedValueOnce('Geth/v1.0').mockResolvedValueOnce('0x10');
+
+      expect(await ensureChainRpcResults(8453)).toBe(true);
+      expect(cachedData.rpcHealth[8453]).toHaveLength(1);
+      expect(cachedData.rpcHealth[8453][0].ok).toBe(true);
+    });
+
+    it('returns false for an unknown chain without probing', async () => {
+      seedCacheWith([seedChain(1, ['https://rpc-a.example'])]);
+      expect(await ensureChainRpcResults(999999)).toBe(false);
+      expect(jsonRpcCall).not.toHaveBeenCalled();
+    });
+
+    it('returns false for a chain with no publicly checkable endpoints', async () => {
+      seedCacheWith([seedChain(2, ['wss://ws.example', 'https://x.example/${API_KEY}'])]);
+      expect(await ensureChainRpcResults(2)).toBe(false);
+      expect(jsonRpcCall).not.toHaveBeenCalled();
+    });
+
+    it('dedupes concurrent probes for the same chain', async () => {
+      seedCacheWith([seedChain(1, ['https://rpc-a.example'])]);
+      const resolvers = [];
+      jsonRpcCall.mockImplementation(() => new Promise(r => { resolvers.push(r); }));
+
+      const first = ensureChainRpcResults(1);
+      const second = ensureChainRpcResults(1);
+      await new Promise(r => setImmediate(r));
+      for (const r of resolvers) r('Geth/v1.0');
+      // Both in-flight calls resolve from the SAME probe: one endpoint means
+      // exactly two jsonRpcCall invocations (clientVersion + blockNumber).
+      await Promise.all([first, second]);
+      expect(jsonRpcCall).toHaveBeenCalledTimes(2);
+    });
+  });
 
     it('does not stamp lastRpcCheck when the data-version race guard trips', async () => {
       seedCacheWith([seedChain(1, ['https://rpc-a.example'])]);
