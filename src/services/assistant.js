@@ -358,6 +358,7 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
     tool_choice: toolChoice,
     max_tokens: ASSISTANT_MAX_TOKENS
   };
+  let retriedProviderIndex = -1;
   for (;;) {
     const provider = run.providers[run.index];
     const hasNext = run.index + 1 < run.providers.length;
@@ -373,10 +374,19 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
       return body;
     } catch (err) {
       incCounter('chains_api_assistant_llm_calls_total', { outcome: 'error', provider: provider.name });
+      // One retry on the SAME provider first: the serving layer throws
+      // occasional one-off 502s, and failing over on the first blip is sticky
+      // for the rest of the run — a single transient error shouldn't demote
+      // the whole conversation to the backup model.
+      if (retriedProviderIndex !== run.index) {
+        retriedProviderIndex = run.index;
+        log.warn({ err: err.message, provider: provider.name }, 'assistant LLM call failed; retrying same provider once');
+        continue;
+      }
       if (hasNext) {
         run.index++;
         run.step('switching to backup model');
-        log.warn({ err: err.message, from: provider.name }, 'assistant LLM call failed; switching to fallback provider');
+        log.warn({ err: err.message, from: provider.name }, 'assistant LLM call failed twice; switching to fallback provider');
         continue;
       }
       if (err.network) noteLlmOutcome(false); // every provider is unreachable
