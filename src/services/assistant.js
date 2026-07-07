@@ -298,8 +298,7 @@ async function isOnTopic({ messages, deadline, fetchImpl, log, run }) {
           { role: 'system', content: GUARD_PROMPT },
           { role: 'user', content: transcript }
         ],
-        max_tokens: GUARD_MAX_TOKENS,
-        temperature: 0
+        max_tokens: GUARD_MAX_TOKENS
       },
       deadline,
       // The guard is optional — never let it eat the run's budget on a
@@ -350,12 +349,14 @@ async function callLlm({ convo, tools, toolChoice, deadline, fetchImpl, firstCal
     if (firstCall) throw new AssistantUnavailableError('Assistant deadline exhausted');
     return null;
   }
+  // No `temperature` (here or in the topic guard): the production LLM
+  // endpoint rejects requests carrying it — any value, even 0 — with a 502,
+  // which made every run fail over to the backup provider.
   const payload = {
     messages: convo,
     tools,
     tool_choice: toolChoice,
-    max_tokens: ASSISTANT_MAX_TOKENS,
-    temperature: 0.2
+    max_tokens: ASSISTANT_MAX_TOKENS
   };
   for (;;) {
     const provider = run.providers[run.index];
