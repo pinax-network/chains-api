@@ -71,7 +71,10 @@ describe('searchChains — mainnet/testnet qualifier handling', () => {
 
 // Regression: chain 10 is officially named "OP Mainnet", so "optimism" only
 // matched dead testnets (Optimism Kovan/Goerli) and "optimism mainnet"
-// returned NOTHING — the assistant told users Optimism doesn't exist.
+// returned NOTHING — the assistant told users Optimism doesn't exist. The
+// community names of renamed chains come from the TheGraph networks registry
+// (graph id, shortName, aliases), which the indexer already attaches to each
+// chain as `theGraph`.
 describe('searchChains — renamed-chain aliases + exact-name ranking', () => {
   const chains = [
     { chainId: 10, name: 'OP Mainnet', shortName: 'oeth' },
@@ -82,8 +85,18 @@ describe('searchChains — renamed-chain aliases + exact-name ranking', () => {
     { chainId: 137, name: 'Polygon Mainnet', shortName: 'pol' }
   ];
 
+  // Real shapes from the TheGraph networks registry.
+  const theGraph = {
+    networks: [
+      { id: 'optimism', fullName: 'OP Mainnet', shortName: 'Optimism', caip2Id: 'eip155:10', aliases: ['evm-10', 'op-mainnet', 'optimism-mainnet'] },
+      { id: 'bsc', fullName: 'BNB Smart Chain Mainnet', shortName: 'BNB', caip2Id: 'eip155:56', aliases: ['bnb', 'bsc-mainnet'] },
+      { id: 'gnosis', fullName: 'Gnosis Mainnet', shortName: 'Gnosis', caip2Id: 'eip155:100', aliases: ['xdai', 'gnosis-mainnet'] },
+      { id: 'matic', fullName: 'Polygon Mainnet', shortName: 'Polygon', caip2Id: 'eip155:137', aliases: ['polygon', 'matic-mainnet'] }
+    ]
+  };
+
   const setup = () => {
-    cachedData.indexed = indexData(null, null, chains, null);
+    cachedData.indexed = indexData(theGraph, null, chains, null);
     _resetGetAllChainsCacheForTests();
   };
 
@@ -118,10 +131,17 @@ describe('searchChains — renamed-chain aliases + exact-name ranking', () => {
     expect(searchChains('OP Mainnet')[0].chainId).toBe(10);
   });
 
-  it('resolves other well-known renames: bsc, xdai, matic', () => {
+  it('resolves other well-known renames from graph aliases: bsc, xdai, matic, polygon', () => {
     setup();
     expect(searchChains('bsc').map(c => c.chainId)).toContain(56);
     expect(searchChains('xdai').map(c => c.chainId)).toContain(100);
     expect(searchChains('matic').map(c => c.chainId)).toContain(137);
+    expect(searchChains('polygon')[0].chainId).toBe(137);
+  });
+
+  it('matches hyphenated registry aliases against spaced queries', () => {
+    setup();
+    // "optimism-mainnet" is a registry alias; users type "optimism mainnet"
+    expect(searchChains('op mainnet')[0].chainId).toBe(10);
   });
 });

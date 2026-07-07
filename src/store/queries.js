@@ -1,5 +1,4 @@
 import { cachedData } from './cache.js';
-import { CHAIN_ALIASES } from '../domain/chainAliases.js';
 
 function getChainByIdRaw(chainId) {
   if (!cachedData.indexed) return null;
@@ -81,6 +80,27 @@ export function _resetGetAllChainsCacheForTests() {
 // assistant (and any API client echoing a user's phrasing) to the wrong chain.
 const NETWORK_QUALIFIERS = new Set(['mainnet', 'testnet']);
 
+// Alias terms from the TheGraph networks registry entry attached at index
+// time: the graph id ("optimism"), shortName ("Optimism"), and aliases
+// ("xdai", "optimism-mainnet"). These carry the community names of renamed
+// chains — chain 10 is officially "OP Mainnet" and "optimism" appears
+// nowhere in its registry name. Hyphens normalize to spaces so the alias
+// "optimism-mainnet" matches the query "optimism mainnet".
+const NO_ALIASES = new Set();
+
+function aliasTerms(chain) {
+  const tg = chain.theGraph;
+  if (!tg) return NO_ALIASES;
+  const terms = new Set();
+  for (const t of [tg.id, tg.shortName, ...(Array.isArray(tg.aliases) ? tg.aliases : [])]) {
+    if (typeof t !== 'string' || t === '') continue;
+    const lower = t.toLowerCase();
+    terms.add(lower);
+    terms.add(lower.replace(/-/g, ' '));
+  }
+  return terms;
+}
+
 export function searchChains(query) {
   if (!cachedData.indexed) return [];
 
@@ -105,6 +125,11 @@ export function searchChains(query) {
     if (chain.name?.toLowerCase() === queryLower || chain.shortName?.toLowerCase() === queryLower) {
       push(chain.chainId);
     }
+  }
+  // Then exact alias hits ("optimism", "xdai", "optimism mainnet" → their
+  // renamed chains) before any substring matching.
+  for (const chain of cachedData.indexed.all) {
+    if (aliasTerms(chain).has(queryLower)) push(chain.chainId);
   }
 
   const nameMatches = needle => {
@@ -132,9 +157,10 @@ export function searchChains(query) {
     const wantTestnet = qualifiers.includes('testnet');
     // Renamed chains ("optimism" → OP Mainnet) resolve via alias, still
     // honouring the mainnet/testnet filter.
-    for (const chainId of CHAIN_ALIASES[needle] || []) {
-      const chain = cachedData.indexed.byChainId[chainId];
-      if (chain && ((chain.tags || []).includes('Testnet')) === wantTestnet) push(chainId);
+    for (const chain of cachedData.indexed.all) {
+      if (aliasTerms(chain).has(needle) && ((chain.tags || []).includes('Testnet')) === wantTestnet) {
+        push(chain.chainId);
+      }
     }
     const eligible = nameMatches(needle).filter(
       chain => ((chain.tags || []).includes('Testnet')) === wantTestnet
@@ -143,12 +169,6 @@ export function searchChains(query) {
       push(chain.chainId);
     }
     for (const chain of eligible) push(chain.chainId);
-  }
-
-  // Alias hit for the plain query ("optimism", "bsc", "matic") — the chains
-  // everyone still calls by their pre-rename names.
-  for (const chainId of CHAIN_ALIASES[queryLower] || []) {
-    if (cachedData.indexed.byChainId[chainId]) push(chainId);
   }
 
   // Plain substring pass (original behavior) — also covers phrases where the
