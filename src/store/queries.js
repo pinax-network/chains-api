@@ -80,6 +80,27 @@ export function _resetGetAllChainsCacheForTests() {
 // assistant (and any API client echoing a user's phrasing) to the wrong chain.
 const NETWORK_QUALIFIERS = new Set(['mainnet', 'testnet']);
 
+// Alias terms from the TheGraph networks registry entry attached at index
+// time: the graph id ("optimism"), shortName ("Optimism"), and aliases
+// ("xdai", "optimism-mainnet"). These carry the community names of renamed
+// chains — chain 10 is officially "OP Mainnet" and "optimism" appears
+// nowhere in its registry name. Hyphens normalize to spaces so the alias
+// "optimism-mainnet" matches the query "optimism mainnet".
+const NO_ALIASES = new Set();
+
+function aliasTerms(chain) {
+  const tg = chain.theGraph;
+  if (!tg) return NO_ALIASES;
+  const terms = new Set();
+  for (const t of [tg.id, tg.shortName, ...(Array.isArray(tg.aliases) ? tg.aliases : [])]) {
+    if (typeof t !== 'string' || t === '') continue;
+    const lower = t.toLowerCase();
+    terms.add(lower);
+    terms.add(lower.replace(/-/g, ' '));
+  }
+  return terms;
+}
+
 export function searchChains(query) {
   if (!cachedData.indexed) return [];
 
@@ -95,6 +116,20 @@ export function searchChains(query) {
   const parsedChainId = Number.parseInt(query, 10);
   if (!Number.isNaN(parsedChainId) && getChainByIdRaw(parsedChainId)) {
     push(parsedChainId);
+  }
+
+  // An exact full-query name match is the best possible hit and ranks first:
+  // "OP Mainnet" must return chain 10 before substring lookalikes
+  // ("Openpiece Mainnet") that an earlier pass would otherwise surface.
+  for (const chain of cachedData.indexed.all) {
+    if (chain.name?.toLowerCase() === queryLower || chain.shortName?.toLowerCase() === queryLower) {
+      push(chain.chainId);
+    }
+  }
+  // Then exact alias hits ("optimism", "xdai", "optimism mainnet" → their
+  // renamed chains) before any substring matching.
+  for (const chain of cachedData.indexed.all) {
+    if (aliasTerms(chain).has(queryLower)) push(chain.chainId);
   }
 
   const nameMatches = needle => {
@@ -120,6 +155,13 @@ export function searchChains(query) {
   if (qualifiers.length > 0 && nameTokens.length > 0) {
     const needle = nameTokens.join(' ');
     const wantTestnet = qualifiers.includes('testnet');
+    // Renamed chains ("optimism" → OP Mainnet) resolve via alias, still
+    // honouring the mainnet/testnet filter.
+    for (const chain of cachedData.indexed.all) {
+      if (aliasTerms(chain).has(needle) && ((chain.tags || []).includes('Testnet')) === wantTestnet) {
+        push(chain.chainId);
+      }
+    }
     const eligible = nameMatches(needle).filter(
       chain => ((chain.tags || []).includes('Testnet')) === wantTestnet
     );
