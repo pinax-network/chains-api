@@ -435,10 +435,23 @@ export function sanitizeReply(text) {
   if (!text) return '';
   let t = text;
   for (const re of LEAK_STRIPPERS) t = t.replace(re, ' ');
-  // Collapse only genuinely degenerate repetition: a run of 3+ identical
-  // consecutive parts (the observed failure) becomes one. A single/double
-  // repeat is left alone — it might be intentional (e.g. two identical code
-  // lines), so we don't touch it.
+  if (t !== text) incCounter('chains_api_assistant_reply_sanitized_total', { kind: 'leak' });
+  // A whole reply that is one block repeated k times (the observed failure —
+  // the clarifying question emitted twice, "ABAB", or "AAAA") collapses to one
+  // block. This catches non-consecutive repetition the run-collapse below
+  // misses, and only fires when the ENTIRE reply is an exact k-fold repeat, so
+  // it can't touch a normal reply that merely contains a repeated line.
+  const beforeCollapse = t;
+  t = collapseWholeRepeat(t);
+  if (t !== beforeCollapse) {
+    incCounter('chains_api_assistant_reply_sanitized_total', { kind: 'whole_repeat' });
+    logger.warn(
+      { from: beforeCollapse.length, to: t.length },
+      'assistant reply was a whole-reply repeat; collapsed to one copy (LLM serving-layer bug)'
+    );
+  }
+  // Collapse a run of 3+ identical consecutive parts to one (degenerate); a
+  // single/double repeat inside a larger reply is left alone.
   const collapseRuns = (parts, sep) => {
     const out = [];
     for (let i = 0; i < parts.length;) {
@@ -456,6 +469,51 @@ export function sanitizeReply(text) {
   // \S) — leading indentation and blank lines are preserved so markdown/code
   // formatting survives.
   return t.replace(/(?<=\S)[ \t]{2,}/g, ' ').replace(/\n{4,}/g, '\n\n\n').trim();
+}
+
+// If the whole reply is one unit repeated k≥2 times, return a single copy;
+// otherwise unchanged. Root cause (confirmed by probing the serving endpoint
+// directly): the backend behind the LLM proxy concatenates ~4 identical
+// candidate generations with zero separator before returning — the
+// duplication is already present in the first streamed chunk, so the harness
+// must collapse it. The unit is found as the first recurrence of a long
+// opening prefix (O(n) via indexOf); the collapse only fires when the ENTIRE
+// reply is whole copies of that unit, optionally ending in one truncated copy
+// (max_tokens can cut the last repeat mid-unit). Whitespace-separated repeats
+// ("S S S S") still collapse — the separator is absorbed into the unit. The
+// minimum unit length keeps short legitimate replies that happen to be
+// periodic — a bare chain ID ("2222"), a two-line list ("- up\n- up") —
+// intact.
+const MIN_REPEAT_UNIT_CHARS = 20;
+
+function collapseWholeRepeat(text) {
+  const s = text.trim();
+  const n = s.length;
+  if (n < MIN_REPEAT_UNIT_CHARS * 2) return text;
+  // The first recurrence of the reply's opening bounds the repeat unit. A
+  // 64-char probe makes accidental recurrence in normal prose unlikely; a
+  // recurrence closer than the minimum unit length is treated as prose.
+  const probe = s.slice(0, Math.min(64, n >> 1));
+  const second = s.indexOf(probe, 1);
+  if (second < MIN_REPEAT_UNIT_CHARS) return text;      // includes -1: no recurrence
+  const unit = s.slice(0, second);
+  let pos = second;
+  let fullCopies = 1;
+  let tailLen = 0;
+  while (pos < n) {
+    const rest = n - pos;
+    if (rest >= second) {
+      if (s.slice(pos, pos + second) !== unit) return text;
+      pos += second;
+      fullCopies++;
+    } else {
+      if (s.slice(pos) !== unit.slice(0, rest)) return text; // tail must be a truncated copy
+      tailLen = rest;
+      break;
+    }
+  }
+  if (fullCopies >= 2 || tailLen >= MIN_REPEAT_UNIT_CHARS) return unit.trimEnd();
+  return text;
 }
 
 export function buildSystemPrompt(context, nowDate) {
