@@ -52,7 +52,9 @@ describe('runAssistant topic guard (pre-classification)', () => {
     expect(result.offTopic).toBeUndefined();
     const guardBody = fetchImpl.bodies[0];
     expect(guardBody.tools).toBeUndefined();
-    expect(guardBody.temperature).toBe(0);
+    // The production LLM endpoint 502s on ANY temperature value — the guard
+    // (and the main loop) must not send one.
+    expect(guardBody.temperature).toBeUndefined();
     expect(guardBody.messages[0].content).toContain('topic classifier');
     expect(guardBody.messages[1].content).toContain('mainnet'); // follow-up context included
   });
