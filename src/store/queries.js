@@ -74,6 +74,12 @@ export function _resetGetAllChainsCacheForTests() {
   allChainsCache = { lastUpdated: null, lastL2BeatFetchedAt: null, value: null };
 }
 
+// Words that describe WHICH network variant the user wants rather than the
+// chain's name. "Base mainnet" must find the chain named just "Base" — a raw
+// substring match instead returns only "ZKBase Mainnet", which sent the
+// assistant (and any API client echoing a user's phrasing) to the wrong chain.
+const NETWORK_QUALIFIERS = new Set(['mainnet', 'testnet']);
+
 export function searchChains(query) {
   if (!cachedData.indexed) return [];
 
@@ -84,20 +90,49 @@ export function searchChains(query) {
     seen.add(chainId);
     results.push(getChainById(chainId));
   };
-  const queryLower = query.toLowerCase();
+  const queryLower = query.toLowerCase().trim();
 
   const parsedChainId = Number.parseInt(query, 10);
   if (!Number.isNaN(parsedChainId) && getChainByIdRaw(parsedChainId)) {
     push(parsedChainId);
   }
 
-  for (const chain of cachedData.indexed.all) {
-    if (
-      chain.name?.toLowerCase().includes(queryLower) ||
-      chain.shortName?.toLowerCase().includes(queryLower)
-    ) {
+  const nameMatches = needle => {
+    const hits = [];
+    for (const chain of cachedData.indexed.all) {
+      if (
+        chain.name?.toLowerCase().includes(needle) ||
+        chain.shortName?.toLowerCase().includes(needle)
+      ) {
+        hits.push(chain);
+      }
+    }
+    return hits;
+  };
+
+  // Qualifier-aware pass FIRST: "base mainnet" → name-match "base", then keep
+  // only mainnets (no Testnet tag) — or only testnets for "... testnet".
+  // Exact-name hits go before substring hits so the canonical chain ("Base")
+  // outranks lookalikes ("ZKBase Mainnet", "BasedAI").
+  const tokens = queryLower.split(/\s+/);
+  const qualifiers = tokens.filter(t => NETWORK_QUALIFIERS.has(t));
+  const nameTokens = tokens.filter(t => !NETWORK_QUALIFIERS.has(t));
+  if (qualifiers.length > 0 && nameTokens.length > 0) {
+    const needle = nameTokens.join(' ');
+    const wantTestnet = qualifiers.includes('testnet');
+    const eligible = nameMatches(needle).filter(
+      chain => ((chain.tags || []).includes('Testnet')) === wantTestnet
+    );
+    for (const chain of eligible.filter(c => c.name?.toLowerCase() === needle || c.shortName?.toLowerCase() === needle)) {
       push(chain.chainId);
     }
+    for (const chain of eligible) push(chain.chainId);
+  }
+
+  // Plain substring pass (original behavior) — also covers phrases where the
+  // qualifier IS part of the name ("ZKBase Mainnet", "Base Sepolia Testnet").
+  for (const chain of nameMatches(queryLower)) {
+    push(chain.chainId);
   }
 
   return results;
