@@ -1475,9 +1475,15 @@ function appendChatBubble(role, text, { toolCalls, degraded, viaFallback } = {})
 // id allows up to 10 digits so 8-digit testnets (e.g. Sepolia 11155111) work.
 function parseChatOptions(text) {
     const opts = [];
+    const seen = new Set();
     for (const line of String(text).split('\n')) {
         const m = line.match(/^\s*[-*]\s+(.{1,48}?):\s*`?(\d{2,10})`?\s*$/);
-        if (m) opts.push({ label: m[1].trim(), reply: `${m[1].trim()} (${m[2]})` });
+        // Dedupe by chain id — a repeated option line must not become a
+        // duplicate button.
+        if (m && !seen.has(m[2])) {
+            seen.add(m[2]);
+            opts.push({ label: m[1].trim(), reply: `${m[1].trim()} (${m[2]})` });
+        }
         if (opts.length >= 6) break;
     }
     return opts;

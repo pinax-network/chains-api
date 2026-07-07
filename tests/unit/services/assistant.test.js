@@ -247,6 +247,17 @@ describe('sanitizeReply', () => {
     expect(sanitizeReply(junk)).toBe('Base mainnet (8453) is healthy.');
   });
 
+  it('collapses a whole reply repeated twice (the observed clarifying-question dup)', () => {
+    const block = 'I need to check which "Base" network you mean.\n- Base mainnet: 8453\n- Base Sepolia: 84532';
+    expect(sanitizeReply(`${block}\n${block}`)).toBe(block);
+  });
+
+  it('collapses an ABAB multi-block repeat but leaves a non-repeating reply intact', () => {
+    expect(sanitizeReply('A\nB\nA\nB')).toBe('A\nB');
+    const clean = 'Base mainnet is chain `8453`.\n- 5/5 RPCs healthy\n- no incidents';
+    expect(sanitizeReply(clean)).toBe(clean);
+  });
+
   it('strips leaked tool-call / channel syntax', () => {
     const leaked = 'get_chain_by_id to=functions.get_chain_by_id <|channel|> Base is 8453.';
     const out = sanitizeReply(leaked);

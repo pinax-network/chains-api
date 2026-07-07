@@ -435,10 +435,14 @@ export function sanitizeReply(text) {
   if (!text) return '';
   let t = text;
   for (const re of LEAK_STRIPPERS) t = t.replace(re, ' ');
-  // Collapse only genuinely degenerate repetition: a run of 3+ identical
-  // consecutive parts (the observed failure) becomes one. A single/double
-  // repeat is left alone — it might be intentional (e.g. two identical code
-  // lines), so we don't touch it.
+  // A whole reply that is one block repeated k times (the observed failure —
+  // the clarifying question emitted twice, "ABAB", or "AAAA") collapses to one
+  // block. This catches non-consecutive repetition the run-collapse below
+  // misses, and only fires when the ENTIRE reply is an exact k-fold repeat, so
+  // it can't touch a normal reply that merely contains a repeated line.
+  t = collapseWholeRepeat(t);
+  // Collapse a run of 3+ identical consecutive parts to one (degenerate); a
+  // single/double repeat inside a larger reply is left alone.
   const collapseRuns = (parts, sep) => {
     const out = [];
     for (let i = 0; i < parts.length;) {
@@ -456,6 +460,22 @@ export function sanitizeReply(text) {
   // \S) — leading indentation and blank lines are preserved so markdown/code
   // formatting survives.
   return t.replace(/(?<=\S)[ \t]{2,}/g, ' ').replace(/\n{4,}/g, '\n\n\n').trim();
+}
+
+// If the trimmed text is exactly one line-block repeated k≥2 times back to
+// back, return a single copy; otherwise return it unchanged.
+function collapseWholeRepeat(text) {
+  const lines = text.replace(/\s+$/, '').split('\n');
+  const n = lines.length;
+  if (n < 2) return text;
+  const norm = lines.map((l) => l.trim());
+  for (let p = 1; p <= n >> 1; p++) {
+    if (n % p) continue;
+    let repeats = true;
+    for (let i = p; i < n && repeats; i++) if (norm[i] !== norm[i % p]) repeats = false;
+    if (repeats) return lines.slice(0, p).join('\n');
+  }
+  return text;
 }
 
 export function buildSystemPrompt(context, nowDate) {
