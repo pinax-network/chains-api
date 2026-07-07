@@ -462,18 +462,29 @@ export function sanitizeReply(text) {
   return t.replace(/(?<=\S)[ \t]{2,}/g, ' ').replace(/\n{4,}/g, '\n\n\n').trim();
 }
 
-// If the trimmed text is exactly one line-block repeated k≥2 times back to
-// back, return a single copy; otherwise return it unchanged.
+// If the whole reply is one unit repeated k≥2 times, return a single copy;
+// otherwise unchanged. All three observed shapes are handled by scanning for
+// the shortest prefix `unit` that tiles the rest, allowing an arbitrary
+// whitespace separator (possibly none) between repeats: concatenated with no
+// separator ("…84532Which Base…"), space-separated ("S S S S"), and
+// newline-separated ("S\nS\nS"). Only fires when the ENTIRE reply tiles
+// perfectly, so it can't touch a normal reply that merely repeats one line.
 function collapseWholeRepeat(text) {
-  const lines = text.replace(/\s+$/, '').split('\n');
-  const n = lines.length;
-  if (n < 2) return text;
-  const norm = lines.map((l) => l.trim());
+  const s = text.trim();
+  const n = s.length;
+  const isWs = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
   for (let p = 1; p <= n >> 1; p++) {
-    if (n % p) continue;
-    let repeats = true;
-    for (let i = p; i < n && repeats; i++) if (norm[i] !== norm[i % p]) repeats = false;
-    if (repeats) return lines.slice(0, p).join('\n');
+    const unit = s.slice(0, p);
+    let pos = p;
+    let count = 1;
+    let ok = true;
+    while (pos < n) {
+      while (pos < n && isWs(s[pos])) pos++;            // optional separator
+      if (s.substr(pos, p) !== unit) { ok = false; break; }
+      pos += p;
+      count++;
+    }
+    if (ok && count >= 2) return unit;
   }
   return text;
 }

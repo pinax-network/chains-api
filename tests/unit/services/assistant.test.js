@@ -252,6 +252,15 @@ describe('sanitizeReply', () => {
     expect(sanitizeReply(`${block}\n${block}`)).toBe(block);
   });
 
+  it('collapses a block repeated with NO separator (concatenated character-exact)', () => {
+    const block = 'Which Base network do you mean?\n\n- Base mainnet: 8453\n- Base Sepolia: 84532';
+    expect(sanitizeReply(block + block)).toBe(block);           // 2×, no separator
+  });
+
+  it('collapses a single sentence repeated 4× with no separator', () => {
+    expect(sanitizeReply('Checking RPC health now. '.repeat(4).trim())).toBe('Checking RPC health now.');
+  });
+
   it('collapses an ABAB multi-block repeat but leaves a non-repeating reply intact', () => {
     expect(sanitizeReply('A\nB\nA\nB')).toBe('A\nB');
     const clean = 'Base mainnet is chain `8453`.\n- 5/5 RPCs healthy\n- no incidents';
@@ -270,11 +279,12 @@ describe('sanitizeReply', () => {
     expect(sanitizeReply('  Arbitrum One is chain `42161`.  ')).toBe('Arbitrum One is chain `42161`.');
   });
 
-  it('does not mangle a legitimate to=<value> or a single repeat', () => {
+  it('does not mangle a legitimate to=<value>, and only collapses WHOLE-reply repeats', () => {
     // eth block tag — must NOT be stripped
     expect(sanitizeReply('Query with to=latest for the newest block.')).toBe('Query with to=latest for the newest block.');
-    // a single intentional repeat is preserved (only 3+ runs collapse)
-    expect(sanitizeReply('Done.\n\nDone.')).toBe('Done.\n\nDone.');
+    // a repeated line INSIDE a larger reply (not a whole-tile repeat) is kept
+    const partial = 'Status:\n- up\n- up';
+    expect(sanitizeReply(partial)).toBe(partial);
   });
 
   it('preserves indented / code-block formatting', () => {
