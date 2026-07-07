@@ -68,3 +68,60 @@ describe('searchChains — mainnet/testnet qualifier handling', () => {
     expect(searchChains('8453')[0].chainId).toBe(8453);
   });
 });
+
+// Regression: chain 10 is officially named "OP Mainnet", so "optimism" only
+// matched dead testnets (Optimism Kovan/Goerli) and "optimism mainnet"
+// returned NOTHING — the assistant told users Optimism doesn't exist.
+describe('searchChains — renamed-chain aliases + exact-name ranking', () => {
+  const chains = [
+    { chainId: 10, name: 'OP Mainnet', shortName: 'oeth' },
+    { chainId: 54, name: 'Openpiece Mainnet', shortName: 'op-piece' },
+    { chainId: 69, name: 'Optimism Kovan', shortName: 'okov', slip44: 1 },
+    { chainId: 56, name: 'BNB Smart Chain Mainnet', shortName: 'bnb' },
+    { chainId: 100, name: 'Gnosis', shortName: 'gno' },
+    { chainId: 137, name: 'Polygon Mainnet', shortName: 'pol' }
+  ];
+
+  const setup = () => {
+    cachedData.indexed = indexData(null, null, chains, null);
+    _resetGetAllChainsCacheForTests();
+  };
+
+  afterEach(() => {
+    cachedData.indexed = null;
+    _resetGetAllChainsCacheForTests();
+  });
+
+  it('"optimism mainnet" resolves to OP Mainnet (10), not zero results', () => {
+    setup();
+    const ids = searchChains('optimism mainnet').map(c => c.chainId);
+    expect(ids[0]).toBe(10);
+    expect(ids).not.toContain(69); // testnet excluded by the qualifier
+  });
+
+  it('plain "optimism" ranks OP Mainnet first, old testnets after', () => {
+    setup();
+    const ids = searchChains('optimism').map(c => c.chainId);
+    expect(ids[0]).toBe(10);
+    expect(ids).toContain(69);
+  });
+
+  it('"optimism testnet" returns the testnets, not the aliased mainnet', () => {
+    setup();
+    const ids = searchChains('optimism testnet').map(c => c.chainId);
+    expect(ids).toContain(69);
+    expect(ids).not.toContain(10);
+  });
+
+  it('an exact full name outranks substring lookalikes ("OP Mainnet" vs "Openpiece Mainnet")', () => {
+    setup();
+    expect(searchChains('OP Mainnet')[0].chainId).toBe(10);
+  });
+
+  it('resolves other well-known renames: bsc, xdai, matic', () => {
+    setup();
+    expect(searchChains('bsc').map(c => c.chainId)).toContain(56);
+    expect(searchChains('xdai').map(c => c.chainId)).toContain(100);
+    expect(searchChains('matic').map(c => c.chainId)).toContain(137);
+  });
+});

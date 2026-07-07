@@ -1,4 +1,5 @@
 import { cachedData } from './cache.js';
+import { CHAIN_ALIASES } from '../domain/chainAliases.js';
 
 function getChainByIdRaw(chainId) {
   if (!cachedData.indexed) return null;
@@ -97,6 +98,15 @@ export function searchChains(query) {
     push(parsedChainId);
   }
 
+  // An exact full-query name match is the best possible hit and ranks first:
+  // "OP Mainnet" must return chain 10 before substring lookalikes
+  // ("Openpiece Mainnet") that an earlier pass would otherwise surface.
+  for (const chain of cachedData.indexed.all) {
+    if (chain.name?.toLowerCase() === queryLower || chain.shortName?.toLowerCase() === queryLower) {
+      push(chain.chainId);
+    }
+  }
+
   const nameMatches = needle => {
     const hits = [];
     for (const chain of cachedData.indexed.all) {
@@ -120,6 +130,12 @@ export function searchChains(query) {
   if (qualifiers.length > 0 && nameTokens.length > 0) {
     const needle = nameTokens.join(' ');
     const wantTestnet = qualifiers.includes('testnet');
+    // Renamed chains ("optimism" → OP Mainnet) resolve via alias, still
+    // honouring the mainnet/testnet filter.
+    for (const chainId of CHAIN_ALIASES[needle] || []) {
+      const chain = cachedData.indexed.byChainId[chainId];
+      if (chain && ((chain.tags || []).includes('Testnet')) === wantTestnet) push(chainId);
+    }
     const eligible = nameMatches(needle).filter(
       chain => ((chain.tags || []).includes('Testnet')) === wantTestnet
     );
@@ -127,6 +143,12 @@ export function searchChains(query) {
       push(chain.chainId);
     }
     for (const chain of eligible) push(chain.chainId);
+  }
+
+  // Alias hit for the plain query ("optimism", "bsc", "matic") — the chains
+  // everyone still calls by their pre-rename names.
+  for (const chainId of CHAIN_ALIASES[queryLower] || []) {
+    if (cachedData.indexed.byChainId[chainId]) push(chainId);
   }
 
   // Plain substring pass (original behavior) — also covers phrases where the
