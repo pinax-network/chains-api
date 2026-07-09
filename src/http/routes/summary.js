@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { cachedData } from '../../store/cache.js';
+import { aliasTerms } from '../../store/queries.js';
 
 /**
  * GET /summary — slim, dashboard-oriented projection of the in-memory store.
@@ -29,6 +30,16 @@ function slimChain(chain) {
     rpcCount: usableRpcCount(chain.rpc)
   };
   if (chain.shortName) slim.shortName = chain.shortName;
+  // Community names of renamed chains (from the TheGraph registry) so the
+  // dashboard's client-side search finds "optimism" → OP Mainnet just like
+  // the server's /search does. Machine ids ("evm-10") and terms already
+  // covered by name/shortName are dropped to keep the payload slim.
+  const nameLower = (chain.name ?? '').toLowerCase();
+  const shortLower = (chain.shortName ?? '').toLowerCase();
+  const aliases = [...aliasTerms(chain)].filter(
+    t => !t.startsWith('evm-') && !t.startsWith('evm ') && t !== nameLower && t !== shortLower
+  );
+  if (aliases.length) slim.aliases = aliases;
   if (Array.isArray(chain.tags) && chain.tags.length) slim.tags = chain.tags;
   if (Array.isArray(chain.relations) && chain.relations.length) {
     slim.relations = chain.relations

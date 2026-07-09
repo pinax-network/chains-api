@@ -88,7 +88,7 @@ const NETWORK_QUALIFIERS = new Set(['mainnet', 'testnet']);
 // "optimism-mainnet" matches the query "optimism mainnet".
 const NO_ALIASES = new Set();
 
-function aliasTerms(chain) {
+export function aliasTerms(chain) {
   const tg = chain.theGraph;
   if (!tg) return NO_ALIASES;
   const terms = new Set();
