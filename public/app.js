@@ -364,8 +364,11 @@ function initSearch() {
     const renderDropdown = debounce(q => {
         if (!q) { dd.classList.add('hidden'); return; }
         const matches = state.chains.filter(c => chainMatchesQuery(c, q)).sort((a, b) => {
-            // A name OR alias starting with the query outranks mid-string
-            // hits, so "optimism" puts OP Mainnet (alias match) on top.
+            // Dead chains sink below living ones, then a name OR alias
+            // starting with the query outranks mid-string hits — "optimism"
+            // puts OP Mainnet (alias match) on top, Optimism Kovan last.
+            const ad = a.status === 'deprecated', bd = b.status === 'deprecated';
+            if (ad !== bd) return ad ? 1 : -1;
             const hit = c => (c.name || '').toLowerCase().startsWith(q) || (c.aliases || []).some(t => t.startsWith(q));
             const as = hit(a), bs = hit(b);
             if (as !== bs) return as ? -1 : 1;
@@ -378,7 +381,7 @@ function initSearch() {
                 networkIcon(c.name, COLORS[classify(c)], 'dropdown-icon'),
                 el('div', { class: 'dropdown-info' }, [
                     el('span', { class: 'dropdown-name', text: c.name || `Chain ${c.chainId}` }),
-                    el('div', { class: 'dropdown-meta', text: `ID: ${c.chainId} · ${(c.tags || []).join(', ') || classify(c)}` })
+                    el('div', { class: 'dropdown-meta', text: `ID: ${c.chainId} · ${(c.tags || []).join(', ') || classify(c)}${c.status === 'deprecated' ? ' · deprecated' : ''}` })
                 ])
             ]));
         }

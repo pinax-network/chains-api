@@ -69,6 +69,19 @@ describe('indexer — chain status resolution', () => {
     expect(indexed.byChainId[4000].status).toBe('deprecated');
   });
 
+  it('propagation overrides an explicit upstream "active" on the child (stale upstream data)', () => {
+    // Live example: chains.json still marks Linea Goerli 'active' while its
+    // Goerli parent is dead. Propagation must win or validation rule 17
+    // (active child of deprecated parent) becomes unsatisfiable.
+    const chains = [
+      { chainId: 5, name: 'Goerli' }, // curated EOL
+      { chainId: 59140, name: 'Linea Stale', status: 'active', parent: { type: 'L2', chain: 'eip155-5' } }
+    ];
+    const indexed = indexData(null, null, chains, null);
+    expect(indexed.byChainId[59140].status).toBe('deprecated');
+    expect(indexed.byChainId[59140].statusReason).toContain('inherited');
+  });
+
   it('never propagates upward: a dead testnet does not kill its mainnet', () => {
     const chains = [
       { chainId: 10, name: 'Living Mainnet' },

@@ -421,9 +421,19 @@ function applyCuratedEolStatus(indexed) {
 // "Parent EOL → dependents EOL": a chain built on (l2Of) or testing
 // (testnetOf) a deprecated chain is itself deprecated, transitively. The
 // fixpoint loop handles L3-and-deeper stacks; propagation never runs upward
-// (a dead testnet must not kill its mainnet). Runs before applyDefaultStatus
-// so an inherited 'deprecated' beats the 'active' default, but after all
-// sources so explicit statuses are already in place.
+// (a dead testnet must not kill its mainnet).
+//
+// Status precedence, weakest to strongest:
+//   1. applyDefaultStatus 'active' fill (no one vouched for the chain)
+//   2. curated EOL seed — DEFERS to any explicit source status
+//   3. explicit source status (chains.json / chainlist)
+//   4. propagation — OVERRIDES even an explicit 'active'
+// Propagation deliberately outranks upstream: chains.json still says
+// 'active' on e.g. Linea Goerli while its Goerli parent is dead — stale
+// child statuses are exactly what this pass exists to correct, and the
+// rule-17 validation invariant (no active child of a deprecated parent)
+// is only satisfiable if propagation wins. Do not add an explicit-status
+// exemption here without removing that rule.
 function propagateDeprecatedStatus(indexed) {
   const chains = Object.values(indexed.byChainId);
   let changed = true;
