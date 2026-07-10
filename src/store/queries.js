@@ -29,6 +29,7 @@ function transformChain(chain) {
   if (chain.sources) transformedChain.sources = chain.sources;
   if (chain.tags) transformedChain.tags = chain.tags;
   if (chain.status) transformedChain.status = chain.status;
+  if (chain.statusReason) transformedChain.statusReason = chain.statusReason;
   if (chain.bridges) transformedChain.bridges = chain.bridges;
   if (chain.l2Beat) transformedChain.l2Beat = chain.l2Beat;
   if (chain.forumUrl) transformedChain.forumUrl = chain.forumUrl;
@@ -177,7 +178,9 @@ export function searchChains(query) {
     push(chain.chainId);
   }
 
-  return results;
+  // Dead chains sink below living ones (stable sort keeps the rank order
+  // within each group) — "optimism" should not lead with Optimism Kovan.
+  return results.sort((a, b) => (a.status === 'deprecated') - (b.status === 'deprecated'));
 }
 
 export function countChainsByTag(chains) {

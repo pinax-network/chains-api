@@ -474,6 +474,29 @@ function validateRule16RpcUrlInOneSourceOnly(chain, errors) {
   });
 }
 
+// The indexer's propagateDeprecatedStatus pass guarantees a chain built on
+// (l2Of) or testing (testnetOf) a deprecated chain is itself deprecated.
+// This rule re-checks that invariant on the final index — any hit means the
+// propagation pass regressed or was bypassed.
+function validateRule17ActiveChildOfDeprecatedParent(chain, errors, byChainId) {
+  if (chain.status === 'deprecated') return;
+  for (const relation of chain.relations || []) {
+    if ((relation.kind !== 'l2Of' && relation.kind !== 'testnetOf') || relation.chainId === undefined) continue;
+    const parent = byChainId[relation.chainId];
+    if (parent?.status === 'deprecated') {
+      errors.push({
+        rule: 17,
+        chainId: chain.chainId,
+        chainName: chain.name,
+        type: 'active_child_of_deprecated_parent',
+        message: `Chain ${chain.chainId} (${chain.name}) is ${chain.status || 'active'} but its ${relation.kind} parent ${relation.chainId} (${parent.name}) is deprecated`,
+        parentChainId: relation.chainId,
+        relationKind: relation.kind
+      });
+    }
+  }
+}
+
 function validateChain(chain, errors) {
   validateRule1RelationConflicts(chain, errors);
   validateRule2Slip44Mismatch(chain, errors);
@@ -490,6 +513,7 @@ function validateChain(chain, errors) {
   validateRule14NativeCurrencyMismatch(chain, errors);
   validateRule15Slip44NativeSymbolMismatch(chain, errors);
   validateRule16RpcUrlInOneSourceOnly(chain, errors);
+  validateRule17ActiveChildOfDeprecatedParent(chain, errors, cachedData.indexed.byChainId);
 }
 
 export function validateChainData() {
@@ -525,7 +549,8 @@ export function validateChainData() {
     rule13_name_disagreement: errors.filter(e => e.rule === 13),
     rule14_native_currency_mismatch: errors.filter(e => e.rule === 14),
     rule15_slip44_native_symbol_mismatch: errors.filter(e => e.rule === 15),
-    rule16_rpc_url_in_one_source_only: errors.filter(e => e.rule === 16)
+    rule16_rpc_url_in_one_source_only: errors.filter(e => e.rule === 16),
+    rule17_active_child_of_deprecated_parent: errors.filter(e => e.rule === 17)
   };
 
   return {
@@ -547,7 +572,8 @@ export function validateChainData() {
       rule13: errorsByRule.rule13_name_disagreement.length,
       rule14: errorsByRule.rule14_native_currency_mismatch.length,
       rule15: errorsByRule.rule15_slip44_native_symbol_mismatch.length,
-      rule16: errorsByRule.rule16_rpc_url_in_one_source_only.length
+      rule16: errorsByRule.rule16_rpc_url_in_one_source_only.length,
+      rule17: errorsByRule.rule17_active_child_of_deprecated_parent.length
     },
     allErrors: errors
   };

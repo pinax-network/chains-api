@@ -144,4 +144,16 @@ describe('searchChains — renamed-chain aliases + exact-name ranking', () => {
     // "optimism-mainnet" is a registry alias; users type "optimism mainnet"
     expect(searchChains('op mainnet')[0].chainId).toBe(10);
   });
+
+  it('ranks deprecated chains below living ones', () => {
+    cachedData.indexed = indexData(null, null, [
+      { chainId: 69, name: 'Optimism Kovan' },              // curated EOL → deprecated
+      { chainId: 11155420, name: 'OP Sepolia Testnet' }
+    ], null);
+    _resetGetAllChainsCacheForTests();
+    const results = searchChains('op');
+    const ids = results.map(c => c.chainId);
+    expect(ids.indexOf(11155420)).toBeLessThan(ids.indexOf(69));
+    expect(results.find(c => c.chainId === 69).status).toBe('deprecated');
+  });
 });

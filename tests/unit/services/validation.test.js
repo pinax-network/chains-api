@@ -459,6 +459,41 @@ describe('validation — L2BEAT cross-source rules', () => {
     });
   });
 
+  describe('rule 17: active_child_of_deprecated_parent', () => {
+    it('flags an active chain whose l2Of parent is deprecated (propagation regression guard)', () => {
+      seedCache({
+        chains: [
+          { chainId: 5, name: 'Goerli', status: 'deprecated', tags: [], relations: [] },
+          {
+            chainId: 420, name: 'Optimism Goerli', status: 'active', tags: ['L2'],
+            relations: [{ kind: 'l2Of', chainId: 5, source: 'chains' }]
+          }
+        ]
+      });
+      const errs = findErrorsForRule(validateChainData(), 17);
+      expect(errs).toHaveLength(1);
+      expect(errs[0]).toMatchObject({ chainId: 420, parentChainId: 5, relationKind: 'l2Of' });
+    });
+
+    it('does NOT flag when the child is already deprecated or the parent is alive', () => {
+      seedCache({
+        chains: [
+          { chainId: 5, name: 'Goerli', status: 'deprecated', tags: [], relations: [] },
+          {
+            chainId: 420, name: 'Optimism Goerli', status: 'deprecated', tags: ['L2'],
+            relations: [{ kind: 'l2Of', chainId: 5, source: 'chains' }]
+          },
+          {
+            chainId: 10, name: 'OP Mainnet', status: 'active', tags: ['L2'],
+            relations: [{ kind: 'l2Of', chainId: 1, source: 'chains' }]
+          },
+          { chainId: 1, name: 'Ethereum', status: 'active', tags: [], relations: [] }
+        ]
+      });
+      expect(findErrorsForRule(validateChainData(), 17)).toHaveLength(0);
+    });
+  });
+
   describe('summary aggregation', () => {
     it('reports counts for all 11 rules in summary + errorsByRule', () => {
       seedCache({
@@ -471,7 +506,7 @@ describe('validation — L2BEAT cross-source rules', () => {
         }]
       });
       const report = validateChainData();
-      for (const n of [7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
+      for (const n of [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]) {
         expect(report.summary).toHaveProperty(`rule${n}`);
       }
       expect(report.errorsByRule).toHaveProperty('rule7_l2beat_missing_classification');
@@ -480,6 +515,7 @@ describe('validation — L2BEAT cross-source rules', () => {
       expect(report.errorsByRule).toHaveProperty('rule14_native_currency_mismatch');
       expect(report.errorsByRule).toHaveProperty('rule15_slip44_native_symbol_mismatch');
       expect(report.errorsByRule).toHaveProperty('rule16_rpc_url_in_one_source_only');
+      expect(report.errorsByRule).toHaveProperty('rule17_active_child_of_deprecated_parent');
     });
   });
 });

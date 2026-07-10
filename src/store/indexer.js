@@ -1,5 +1,6 @@
 import { attachStatusPages } from '../sources/statusPages.js';
 import { attachForums } from '../sources/forums.js';
+import { isKnownEolChain } from '../domain/eolChains.js';
 
 /**
  * Build a mapping of network IDs to chain IDs from The Graph data
@@ -164,7 +165,10 @@ function mergeChainlistEntry(chainData, indexed) {
       sources: ['chainlist'],
       tags: [],
       relations: [],
-      status: chainData.status || 'active',
+      // Status is only stamped when the source states one — "no status" must
+      // stay distinguishable from "active" until applyDefaultStatus, so the
+      // curated EOL pass knows which chains upstream actually vouched for.
+      ...(chainData.status && { status: chainData.status }),
       ...(chainData.slip44 !== undefined && { slip44: chainData.slip44 })
     };
   }
@@ -192,8 +196,9 @@ function createTheGraphChainEntry(chainId, network) {
     explorers: network.explorerUrls || [],
     sources: ['theGraph'],
     tags: [],
-    relations: [],
-    status: 'active'
+    relations: []
+    // No status: the registry doesn't state one; applyDefaultStatus fills
+    // 'active' at the end, AFTER the curated EOL pass has had first look.
   };
 }
 
@@ -318,11 +323,19 @@ function indexChainsSource(chains, indexed) {
         sources: ['chains'],
         tags: [],
         relations: [],
-        status: chain.status || 'active',
+        // Only stamped when upstream states one (see mergeChainlistEntry).
+        ...(chain.status && { status: chain.status }),
         ...(chain.slip44 !== undefined && { slip44: chain.slip44 })
       };
-    } else if (chain.slip44 !== undefined && indexed.byChainId[chainId].slip44 === undefined) {
-      indexed.byChainId[chainId].slip44 = chain.slip44;
+    } else {
+      if (chain.slip44 !== undefined && indexed.byChainId[chainId].slip44 === undefined) {
+        indexed.byChainId[chainId].slip44 = chain.slip44;
+      }
+      // An upstream status must reach entries another source created first —
+      // this branch used to merge only slip44, silently dropping it.
+      if (chain.status && !indexed.byChainId[chainId].status) {
+        indexed.byChainId[chainId].status = chain.status;
+      }
     }
 
     if (chain.slip44 === 1) {
@@ -390,6 +403,46 @@ function applyDefaultStatus(indexed) {
     const chain = indexed.byChainId[chainId];
     if (!chain.status) chain.status = 'active';
   });
+}
+
+// The famous dead networks (Ropsten, Goerli, Mumbai, the Kovan/Goerli-era
+// L2 testnets…) carry no status in ANY upstream source, so they used to
+// default to 'active'. Seed them from the curated list — but never override
+// a status a source explicitly stated, so upstream stays authoritative.
+function applyCuratedEolStatus(indexed) {
+  Object.values(indexed.byChainId).forEach(chain => {
+    if (!chain.status && isKnownEolChain(chain)) {
+      chain.status = 'deprecated';
+      chain.statusReason = 'curated: known end-of-life network';
+    }
+  });
+}
+
+// "Parent EOL → dependents EOL": a chain built on (l2Of) or testing
+// (testnetOf) a deprecated chain is itself deprecated, transitively. The
+// fixpoint loop handles L3-and-deeper stacks; propagation never runs upward
+// (a dead testnet must not kill its mainnet). Runs before applyDefaultStatus
+// so an inherited 'deprecated' beats the 'active' default, but after all
+// sources so explicit statuses are already in place.
+function propagateDeprecatedStatus(indexed) {
+  const chains = Object.values(indexed.byChainId);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const chain of chains) {
+      if (chain.status === 'deprecated') continue;
+      const deadParent = (chain.relations || []).find(r =>
+        (r.kind === 'l2Of' || r.kind === 'testnetOf') &&
+        r.chainId !== undefined &&
+        indexed.byChainId[r.chainId]?.status === 'deprecated'
+      );
+      if (deadParent) {
+        chain.status = 'deprecated';
+        chain.statusReason = `inherited: ${deadParent.kind} chain ${deadParent.chainId} is deprecated`;
+        changed = true;
+      }
+    }
+  }
 }
 
 function addReverseRelations(indexed) {
@@ -526,6 +579,11 @@ export function indexData(theGraph, chainlist, chains, slip44, l2beat) {
   attachSlip44Info(slip44, indexed);
   attachStatusPages(indexed);
   attachForums(indexed);
+  // Status resolution order matters: curated EOL seeds (only where no source
+  // stated a status) → propagate deprecated to l2Of/testnetOf dependents →
+  // default the rest to 'active'.
+  applyCuratedEolStatus(indexed);
+  propagateDeprecatedStatus(indexed);
   applyDefaultStatus(indexed);
   addReverseRelations(indexed);
   indexL2BeatSource(l2beat, indexed);
