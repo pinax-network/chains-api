@@ -79,6 +79,34 @@ describe('GET /summary', () => {
     expect(eth.theGraph).toBeUndefined();
   });
 
+  it('ships registry aliases for renamed chains, minus machine ids and name duplicates', async () => {
+    seed({
+      indexed: {
+        byChainId: {},
+        byName: {},
+        all: [{
+          chainId: 10,
+          name: 'OP Mainnet',
+          shortName: 'oeth',
+          theGraph: {
+            id: 'optimism',
+            shortName: 'Optimism',
+            aliases: ['evm-10', 'op-mainnet', 'optimism-mainnet']
+          }
+        }]
+      },
+      lastUpdated: '2026-06-02T00:00:00.000Z'
+    });
+    _resetSummaryCacheForTests();
+    const res = await app.inject({ method: 'GET', url: '/summary' });
+    const op = res.json().chains.find(c => c.chainId === 10);
+    expect(op.aliases).toContain('optimism');            // graph id
+    expect(op.aliases).toContain('optimism mainnet');    // hyphen → space variant
+    expect(op.aliases).toContain('op-mainnet');
+    expect(op.aliases.some(a => a.startsWith('evm'))).toBe(false); // machine ids dropped
+    expect(op.aliases).not.toContain('op mainnet');      // = the chain's own name, already matched
+  });
+
   it('omits empty optional fields and defaults rpcCount to 0', async () => {
     const res = await app.inject({ method: 'GET', url: '/summary' });
     const bare = res.json().chains.find(c => c.chainId === 999);

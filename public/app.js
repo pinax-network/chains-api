@@ -344,6 +344,16 @@ function applyUrlState() {
 }
 
 // ─────────────────────────────── search (global) ───────────────────────────────
+// One predicate for every chain search surface (dropdown, networks table):
+// id, name, shortName, and the registry aliases /summary ships for renamed
+// chains — typing "optimism" must find OP Mainnet (10), "xdai" → Gnosis.
+function chainMatchesQuery(c, q) {
+    return String(c.chainId).includes(q)
+        || c.name?.toLowerCase().includes(q)
+        || c.shortName?.toLowerCase().includes(q)
+        || (c.aliases || []).some(a => a.includes(q));
+}
+
 function initSearch() {
     const input = document.getElementById('searchInput');
     const dd = document.getElementById('searchDropdown');
@@ -353,13 +363,13 @@ function initSearch() {
     // Networks/Incidents the same query also filters the page.
     const renderDropdown = debounce(q => {
         if (!q) { dd.classList.add('hidden'); return; }
-        const matches = state.chains.filter(c =>
-            String(c.chainId).includes(q) || c.name?.toLowerCase().includes(q) || c.shortName?.toLowerCase().includes(q)
-        ).sort((a, b) => {
-            const an = (a.name || '').toLowerCase(), bn = (b.name || '').toLowerCase();
-            const as = an.startsWith(q), bs = bn.startsWith(q);
+        const matches = state.chains.filter(c => chainMatchesQuery(c, q)).sort((a, b) => {
+            // A name OR alias starting with the query outranks mid-string
+            // hits, so "optimism" puts OP Mainnet (alias match) on top.
+            const hit = c => (c.name || '').toLowerCase().startsWith(q) || (c.aliases || []).some(t => t.startsWith(q));
+            const as = hit(a), bs = hit(b);
             if (as !== bs) return as ? -1 : 1;
-            return an.localeCompare(bn);
+            return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
         }).slice(0, 40);
         dd.textContent = ''; activeIdx = -1;
         if (!matches.length) dd.appendChild(el('div', { class: 'dropdown-empty', text: 'No networks found.' }));
@@ -590,7 +600,7 @@ function renderChainsView() {
             else if (chainTagFilter === 'Testnet') { if (!c.tags?.includes('Testnet')) return false; }  // env: testnet (incl. testnet-L2s)
             else if (!c.tags?.includes(chainTagFilter)) return false;                                   // tag membership: L2 / Beacon / ZK …
         }
-        if (q && !(`${c.chainId}`.includes(q) || c.name?.toLowerCase().includes(q) || c.shortName?.toLowerCase().includes(q))) return false;
+        if (q && !chainMatchesQuery(c, q)) return false;
         return true;
     }).map(chainRowData);
 
