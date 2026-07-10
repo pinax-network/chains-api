@@ -132,7 +132,7 @@ export function getToolDefinitions() {
     },
     {
       name: 'validate_chains',
-      description: 'Validate chain data for potential quality issues across 6 validation rules (relation conflicts, slip44 mismatches, name/testnet mismatches, sepolia/hoodie issues, status conflicts, goerli deprecation)',
+      description: 'Validate chain data for potential quality issues across 17 cross-source validation rules (relation conflicts, slip44/name/status mismatches, L2BEAT consistency, RPC drift, deprecated-parent propagation, and more)',
       inputSchema: {
         type: 'object',
         properties: {},

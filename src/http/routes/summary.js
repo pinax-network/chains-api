@@ -30,6 +30,9 @@ function slimChain(chain) {
     rpcCount: usableRpcCount(chain.rpc)
   };
   if (chain.shortName) slim.shortName = chain.shortName;
+  // Only non-default statuses ship (deprecated/incubating) — the dashboard
+  // badges them and demotes dead chains in its search; 'active' is implied.
+  if (chain.status && chain.status !== 'active') slim.status = chain.status;
   // Community names of renamed chains (from the TheGraph registry) so the
   // dashboard's client-side search finds "optimism" → OP Mainnet just like
   // the server's /search does. Machine ids ("evm-10") and terms already

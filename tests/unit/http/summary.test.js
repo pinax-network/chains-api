@@ -107,6 +107,25 @@ describe('GET /summary', () => {
     expect(op.aliases).not.toContain('op mainnet');      // = the chain's own name, already matched
   });
 
+  it('ships non-default statuses and omits the implied active', async () => {
+    seed({
+      indexed: {
+        byChainId: {},
+        byName: {},
+        all: [
+          { chainId: 5, name: 'Goerli', status: 'deprecated' },
+          { chainId: 1, name: 'Ethereum Mainnet', status: 'active' }
+        ]
+      },
+      lastUpdated: '2026-06-03T00:00:00.000Z'
+    });
+    _resetSummaryCacheForTests();
+    const res = await app.inject({ method: 'GET', url: '/summary' });
+    const chains = res.json().chains;
+    expect(chains.find(c => c.chainId === 5).status).toBe('deprecated');
+    expect(chains.find(c => c.chainId === 1).status).toBeUndefined(); // active is implied
+  });
+
   it('omits empty optional fields and defaults rpcCount to 0', async () => {
     const res = await app.inject({ method: 'GET', url: '/summary' });
     const bare = res.json().chains.find(c => c.chainId === 999);
