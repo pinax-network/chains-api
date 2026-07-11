@@ -268,7 +268,7 @@ export function getToolDefinitions() {
     {
       name: 'get_live_incidents',
       description:
-        'Get LIVE incidents and scheduled maintenance from chain operator status pages and RPC provider status pages (Infura, QuickNode, dRPC, Pinax). Use for questions like "is X down", "any incidents today", "provider outages". Near-real-time (cached ~60s).',
+        'Get LIVE incidents and scheduled maintenance from chain operator status pages and RPC provider status pages (Infura, QuickNode, dRPC, Pinax). Use for questions like "is X down", "any incidents today", "provider outages". Each item carries a lifecycle `status` and an `ongoing` flag: for "is X down right now" pass ongoing=true; for "scheduled/upcoming maintenance" pass status="maintenance_scheduled" (its publishedAt is when the maintenance starts). Near-real-time (cached ~60s).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -287,7 +287,16 @@ export function getToolDefinitions() {
           },
           ongoing: {
             type: 'boolean',
-            description: 'true = only currently-active incidents (best for "is X down right now"), false = only resolved',
+            description: 'true = only currently-active incidents/outages (best for "is X down right now"); false = only non-active items (resolved, completed, or not-yet-started maintenance)',
+          },
+          status: {
+            type: 'string',
+            enum: [
+              'investigating', 'identified', 'monitoring', 'resolved',
+              'maintenance_scheduled', 'maintenance_in_progress', 'maintenance_completed',
+              'operational', 'degraded', 'partial_outage', 'major_outage', 'unknown',
+            ],
+            description: 'Only incidents in this exact lifecycle state. Use "maintenance_scheduled" for upcoming/planned maintenance, or "investigating"/"identified"/"monitoring" for open incidents',
           },
           limit: {
             type: 'number',
@@ -707,9 +716,9 @@ async function handleGetForumNews(args) {
 }
 
 async function handleGetLiveIncidents(args) {
-  const { type, chainId, provider, ongoing, limit } = args ?? {};
+  const { type, chainId, provider, ongoing, status, limit } = args ?? {};
   try {
-    const result = await getLiveIncidents({ type, chainId, provider, ongoing, limit });
+    const result = await getLiveIncidents({ type, chainId, provider, ongoing, status, limit });
     // publishedMs is an internal sort key; drop it from tool output
     return textResponse({
       ...result,

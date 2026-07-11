@@ -81,6 +81,17 @@ describe('getLiveIncidents', () => {
     expect((await getLiveIncidents()).incidents).toHaveLength(2); // no filter → both
   });
 
+  it('filters by lifecycle status', async () => {
+    proxyFetch.mockResolvedValue(okResponse([
+      feedEvent({ title: 'Open incident', status: 'investigating' }),
+      feedEvent({ title: 'Planned upgrade', status: 'maintenance_scheduled' }),
+      feedEvent({ title: 'Old incident', status: 'resolved' }),
+    ]));
+    expect((await getLiveIncidents({ status: 'maintenance_scheduled' })).incidents.map((i) => i.title)).toEqual(['Planned upgrade']);
+    expect((await getLiveIncidents({ status: 'investigating' })).incidents.map((i) => i.title)).toEqual(['Open incident']);
+    expect((await getLiveIncidents({ status: 'major_outage' })).incidents).toHaveLength(0);
+  });
+
   it('serves from cache within the TTL (single upstream fetch)', async () => {
     proxyFetch.mockResolvedValue(okResponse([feedEvent()]));
     await getLiveIncidents();
