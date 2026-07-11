@@ -31,16 +31,18 @@ export function _resetLiveIncidentsCacheForTests() {
  * @param {'chain'|'provider'|'all'} [options.type] chain-operator vs RPC-provider incidents
  * @param {number} [options.chainId] only incidents affecting this chain
  * @param {string} [options.provider] only incidents from this provider id (e.g. "infura")
+ * @param {boolean} [options.ongoing] true = only active incidents, false = only resolved
  * @param {number} [options.limit] max incidents returned (default 30, max 100)
  * @returns {Promise<{fetchedAt: string, count: number, incidents: object[]}>}
  * @throws when the feed is unreachable and no cached data exists
  */
-export async function getLiveIncidents({ type = 'all', chainId, provider, limit = DEFAULT_LIMIT } = {}) {
+export async function getLiveIncidents({ type = 'all', chainId, provider, ongoing, limit = DEFAULT_LIMIT } = {}) {
   const incidents = await loadIncidents();
   let filtered = incidents;
   if (type === 'chain') filtered = filtered.filter((it) => !it.isProvider);
   else if (type === 'provider') filtered = filtered.filter((it) => it.isProvider);
   if (chainId != null) filtered = filtered.filter((it) => it.chains.some((c) => c.chainId === chainId));
+  if (typeof ongoing === 'boolean') filtered = filtered.filter((it) => it.ongoing === ongoing);
   if (provider) {
     const p = String(provider).toLowerCase();
     filtered = filtered.filter((it) => it.statusPage.id?.toLowerCase() === p);
@@ -96,6 +98,13 @@ function normalizeEvents(events) {
       url: ev.url || null,
       publishedAt: publishedMs != null ? new Date(publishedMs).toISOString() : null,
       publishedMs,
+      // Structured incident state from the feed (Atlassian/webhook exact, or
+      // text-derived server-side for feed-only providers). Kept so the assistant
+      // and MCP tools can tell an active incident from a long-resolved one
+      // without re-parsing titles.
+      status: ev.status ?? null,
+      ongoing: typeof ev.ongoing === 'boolean' ? ev.ongoing : null,
+      impact: ev.impact ?? null,
       statusPage: { id: statusPage.id || null, name: statusPage.name || null, kind: statusPage.kind || null },
       isProvider: statusPage.kind === 'rpc-provider',
       chains: Array.isArray(ev.chains)

@@ -285,6 +285,10 @@ export function getToolDefinitions() {
             type: 'string',
             description: 'Only incidents from this RPC provider id (e.g. "infura", "quicknode")',
           },
+          ongoing: {
+            type: 'boolean',
+            description: 'true = only currently-active incidents (best for "is X down right now"), false = only resolved',
+          },
           limit: {
             type: 'number',
             description: 'Max incidents to return (default 30, max 100)',
@@ -703,9 +707,9 @@ async function handleGetForumNews(args) {
 }
 
 async function handleGetLiveIncidents(args) {
-  const { type, chainId, provider, limit } = args ?? {};
+  const { type, chainId, provider, ongoing, limit } = args ?? {};
   try {
-    const result = await getLiveIncidents({ type, chainId, provider, limit });
+    const result = await getLiveIncidents({ type, chainId, provider, ongoing, limit });
     // publishedMs is an internal sort key; drop it from tool output
     return textResponse({
       ...result,

@@ -317,7 +317,7 @@ function applySearch() {
     if (activeView === 'networks') { chainShown = CHAIN_PAGE; renderChainsView(); }
     else if (activeView === 'incidents') renderIncidentList();
     else if (activeView === 'providers') renderProviderList();
-    else if (activeView === 'forum') renderForumList();
+    else if (activeView === 'forum') { renderForumTreemap(); renderForumList(); }
 }
 
 function updateUrl({ push = false } = {}) {
@@ -673,10 +673,23 @@ async function loadStatusPages() {
 const STATUS_WORDS = ['Resolved', 'Completed', 'Monitoring', 'Verifying', 'Update', 'Identified', 'Investigating', 'Scheduled', 'In progress'];
 // Statuses that close an incident/maintenance — used to know it's done.
 const CLOSED_STATUSES = new Set(['resolved', 'completed', 'closed']);
+// chains-status-news now emits a normalized `status` (and `ongoing`) on every
+// event — exact for Atlassian/webhook sources, text-derived server-side for
+// feed-only providers. Prefer it; the summary-scraping below is only a fallback
+// for older cached events that predate the field. Maps the wire vocabulary
+// (src/incidentState.js STATUS) to the display label the cards already use.
+const SERVER_STATUS_LABEL = {
+    investigating: 'Investigating', identified: 'Identified', monitoring: 'Monitoring', resolved: 'Resolved',
+    maintenance_scheduled: 'Scheduled', maintenance_in_progress: 'In progress', maintenance_completed: 'Completed',
+    operational: 'Operational', degraded: 'Degraded', partial_outage: 'Partial outage', major_outage: 'Major outage'
+};
+const SCHEDULED_STATUSES = new Set(['maintenance_scheduled', 'maintenance_in_progress', 'maintenance_completed']);
 const incidents = { items: [], byKey: new Map(), ws: null, retries: 0, groupBy: 'flat', dayFilter: null, category: 'all' };
 const providers = { filter: 'all', dayFilter: null };
 
 function parseIncidentStatus(ev) {
+    const label = SERVER_STATUS_LABEL[ev.status];
+    if (label) return label;
     const s = ev.summary || '';
     const m = s.match(new RegExp(`<strong>\\s*(${STATUS_WORDS.join('|')})\\s*</strong>`, 'i'));
     if (m) return m[1];
@@ -684,10 +697,13 @@ function parseIncidentStatus(ev) {
     if (m2) return m2[1].trim();
     return null;
 }
-// Incident vs scheduled maintenance. Incident lifecycle words win (so an
-// "Investigating…" event isn't miscategorised); otherwise maintenance/upgrade
+// Incident vs scheduled maintenance. The server's structured status decides it
+// when present; otherwise fall back to text — incident lifecycle words win (so
+// an "Investigating…" event isn't miscategorised), then maintenance/upgrade
 // signals mark it scheduled.
 function classifyKind(ev) {
+    if (SCHEDULED_STATUSES.has(ev.status)) return 'scheduled';
+    if (SERVER_STATUS_LABEL[ev.status]) return 'incident';
     const blob = `${ev.title || ''} ${ev.summary || ''}`;
     if (/\b(Investigating|Identified|Monitoring)\b/i.test(blob)) return 'incident';
     if (/\b(Scheduled|Maintenance|Verifying|Completed|In progress)\b/i.test(blob) || /maintenance|upgrade|planned/i.test(ev.title || '')) return 'scheduled';
@@ -741,6 +757,9 @@ function incidentModel(ev) {
         firstSeen: whenMs,
         lastSeen: whenMs,
         status: parseIncidentStatus(ev),
+        // Authoritative active/resolved flag from the feed; null on older cached
+        // events, where the card falls back to matching the status label.
+        ongoing: typeof ev.ongoing === 'boolean' ? ev.ongoing : null,
         kind: classifyKind(ev),
         durationMs: (() => { const t = parseIncidentTimes(ev); return t ? t.end - t.start : null; })(),
         netName: chain?.name || ev.statusPage?.name || ev.statusPage?.id || 'Unknown',
@@ -768,7 +787,7 @@ function addIncidents(events) {
             existing.firstSeen = Math.min(existing.firstSeen ?? m.whenMs, m.whenMs);
             existing.lastSeen = Math.max(existing.lastSeen ?? m.whenMs, m.whenMs);
             if (existing.whenMs == null || m.whenMs >= existing.whenMs) { // newest event wins for current status
-                existing.whenMs = m.whenMs; existing.status = m.status; existing.url = m.url; existing.kind = m.kind;
+                existing.whenMs = m.whenMs; existing.status = m.status; existing.ongoing = m.ongoing; existing.url = m.url; existing.kind = m.kind;
                 if (m.affectedChains.length) existing.affectedChains = m.affectedChains;
                 if (m.affectedComponents.length) existing.affectedComponents = m.affectedComponents;
             }
@@ -864,7 +883,9 @@ function renderCalendar() {
 function incidentCard(it) {
     const isProvider = !!it.isProvider;
     const label = isProvider ? it.providerName : it.netName;
-    const open = it.status && !CLOSED_STATUSES.has(it.status.toLowerCase());
+    const open = it.ongoing != null
+        ? it.ongoing
+        : Boolean(it.status && !CLOSED_STATUSES.has(it.status.toLowerCase()));
     const when = it.whenMs != null ? new Date(it.whenMs).toLocaleString() : null;
     const meta = [label, when, open ? 'ongoing' : null].filter(Boolean);
     const dur = fmtDuration(it.durationMs);
@@ -1221,17 +1242,26 @@ function renderForumTreemap() {
     if (!forum.byForum.size) return;
     const width = wrap.clientWidth || 900;
     const height = FORUM_TREEMAP_HEIGHT;
-    const tiles = squarifyTreemap(
-        [...forum.byForum.values()].map(g => ({ value: g.posts.length, g })),
-        0, 0, width, height
-    );
+    // Size tiles by the posts that match the active search (drop forums with no
+    // match). searchQuery is global — a term left in the box or restored from
+    // ?q= filters the list below, so an unfiltered treemap would show full tiles
+    // whose clicks land on "0 posts". Filtering here keeps tiles and list in
+    // lockstep: every visible tile has clickable posts.
+    const nodes = [...forum.byForum.values()]
+        .map(g => ({ g, value: searchQuery ? g.posts.filter(p => forumMatchesSearch(p, searchQuery)).length : g.posts.length }))
+        .filter(n => n.value > 0);
+    const tiles = squarifyTreemap(nodes, 0, 0, width, height);
     const gap = 2;
     for (const t of tiles) {
         const g = t.ref.g;
+        const n = t.ref.value; // posts matching the current search (or total when unsearched)
         const active = forum.filter === g.id;
+        // With a search active, every rendered tile is a match — spotlight them
+        // so filtering by a chain visibly focuses that chain's forum in the map.
+        const focused = Boolean(searchQuery);
         const tile = el('button', {
-            class: `tm-tile${active ? ' active' : ''}`,
-            title: `${g.name} — ${g.posts.length} posts · ${g.recent} this week${g.momentum > 0.05 ? ' (heating up)' : g.momentum < -0.05 ? ' (cooling)' : ''}`,
+            class: `tm-tile${active ? ' active' : ''}${focused ? ' focus' : ''}`,
+            title: `${g.name} — ${n} posts · ${g.recent} this week${g.momentum > 0.05 ? ' (heating up)' : g.momentum < -0.05 ? ' (cooling)' : ''}`,
             onclick: () => { forum.filter = active ? null : g.id; renderForumTreemap(); renderForumList(); }
         });
         tile.style.left = `${t.x + gap / 2}px`;

@@ -57,6 +57,30 @@ describe('getLiveIncidents', () => {
     });
   });
 
+  it('passes through the structured incident state (status/ongoing/impact)', async () => {
+    proxyFetch.mockResolvedValue(okResponse([
+      feedEvent({ status: 'investigating', ongoing: true, impact: 'major' })
+    ]));
+    const result = await getLiveIncidents();
+    expect(result.incidents[0]).toMatchObject({ status: 'investigating', ongoing: true, impact: 'major' });
+  });
+
+  it('defaults state fields to null when the feed omits them', async () => {
+    proxyFetch.mockResolvedValue(okResponse([feedEvent()]));
+    const result = await getLiveIncidents();
+    expect(result.incidents[0]).toMatchObject({ status: null, ongoing: null, impact: null });
+  });
+
+  it('filters by ongoing state', async () => {
+    proxyFetch.mockResolvedValue(okResponse([
+      feedEvent({ title: 'Active', ongoing: true }),
+      feedEvent({ title: 'Resolved', ongoing: false })
+    ]));
+    expect((await getLiveIncidents({ ongoing: true })).incidents.map((i) => i.title)).toEqual(['Active']);
+    expect((await getLiveIncidents({ ongoing: false })).incidents.map((i) => i.title)).toEqual(['Resolved']);
+    expect((await getLiveIncidents()).incidents).toHaveLength(2); // no filter → both
+  });
+
   it('serves from cache within the TTL (single upstream fetch)', async () => {
     proxyFetch.mockResolvedValue(okResponse([feedEvent()]));
     await getLiveIncidents();
