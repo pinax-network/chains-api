@@ -74,7 +74,15 @@ function normalizeName(segment) {
  * tags, and any other suffix the client emits (e.g. "v1.26.0+commit.abc")
  * so the version string aggregates downstream as the client author meant it.
  * The raw input is still available via `raw` for callers that need it.
+ *
+ * One exception: an `@<instance>` label some clients append (e.g. mega-reth
+ * "v2.0.21-213cf2a@GS-Prod-TYO-VM4") identifies the *node*, not the release —
+ * keeping it would split one version into a distinct entry per node. Strip it
+ * so nodes on the same release aggregate together (only when text precedes the
+ * '@', so a stray leading '@' leaves the segment untouched).
  */
 function normalizeVersion(segment) {
-  return segment.trim();
+  const trimmed = segment.trim();
+  const at = trimmed.indexOf('@');
+  return at > 0 ? trimmed.slice(0, at).trim() : trimmed;
 }
