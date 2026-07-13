@@ -118,5 +118,25 @@ describe('clientsView', () => {
         makeResult(1, 'Ethereum', 'https://a', 'Geth', 'failed')
       ])).toBeNull();
     });
+
+    it('aggregates same-release nodes despite differing @instance labels', () => {
+      // The MegaETH regression: three mega-reth nodes, two of them on the same
+      // release but with distinct @<node-id> suffixes, must collapse to one
+      // version ×2 rather than three separate ×1 entries.
+      const summary = summarizeChainClients([
+        makeResult(4326, 'MegaETH Mainnet', 'https://a', 'mega-reth/v2.1.0-34f17a1@mnet-ash-rpc-2'),
+        makeResult(4326, 'MegaETH Mainnet', 'https://b', 'mega-reth/v2.0.21-213cf2a@GS-Prod-TYO-VM4'),
+        makeResult(4326, 'MegaETH Mainnet', 'https://c', 'mega-reth/v2.0.21-213cf2a@megaeth-arch44'),
+        makeResult(4326, 'MegaETH Mainnet', 'https://d', 'Geth/v10.0.0/drpc')
+      ]);
+      const megareth = summary.clients.find(c => c.name === 'mega-reth');
+      expect(megareth.nodeCount).toBe(3);
+      expect(megareth.versions).toEqual([
+        { version: 'v2.0.21-213cf2a', nodeCount: 2 },
+        { version: 'v2.1.0-34f17a1', nodeCount: 1 }
+      ]);
+      const geth = summary.clients.find(c => c.name === 'geth');
+      expect(geth.versions).toEqual([{ version: 'v10.0.0', nodeCount: 1 }]);
+    });
   });
 });

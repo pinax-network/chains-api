@@ -82,6 +82,16 @@ describe('parseClientVersion', () => {
       expect(a.raw).toBe('mega-reth/v2.0.21-213cf2a@GS-Prod-TYO-VM4');
     });
 
+    it('drops a trailing @ with no instance label', () => {
+      expect(parseClientVersion('mega-reth/v2.0.21@').version).toBe('v2.0.21');
+    });
+
+    it('leaves a version untouched when @ leads the segment (no release before it)', () => {
+      // Nothing precedes the '@', so there is no release to keep — the segment
+      // is left as-is rather than collapsing to an empty version.
+      expect(parseClientVersion('weird/@instance-only').version).toBe('@instance-only');
+    });
+
     it('parses reth', () => {
       const result = parseClientVersion('reth/v1.0.0-rc.1/x86_64-unknown-linux-gnu');
       expect(result.name).toBe('reth');
