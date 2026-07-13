@@ -693,6 +693,13 @@ const incidents = {
     eventToKey: new Map(), enrichByKey: new Map(), enrichPending: new Map(), enrichTimer: null
 };
 const providers = { filter: 'all', dayFilter: null };
+// eventToKey/enrichPending grow per raw event id (unlike byKey, which is bounded
+// by distinct incidents), so cap them for long-lived tabs. Well above the feed's
+// live window (store ~500, WS replay 100); enrichPending only holds frames whose
+// item hasn't landed, so it stays small. Maps keep insertion order — evict oldest.
+const MAX_EVENT_KEYS = 5000;
+const MAX_ENRICH_PENDING = 500;
+function capMap(map, max) { while (map.size > max) map.delete(map.keys().next().value); }
 
 function parseIncidentStatus(ev) {
     const label = SERVER_STATUS_LABEL[ev.status];
@@ -792,6 +799,7 @@ function addIncidents(events) {
         // any enrichment that raced ahead of its item.
         if (ev.id) {
             incidents.eventToKey.set(ev.id, m.key);
+            capMap(incidents.eventToKey, MAX_EVENT_KEYS);
             const early = incidents.enrichPending.get(ev.id);
             if (early) { incidents.enrichPending.delete(ev.id); applyEnrichment(m.key, early); }
         }
@@ -825,13 +833,21 @@ function addIncidents(events) {
 // it if the item hasn't landed yet) and repaint.
 function addEnrichment(enr) {
     const key = incidents.eventToKey.get(enr.eventId);
-    if (!key) { incidents.enrichPending.set(enr.eventId, enr); return; }
+    if (!key) {
+        // Item hasn't landed yet — stash until addIncidents drains it. Capped so
+        // a frame whose item never arrives (aged past replay) can't leak forever.
+        incidents.enrichPending.set(enr.eventId, enr);
+        capMap(incidents.enrichPending, MAX_ENRICH_PENDING);
+        return;
+    }
     if (applyEnrichment(key, enr)) scheduleEnrichmentRerender();
 }
-// Newest enrichment wins per incident (a later update can re-classify it).
+// Newest enrichment wins per incident (a later update can re-classify it). A
+// strictly-older frame loses; equal or absent timestamps let the later arrival
+// win, so a re-classification is never dropped when createdAt is missing/tied.
 function applyEnrichment(key, enr) {
     const prev = incidents.enrichByKey.get(key);
-    if (prev && (Date.parse(prev.createdAt) || 0) >= (Date.parse(enr.createdAt) || 0)) return false;
+    if (prev && (Date.parse(prev.createdAt) || 0) > (Date.parse(enr.createdAt) || 0)) return false;
     incidents.enrichByKey.set(key, enr);
     return true;
 }
@@ -934,7 +950,10 @@ function incidentCard(it) {
     const dur = fmtDuration(it.durationMs);
     const side = [];
     // The LLM severity is the strongest at-a-glance signal — lead the rail with it.
-    if (enr?.severity) side.push(el('span', { class: `pill sev-${String(enr.severity).toLowerCase()}`, text: enr.severity }));
+    // Sanitize the value into the class token (a garbage string would otherwise
+    // inject stray classes); the raw value is still shown as the pill's text.
+    const sevClass = enr?.severity ? String(enr.severity).toLowerCase().replace(/[^a-z]/g, '') : null;
+    if (sevClass) side.push(el('span', { class: `pill sev-${sevClass}`, text: enr.severity }));
     if (it.status) side.push(el('span', { class: `pill st-${it.status.toLowerCase().replace(/\s+/g, '')}`, text: it.status }));
     if (dur) side.push(el('span', { class: 'incident-dur', text: dur }));
 
