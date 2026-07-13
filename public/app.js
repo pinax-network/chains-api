@@ -1887,13 +1887,21 @@ async function loadLiveClients(chainId, box) {
         if (!clients.length) { box.textContent = 'No client data yet.'; return; }
         box.textContent = ''; box.classList.remove('muted');
         for (const cl of clients) {
-            const v = (cl.versions || [])[0]?.version;
-            const allVers = (cl.versions || []).map(x => `${x.version}${x.nodeCount ? ` ×${x.nodeCount}` : ''}`).join(', ');
-            box.appendChild(el('span', { class: 'client-pill', title: allVers }, [
-                `${cl.name}${v ? ' ' : ''}`,
-                v ? el('span', { class: 'client-ver', text: v }) : null,
-                cl.nodeCount ? el('span', { class: 'client-count', text: ` ×${cl.nodeCount}` }) : null
-            ]));
+            const vers = cl.versions || [];
+            const breakdown = vers.map(x => `${x.version}${x.nodeCount ? ` ×${x.nodeCount}` : ''}`).join(' · ');
+            const children = [cl.name];
+            // Only show a version inline when there's exactly one — otherwise a
+            // pill would pair one node's version with the whole client's count
+            // (e.g. "mega-reth v2.1.0@node-a ×3" when 2 of 3 run v2.0.21). For
+            // multiple versions, show the count + the per-version breakdown.
+            if (vers.length === 1) {
+                children.push(' ', el('span', { class: 'client-ver', text: vers[0].version }));
+                if (cl.nodeCount) children.push(el('span', { class: 'client-count', text: ` ×${cl.nodeCount}` }));
+            } else {
+                if (cl.nodeCount) children.push(el('span', { class: 'client-count', text: ` ×${cl.nodeCount}` }));
+                if (breakdown) children.push(' ', el('span', { class: 'client-ver muted', text: `(${breakdown})` }));
+            }
+            box.appendChild(el('span', { class: 'client-pill', title: breakdown }, children));
         }
     } catch { box.textContent = '—'; }
 }
