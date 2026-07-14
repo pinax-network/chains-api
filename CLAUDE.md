@@ -24,7 +24,7 @@ npm run lint         # ESLint on src/
 npm run openapi      # Regenerate public/openapi.json from the route schemas
 ```
 
-**API docs:** Every route's JSON Schema feeds `@fastify/swagger` — interactive Swagger UI at `/docs`, raw spec at `/openapi.json`. Routes are auto-tagged by path (no per-route `tags` needed). `npm run openapi` writes `public/openapi.json`; CI regenerates it for the GitHub Pages reference (`/api-docs.html`, Redoc) and fails the build if the committed copy is stale.
+**API docs:** Every route's JSON Schema feeds `@fastify/swagger` — interactive Swagger UI at `/docs`, raw spec at `/openapi.json`. Routes are auto-tagged by path (no per-route `tags` needed). `npm run openapi` writes `public/openapi.json`.
 
 ## Architecture
 
@@ -70,7 +70,7 @@ src/http/                       ← Fastify routes
 - **Validation:** AJV via Fastify's JSON Schema, with `ajv-errors` for friendly messages
 - **Testing:** Vitest v4 with `@vitest/coverage-v8`, `fast-check` for property-based fuzz tests
 - **Linting:** ESLint v10 (`eslint.config.js`, flat config)
-- **CI/CD:** GitHub Actions — test, SonarQube scan, Docker build/push to GHCR
+- **CI/CD:** GitHub Actions — lint, tests, Docker validation, and multi-architecture GHCR publishing
 - **Containerization:** Docker (node:20-alpine), Docker Compose
 
 ## Data Sources
@@ -106,7 +106,7 @@ tests/
 **Conventions:**
 - New tests live under `tests/unit/<layer>/` matching the source path
 - Test timeout: 30 seconds (configured in `vitest.config.js`)
-- Coverage target: ≥80% line coverage (enforced by CI/SonarQube)
+- Coverage is available with `npm run test:coverage`
 - All tests must pass before Docker image is built in CI
 
 **Running a single test file:**
@@ -157,20 +157,18 @@ See `config.js` and `.env.example` for the full list.
 
 GitHub Actions workflows in `.github/workflows/`:
 
-1. **`docker-build.yml`** — On push to main/tags/PRs: runs `npm ci`, `npm run test:coverage`, SonarQube scan, then builds and pushes Docker image to GHCR
-2. **`static.yml`** — Deploys `public/` to GitHub Pages on push to main
-3. **`auto-tag.yml`** — Auto-creates git tags from `package.json` version on main
-
-**Quality gates:** Coverage ≥80%, duplication ≤3%, no critical security vulnerabilities.
+1. **`docker-build.yml`** — On pull requests, `main`, version tags, or manual dispatch: lints, tests with coverage, checks OpenAPI drift, and publishes amd64/arm64 images to `ghcr.io/pinax-network/chains-api` outside pull requests.
+2. **`static.yml`** — Publishes the dashboard and generated OpenAPI reference to GitHub Pages.
+3. **`auto-tag.yml`** — Creates a version tag when `package.json` changes on `main`.
+4. **`refresh-l2beat-fallback.yml`** — Refreshes the checked-in L2BEAT fallback weekly through a pull request.
 
 ## Docker
 
 ```bash
-docker compose up             # Start both REST API and MCP HTTP server
-docker compose up chains-api  # Start only the REST API
+docker compose up             # Start the combined REST API and MCP HTTP process
 ```
 
-Services: `chains-api` (port 3000) and `chains-api-mcp` (port 3001). Both have health checks on `/health`.
+The `chains-api` service exposes REST on port 3000 and MCP HTTP on port 3001, with a REST health check on `/health`.
 
 ## API Endpoints (REST)
 

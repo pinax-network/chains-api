@@ -31,7 +31,11 @@ vi.mock('../../../src/services/l2beatRefresher.js', () => ({
 import Fastify from 'fastify';
 import { getCachedData } from '../../../src/store/cache.js';
 import { metricsRoute } from '../../../src/http/routes/metrics.js';
-import { incCounter, _resetMetricsForTests } from '../../../src/util/metrics.js';
+import {
+  incCounter,
+  observeHistogram,
+  _resetMetricsForTests
+} from '../../../src/util/metrics.js';
 
 // Local alias to keep test body using `dataService.getCachedData.mockReturnValue(...)`.
 const dataService = { getCachedData };
@@ -109,5 +113,34 @@ describe('GET /metrics (Prometheus exposition)', () => {
     const res = await app.inject({ method: 'GET', url: '/metrics' });
     expect(res.body).toMatch(/chains_api_validation_errors\{rule="rule12"\} 3/);
     expect(res.body).toMatch(/chains_api_validation_errors\{rule="rule13"\} 1/);
+  });
+
+  it('renders HTTP duration histograms', async () => {
+    dataService.getCachedData.mockReturnValue({ indexed: { all: [] } });
+    observeHistogram('chains_api_http_request_duration_seconds', {
+      method: 'GET',
+      route: '/health'
+    }, 0.04);
+
+    const res = await app.inject({ method: 'GET', url: '/metrics' });
+    expect(res.body).toContain(
+      'chains_api_http_request_duration_seconds{method="GET",route="/health",le="0.05"} 1'
+    );
+    expect(res.body).toContain(
+      'chains_api_http_request_duration_seconds_count{method="GET",route="/health"} 1'
+    );
+  });
+
+  it('renders RPC endpoint and process gauges', async () => {
+    dataService.getCachedData.mockReturnValue({
+      indexed: { all: [] },
+      rpcHealth: { 1: [{ ok: true }, { ok: false }], 10: [{ ok: true }] }
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/metrics' });
+    expect(res.body).toContain('chains_api_rpc_endpoints{status="working"} 2');
+    expect(res.body).toContain('chains_api_rpc_endpoints{status="failed"} 1');
+    expect(res.body).toContain('# TYPE chains_api_process_uptime_seconds gauge');
+    expect(res.body).toContain('chains_api_process_memory_bytes{area="resident"}');
   });
 });

@@ -8,8 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 const SAME_ORIGIN_API =
-    location.port === '3000' || location.hostname === 'chains-api.johnaverse.cc';
-const API_BASE = SAME_ORIGIN_API ? '' : 'https://chains-api.johnaverse.cc';
+    location.port === '3000' || location.hostname === 'chains-api.riv-dev1.pinax.io';
+const API_BASE = SAME_ORIGIN_API ? '' : 'https://chains-api.riv-dev1.pinax.io';
 const STATUS_NEWS_BASE = 'https://chains-status-news.johnaverse.cc';
 const FORUM_NEWS_BASE = 'https://chains-forum-news.johnaverse.cc';
 

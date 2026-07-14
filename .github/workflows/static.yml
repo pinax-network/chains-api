@@ -47,7 +47,7 @@ jobs:
         # dashboard's last-resort fallback isn't stale. Keeps the committed
         # copy when the API is unreachable at deploy time.
         run: |
-          curl -sf --max-time 30 https://chains-api.johnaverse.cc/summary -o /tmp/summary.json \
+          curl -sf --max-time 30 https://chains-api.riv-dev1.pinax.io/summary -o /tmp/summary.json \
             && node -e "JSON.parse(require('fs').readFileSync('/tmp/summary.json','utf8'))" \
             && mv /tmp/summary.json public/summary.json \
             || echo "Live /summary unavailable — keeping committed snapshot"

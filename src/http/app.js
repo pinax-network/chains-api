@@ -44,6 +44,7 @@ import { rootRoute } from './routes/root.js';
 import { assistantRoutes } from './routes/assistant.js';
 import { prefetchAllPrices } from '../../priceService.js';
 import { logger } from '../util/logger.js';
+import { incCounter, observeHistogram } from '../util/metrics.js';
 
 function resolveCorsOrigin(value) {
   if (value === '*') return true;
@@ -183,6 +184,20 @@ export async function buildApp(options = {}) {
     return reply.code(statusCode).send({ error: error.message || 'Error' });
   });
 
+  fastify.addHook('onResponse', async (request, reply) => {
+    const route = request.routeOptions?.url || 'unmatched';
+    const labels = { method: request.method, route };
+    incCounter('chains_api_http_requests_total', {
+      ...labels,
+      status_code: reply.statusCode
+    });
+    observeHistogram(
+      'chains_api_http_request_duration_seconds',
+      labels,
+      reply.elapsedTime / 1000
+    );
+  });
+
   // OpenAPI: registered before the route plugins so its onRoute hook captures
   // every route's JSON Schema. Routes are auto-tagged by path via the transform.
   await fastify.register(swagger, {
@@ -196,7 +211,7 @@ export async function buildApp(options = {}) {
         version: pkg.version
       },
       servers: [
-        { url: 'https://chains-api.johnaverse.cc', description: 'Production' },
+        { url: 'https://chains-api.riv-dev1.pinax.io', description: 'Development cluster' },
         { url: 'http://localhost:3000', description: 'Local' }
       ],
       tags: OPENAPI_TAGS

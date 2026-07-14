@@ -887,8 +887,8 @@
   },
   "servers": [
     {
-      "url": "https://chains-api.johnaverse.cc",
-      "description": "Production"
+      "url": "https://chains-api.riv-dev1.pinax.io",
+      "description": "Development cluster"
     },
     {
       "url": "http://localhost:3000",
