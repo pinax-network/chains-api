@@ -10,6 +10,9 @@
  */
 
 const counters = new Map();
+const histograms = new Map();
+
+const DEFAULT_HTTP_DURATION_BUCKETS = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
 /**
  * Escape a string for use as a Prometheus label value. Per the exposition
@@ -37,6 +40,31 @@ export function incCounter(name, labels = {}, value = 1) {
   counters.set(key, (counters.get(key) || 0) + value);
 }
 
+export function observeHistogram(
+  name,
+  labels = {},
+  value,
+  buckets = DEFAULT_HTTP_DURATION_BUCKETS
+) {
+  if (!Number.isFinite(value) || value < 0) return;
+  const key = counterKey(name, labels);
+  let histogram = histograms.get(key);
+  if (!histogram) {
+    histogram = {
+      buckets: [...buckets].sort((a, b) => a - b),
+      counts: new Array(buckets.length).fill(0),
+      count: 0,
+      sum: 0
+    };
+    histograms.set(key, histogram);
+  }
+  histogram.count += 1;
+  histogram.sum += value;
+  histogram.buckets.forEach((upperBound, index) => {
+    if (value <= upperBound) histogram.counts[index] += 1;
+  });
+}
+
 function formatCounters(lines) {
   // Group by metric name for proper HELP/TYPE headers.
   const byName = new Map();
@@ -54,6 +82,39 @@ function formatCounters(lines) {
   }
 }
 
+function addLabel(key, label) {
+  const braceIndex = key.indexOf('{');
+  if (braceIndex === -1) return `${key}{${label}}`;
+  return `${key.slice(0, -1)},${label}}`;
+}
+
+function suffixMetricName(key, suffix) {
+  const braceIndex = key.indexOf('{');
+  if (braceIndex === -1) return `${key}${suffix}`;
+  return `${key.slice(0, braceIndex)}${suffix}${key.slice(braceIndex)}`;
+}
+
+function formatHistograms(lines) {
+  const grouped = new Map();
+  for (const [key, value] of histograms.entries()) {
+    const name = key.split('{')[0];
+    if (!grouped.has(name)) grouped.set(name, []);
+    grouped.get(name).push([key, value]);
+  }
+  for (const [name, entries] of grouped.entries()) {
+    lines.push(`# HELP ${name} ${METRIC_HELP[name] || ''}`);
+    lines.push(`# TYPE ${name} histogram`);
+    for (const [key, histogram] of entries) {
+      histogram.buckets.forEach((upperBound, index) => {
+        lines.push(`${addLabel(key, `le="${upperBound}"`)} ${histogram.counts[index]}`);
+      });
+      lines.push(`${addLabel(key, 'le="+Inf"')} ${histogram.count}`);
+      lines.push(`${suffixMetricName(key, '_sum')} ${histogram.sum}`);
+      lines.push(`${suffixMetricName(key, '_count')} ${histogram.count}`);
+    }
+  }
+}
+
 const METRIC_HELP = {
   chains_api_source_fetch_total: 'Number of source fetch attempts by source and outcome',
   chains_api_refresh_total: 'Number of background refresh runs by refresher and outcome',
@@ -61,7 +122,10 @@ const METRIC_HELP = {
   chains_api_assistant_requests_total: 'Number of assistant chat requests by outcome (ok, degraded)',
   chains_api_assistant_tool_calls_total: 'Number of assistant tool executions by tool and outcome',
   chains_api_assistant_llm_calls_total: 'Number of LLM round-trips made by the assistant by outcome',
-  chains_api_assistant_reply_sanitized_total: 'Number of assistant replies altered by the sanitizer, by kind (leak, whole_repeat)'
+  chains_api_assistant_reply_sanitized_total: 'Number of assistant replies altered by the sanitizer, by kind (leak, whole_repeat)',
+  chains_api_source_selfheal_total: 'Number of source self-healing attempts by outcome',
+  chains_api_http_requests_total: 'Number of HTTP responses by method, route, and status code',
+  chains_api_http_request_duration_seconds: 'HTTP response latency in seconds by method and route'
 };
 
 /**
@@ -72,11 +136,30 @@ export function renderMetrics({ cache, rpcStatus, l2beatStatus, validationSummar
   const lines = [];
 
   formatCounters(lines);
+  formatHistograms(lines);
 
   // Gauges
   lines.push('# HELP chains_api_chains_total Total chains in the index');
   lines.push('# TYPE chains_api_chains_total gauge');
   lines.push(`chains_api_chains_total ${cache?.indexed?.all?.length ?? 0}`);
+
+  const rpcResults = Object.values(cache?.rpcHealth || {}).flatMap(results =>
+    Array.isArray(results) ? results : []
+  );
+  const workingRpcEndpoints = rpcResults.filter(result => result?.ok).length;
+  lines.push('# HELP chains_api_rpc_endpoints Total monitored RPC endpoints by status');
+  lines.push('# TYPE chains_api_rpc_endpoints gauge');
+  lines.push(`chains_api_rpc_endpoints{status="working"} ${workingRpcEndpoints}`);
+  lines.push(`chains_api_rpc_endpoints{status="failed"} ${rpcResults.length - workingRpcEndpoints}`);
+
+  const memory = process.memoryUsage();
+  lines.push('# HELP chains_api_process_uptime_seconds Node.js process uptime in seconds');
+  lines.push('# TYPE chains_api_process_uptime_seconds gauge');
+  lines.push(`chains_api_process_uptime_seconds ${process.uptime()}`);
+  lines.push('# HELP chains_api_process_memory_bytes Node.js process memory by area');
+  lines.push('# TYPE chains_api_process_memory_bytes gauge');
+  lines.push(`chains_api_process_memory_bytes{area="resident"} ${memory.rss}`);
+  lines.push(`chains_api_process_memory_bytes{area="heap_used"} ${memory.heapUsed}`);
 
   lines.push('# HELP chains_api_source_loaded Source loaded status (1=loaded, 0=not)');
   lines.push('# TYPE chains_api_source_loaded gauge');
@@ -121,4 +204,5 @@ export function renderMetrics({ cache, rpcStatus, l2beatStatus, validationSummar
 // Test-only helper.
 export function _resetMetricsForTests() {
   counters.clear();
+  histograms.clear();
 }

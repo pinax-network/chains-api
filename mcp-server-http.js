@@ -186,7 +186,7 @@ export function createMcpHttpApp() {
         '/health': 'Health check',
       },
       mcpEndpoint: `http://${MCP_HOST}:${MCP_PORT}/mcp`,
-      documentation: 'https://github.com/Johnaverse/chains-api',
+      documentation: 'https://github.com/pinax-network/chains-api',
     });
   });
 

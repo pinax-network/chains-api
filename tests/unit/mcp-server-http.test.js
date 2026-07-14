@@ -77,7 +77,7 @@ describe('MCP HTTP Server Handler Logic', () => {
           '/health': 'Health check',
         },
         mcpEndpoint: `http://${MCP_HOST}:${MCP_PORT}/mcp`,
-        documentation: 'https://github.com/Johnaverse/chains-api',
+        documentation: 'https://github.com/pinax-network/chains-api',
       };
 
       expect(infoData.name).toBe('Chains API - MCP HTTP Server');
@@ -368,4 +368,3 @@ describe('MCP HTTP Server Handler Logic', () => {
     });
   });
 });
-
