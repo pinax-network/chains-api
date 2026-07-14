@@ -158,9 +158,8 @@ See `config.js` and `.env.example` for the full list.
 GitHub Actions workflows in `.github/workflows/`:
 
 1. **`docker-build.yml`** — On pull requests, `main`, version tags, or manual dispatch: lints, tests with coverage, checks OpenAPI drift, and publishes amd64/arm64 images to `ghcr.io/pinax-network/chains-api` outside pull requests.
-2. **`static.yml`** — Publishes the dashboard and generated OpenAPI reference to GitHub Pages.
-3. **`auto-tag.yml`** — Creates a version tag when `package.json` changes on `main`.
-4. **`refresh-l2beat-fallback.yml`** — Refreshes the checked-in L2BEAT fallback weekly through a pull request.
+2. **`auto-tag.yml`** — Creates a version tag when `package.json` changes on `main`.
+3. **`refresh-l2beat-fallback.yml`** — Refreshes the checked-in L2BEAT fallback weekly through a pull request.
 
 ## Docker
 
